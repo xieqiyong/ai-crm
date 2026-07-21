@@ -1,0 +1,35 @@
+package com.hz.crm.application.customer.dto;
+
+import com.hz.crm.domain.customer.CustomerLevel;
+import java.time.LocalDateTime;
+import lombok.Getter;
+import lombok.Setter;
+
+@Getter
+@Setter
+public class CustomerResponse {
+
+    private Long id;
+
+    private String tenantId;
+
+    private String name;
+
+    private String industry;
+
+    private String contactName;
+
+    private String contactPhone;
+
+    private String contactEmail;
+
+    private CustomerLevel level;
+
+    private Long ownerId;
+
+    private String remark;
+
+    private LocalDateTime createdAt;
+
+    private LocalDateTime updatedAt;
+}

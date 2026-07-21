@@ -1,0 +1,553 @@
+<!DOCTYPE html>
+
+<html class="light" lang="zh-CN"><head>
+<meta charset="utf-8"/>
+<meta content="width=device-width, initial-scale=1.0" name="viewport"/>
+<title>商机管理 | 智能营销管理系统</title>
+<script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<!-- Tailwind Configuration -->
+<script id="tailwind-config">
+      tailwind.config = {
+        darkMode: "class",
+        theme: {
+          extend: {
+            "colors": {
+                    "surface-tint": "#a04100",
+                    "on-surface": "#191c1d",
+                    "on-error-container": "#93000a",
+                    "on-secondary-fixed": "#121c2a",
+                    "surface-container-high": "#e7e8e9",
+                    "on-primary": "#ffffff",
+                    "on-error": "#ffffff",
+                    "tertiary-container": "#8a8dff",
+                    "inverse-primary": "#ffb693",
+                    "secondary": "#555f6f",
+                    "surface": "#f8f9fa",
+                    "secondary-fixed": "#d9e3f6",
+                    "surface-bright": "#f8f9fa",
+                    "on-background": "#191c1d",
+                    "on-primary-fixed": "#351000",
+                    "surface-container-lowest": "#ffffff",
+                    "surface-container": "#edeeef",
+                    "on-secondary-container": "#596373",
+                    "on-tertiary-fixed-variant": "#2f2ebe",
+                    "inverse-on-surface": "#f0f1f2",
+                    "inverse-surface": "#2e3132",
+                    "outline": "#8e7164",
+                    "primary-container": "#ff6b00",
+                    "on-tertiary-fixed": "#07006c",
+                    "surface-variant": "#e1e3e4",
+                    "tertiary-fixed-dim": "#c0c1ff",
+                    "primary-fixed-dim": "#ffb693",
+                    "tertiary-fixed": "#e1e0ff",
+                    "on-surface-variant": "#5a4136",
+                    "secondary-fixed-dim": "#bdc7d9",
+                    "secondary-container": "#d6e0f3",
+                    "primary": "#a04100",
+                    "surface-dim": "#d9dadb",
+                    "on-secondary": "#ffffff",
+                    "primary-fixed": "#ffdbcc",
+                    "error-container": "#ffdad6",
+                    "on-secondary-fixed-variant": "#3d4756",
+                    "on-primary-container": "#572000",
+                    "on-tertiary-container": "#1100ab",
+                    "on-primary-fixed-variant": "#7a3000",
+                    "background": "#f8f9fa",
+                    "surface-container-highest": "#e1e3e4",
+                    "surface-container-low": "#f3f4f5",
+                    "error": "#ba1a1a",
+                    "on-tertiary": "#ffffff",
+                    "outline-variant": "#e2bfb0",
+                    "tertiary": "#494bd6"
+            },
+            "borderRadius": {
+                    "DEFAULT": "0.25rem",
+                    "lg": "0.5rem",
+                    "xl": "0.75rem",
+                    "full": "9999px"
+            },
+            "spacing": {
+                    "container-padding": "24px",
+                    "base": "8px",
+                    "stack-sm": "8px",
+                    "stack-lg": "32px",
+                    "gutter": "16px",
+                    "stack-md": "16px"
+            },
+            "fontFamily": {
+                    "label-sm": ["Inter"],
+                    "headline-lg-mobile": ["Inter"],
+                    "label-md": ["Inter"],
+                    "headline-lg": ["Inter"],
+                    "body-lg": ["Inter"],
+                    "display-lg": ["Inter"],
+                    "headline-md": ["Inter"],
+                    "body-sm": ["Inter"],
+                    "body-md": ["Inter"]
+            }
+          }
+        }
+      }
+    </script>
+<style>
+        .material-symbols-outlined {
+            font-variation-settings: 'FILL' 0, 'wght' 400, 'GRAD' 0, 'opsz' 24;
+            vertical-align: middle;
+        }
+        .kanban-column {
+            min-width: 320px;
+            scroll-snap-align: start;
+        }
+        .glass-ai-module {
+            background: rgba(255, 255, 255, 0.7);
+            backdrop-filter: blur(20px);
+            border: 1px solid rgba(160, 65, 0, 0.1);
+        }
+        .drag-handle {
+            cursor: grab;
+        }
+        .drag-handle:active {
+            cursor: grabbing;
+        }
+        .custom-scrollbar::-webkit-scrollbar {
+            height: 8px;
+            width: 8px;
+        }
+        .custom-scrollbar::-webkit-scrollbar-track {
+            background: #f1f1f1;
+        }
+        .custom-scrollbar::-webkit-scrollbar-thumb {
+            background: #d1d5db;
+            border-radius: 4px;
+        }
+        .custom-scrollbar::-webkit-scrollbar-thumb:hover {
+            background: #9ca3af;
+        }
+    </style>
+</head>
+<body class="bg-surface text-on-surface font-body-md overflow-hidden h-screen flex">
+<!-- SideNavBar (Shared Component) -->
+<aside class="bg-surface dark:bg-inverse-surface shadow-sm h-screen w-64 fixed left-0 top-0 overflow-y-auto flex flex-col py-base z-[60]">
+<div class="px-6 py-4 flex items-center gap-3">
+<div class="w-10 h-10 bg-primary-container rounded-lg flex items-center justify-center">
+<span class="material-symbols-outlined text-white" style="font-variation-settings: 'FILL' 1;">rocket_launch</span>
+</div>
+<div>
+<h1 class="text-headline-md font-headline-md font-bold text-primary dark:text-primary-fixed-dim">智能营销管理系统</h1>
+<p class="text-label-sm text-on-surface-variant/70">Intelligent CRM</p>
+</div>
+</div>
+<nav class="mt-6 flex-1 px-3 space-y-1">
+<!-- Navigation Items -->
+<a class="flex items-center px-4 py-3 text-on-surface-variant dark:text-surface-variant hover:bg-surface-container dark:hover:bg-surface-container-highest transition-colors font-body-md group" href="#">
+<span class="material-symbols-outlined mr-3" data-icon="dashboard">dashboard</span>
+<span>工作台</span>
+</a>
+<a class="flex items-center px-4 py-3 text-on-surface-variant dark:text-surface-variant hover:bg-surface-container dark:hover:bg-surface-container-highest transition-colors font-body-md group" href="#">
+<span class="material-symbols-outlined mr-3" data-icon="leaderboard">leaderboard</span>
+<span>线索管理</span>
+</a>
+<a class="flex items-center px-4 py-3 text-on-surface-variant dark:text-surface-variant hover:bg-surface-container dark:hover:bg-surface-container-highest transition-colors font-body-md group" href="#">
+<span class="material-symbols-outlined mr-3" data-icon="group">group</span>
+<span>客户管理</span>
+</a>
+<!-- ACTIVE TAB: 商机管理 -->
+<a class="flex items-center px-4 py-3 text-primary font-bold border-r-4 border-primary bg-primary-container/10 transition-colors font-body-md group scale-[0.98] transition-transform" href="#">
+<span class="material-symbols-outlined mr-3" data-icon="handshake" style="font-variation-settings: 'FILL' 1;">handshake</span>
+<span>商机管理</span>
+</a>
+<a class="flex items-center px-4 py-3 text-on-surface-variant dark:text-surface-variant hover:bg-surface-container dark:hover:bg-surface-container-highest transition-colors font-body-md group" href="#">
+<span class="material-symbols-outlined mr-3" data-icon="history_edu">history_edu</span>
+<span>跟进记录</span>
+</a>
+<a class="flex items-center px-4 py-3 text-on-surface-variant dark:text-surface-variant hover:bg-surface-container dark:hover:bg-surface-container-highest transition-colors font-body-md group" href="#">
+<span class="material-symbols-outlined mr-3" data-icon="assignment">assignment</span>
+<span>销售任务</span>
+</a>
+<div class="pt-4 pb-2 px-4">
+<p class="text-[10px] uppercase font-bold tracking-wider text-on-surface-variant/50">AI &amp; Resources</p>
+</div>
+<a class="flex items-center px-4 py-3 text-on-surface-variant dark:text-surface-variant hover:bg-surface-container dark:hover:bg-surface-container-highest transition-colors font-body-md group" href="#">
+<span class="material-symbols-outlined mr-3" data-icon="smart_toy">smart_toy</span>
+<span>AI 销售助手</span>
+</a>
+<a class="flex items-center px-4 py-3 text-on-surface-variant dark:text-surface-variant hover:bg-surface-container dark:hover:bg-surface-container-highest transition-colors font-body-md group" href="#">
+<span class="material-symbols-outlined mr-3" data-icon="menu_book">menu_book</span>
+<span>知识库</span>
+</a>
+<a class="flex items-center px-4 py-3 text-on-surface-variant dark:text-surface-variant hover:bg-surface-container dark:hover:bg-surface-container-highest transition-colors font-body-md group mt-auto" href="#">
+<span class="material-symbols-outlined mr-3" data-icon="badge">badge</span>
+<span>组织与权限</span>
+</a>
+<a class="flex items-center px-4 py-3 text-on-surface-variant dark:text-surface-variant hover:bg-surface-container dark:hover:bg-surface-container-highest transition-colors font-body-md group" href="#">
+<span class="material-symbols-outlined mr-3" data-icon="settings">settings</span>
+<span>系统设置</span>
+</a>
+</nav>
+<div class="px-6 py-4">
+<button class="w-full bg-primary text-on-primary py-3 rounded-lg font-label-md hover:opacity-90 transition-all flex items-center justify-center gap-2">
+<span class="material-symbols-outlined text-sm">add</span>
+                新建商机
+            </button>
+</div>
+</aside>
+<!-- Main Content Area -->
+<main class="flex-1 ml-64 flex flex-col h-screen overflow-hidden relative">
+<!-- TopNavBar (Shared Component) -->
+<header class="bg-surface/80 dark:bg-inverse-surface/80 backdrop-blur-md border-b border-outline-variant dark:border-outline flex justify-between items-center h-16 px-container-padding sticky top-0 z-50">
+<div class="flex items-center gap-6">
+<div class="relative w-64">
+<span class="material-symbols-outlined absolute left-3 top-1/2 -translate-y-1/2 text-on-surface-variant text-body-md">search</span>
+<input class="w-full pl-10 pr-4 py-1.5 bg-surface-container-low border-none rounded-full text-body-sm focus:ring-2 focus:ring-primary/20" placeholder="搜索商机、客户..." type="text"/>
+</div>
+<div class="flex items-center gap-4">
+<a class="text-primary font-bold border-b-2 border-primary pb-1 font-label-md" href="#">仪表板</a>
+<a class="text-on-surface-variant hover:text-primary transition-colors font-label-md" href="#">数据中心</a>
+</div>
+</div>
+<div class="flex items-center gap-4">
+<button class="bg-primary-container text-on-primary-container px-4 py-1.5 rounded-full font-label-md hover:bg-primary-container/90 transition-colors flex items-center gap-1">
+<span class="material-symbols-outlined text-sm">auto_awesome</span>
+                    AI Insights
+                </button>
+<div class="flex items-center gap-2 border-l border-outline-variant pl-4">
+<button class="p-2 text-on-surface-variant hover:bg-surface-container-high rounded-full transition-colors relative">
+<span class="material-symbols-outlined">notifications</span>
+<span class="absolute top-2 right-2 w-2 h-2 bg-error rounded-full"></span>
+</button>
+<button class="p-2 text-on-surface-variant hover:bg-surface-container-high rounded-full transition-colors">
+<span class="material-symbols-outlined">help</span>
+</button>
+<div class="w-8 h-8 rounded-full bg-secondary-container flex items-center justify-center ml-2 overflow-hidden ring-1 ring-outline-variant">
+<img class="w-full h-full object-cover" data-alt="A professional business headshot of a corporate executive, clean studio lighting, soft gray background, modern minimalist style, representative of a high-performance sales platform user." src="https://lh3.googleusercontent.com/aida-public/AB6AXuAcGxBLCAdYctQrQtbqipHUY9z43AwFtS53wEOv16C_N6q20S7ltYUhIOBQOYnO9IEbjVIAFvZ-n-RLfzcmycr6NTdNRUfaZL5fAncD59vzLmf02LAYfRXwVCSegeF3WqN_obokrL59zd0KGUpmDHd9gW2rSDzuZ_5XkEPkLkw88ccc-JUknt5xVHjMZ4nYaGT5jH6wIxt7fyKEBaqyWRaHK8WHkwRXG6V_KYHFSL1z9nBGp6EaISX1"/>
+</div>
+</div>
+</div>
+</header>
+<!-- Page Header & View Toggle -->
+<section class="px-container-padding pt-6 pb-4 flex items-center justify-between">
+<div>
+<h2 class="font-headline-lg text-headline-lg text-on-surface">商机看板 <span class="text-on-surface-variant font-normal text-body-lg ml-2">(42)</span></h2>
+<div class="flex items-center gap-2 mt-1">
+<span class="text-label-sm text-on-surface-variant/70">筛选：</span>
+<div class="flex gap-1">
+<span class="px-2 py-0.5 bg-primary-container/10 text-primary text-[10px] rounded-full font-bold">全团队</span>
+<span class="px-2 py-0.5 bg-surface-container text-on-surface-variant text-[10px] rounded-full font-bold">本季度</span>
+</div>
+</div>
+</div>
+<div class="flex items-center gap-4">
+<!-- View Toggle -->
+<div class="bg-surface-container-high p-1 rounded-lg flex items-center gap-1 shadow-inner">
+<button class="px-4 py-1.5 rounded-md text-on-surface-variant font-label-md hover:text-primary transition-all flex items-center gap-2">
+<span class="material-symbols-outlined text-sm">format_list_bulleted</span>
+                        列表
+                    </button>
+<button class="px-4 py-1.5 rounded-md bg-white text-primary shadow-sm font-label-md flex items-center gap-2">
+<span class="material-symbols-outlined text-sm">view_kanban</span>
+                        看板
+                    </button>
+</div>
+<button class="bg-primary text-on-primary px-6 py-2 rounded-lg font-label-md flex items-center gap-2 shadow-sm hover:translate-y-[-1px] active:scale-95 transition-all">
+<span class="material-symbols-outlined">add</span>
+                    新建
+                </button>
+</div>
+</section>
+<!-- Kanban Board Area -->
+<div class="flex-1 overflow-x-auto custom-scrollbar px-container-padding pb-6 flex gap-4 mt-2">
+<!-- Column Template Factory (Loop simulation) -->
+<!-- Columns: Discovery, Validation, Solution, Demo, Proposal, Negotiation, Contract, Won, Lost -->
+<!-- Discovery Column -->
+<div class="kanban-column flex flex-col h-full">
+<div class="flex items-center justify-between py-3 border-b-2 border-primary/30 mb-4 sticky top-0 bg-surface z-10">
+<div class="flex items-center gap-2">
+<h3 class="font-label-md text-on-surface uppercase tracking-wider">Discovery</h3>
+<span class="px-2 py-0.5 bg-surface-container-high rounded text-[10px] font-bold">8</span>
+</div>
+<span class="text-label-sm text-primary font-bold">¥1.2M</span>
+</div>
+<div class="flex-1 space-y-4 overflow-y-auto pr-1">
+<!-- High Risk Card -->
+<div class="bg-white rounded-xl p-4 shadow-sm border-l-4 border-error hover:shadow-md transition-shadow cursor-grab active:cursor-grabbing group">
+<div class="flex justify-between items-start mb-2">
+<span class="px-2 py-0.5 bg-error-container text-on-error-container text-[10px] rounded-full font-bold flex items-center gap-1 uppercase">
+<span class="material-symbols-outlined text-[12px]">warning</span> 高风险
+                            </span>
+<span class="text-label-sm text-on-surface-variant">25%</span>
+</div>
+<h4 class="font-label-md text-on-surface leading-tight group-hover:text-primary transition-colors">企业级 AI 视觉识别系统采购</h4>
+<p class="text-body-sm text-on-surface-variant mt-1">特斯拉中国 (Tesla China)</p>
+<div class="mt-4 flex items-center justify-between pt-3 border-t border-outline-variant">
+<div>
+<p class="text-[10px] text-on-surface-variant/60 uppercase">金额</p>
+<p class="font-bold text-primary">¥450,000</p>
+</div>
+<div class="flex -space-x-2">
+<div class="w-6 h-6 rounded-full border-2 border-white bg-surface-container-high overflow-hidden" title="负责人: 李晓明">
+<img class="w-full h-full object-cover" data-alt="Corporate headshot profile photo of a young professional male in business casual attire." src="https://lh3.googleusercontent.com/aida-public/AB6AXuANwatFP77PX7jVICTc4BksqjwaIjqbbe8mnnQJ-S9gBiVSTyGihW7dxVi0Mb8drsjtyht30xfLsd5RctET6X99SbNaefrOTrjfgFQKa0l8i7lxxMvI2RVj9T0Vq_W23ZZT5FS3Vf5vOnjbMHU8Nvg981DGtMReabU5jVW8tEQkKf9C_Hvto5MKjzvGniweYWSMEwwIe5IZPtEiOjUG-c1tms0WFsJXOxipJidAZuOOHNTLM2FzmX6m"/>
+</div>
+</div>
+</div>
+<div class="mt-3 flex items-center gap-2 text-[10px] text-on-surface-variant/60">
+<span class="material-symbols-outlined text-[14px]">event</span>
+<span>最后跟进: 2小时前</span>
+</div>
+</div>
+<!-- Normal Card -->
+<div class="bg-white rounded-xl p-4 shadow-sm border border-outline-variant hover:shadow-md transition-shadow cursor-grab group">
+<div class="flex justify-between items-start mb-2">
+<span class="px-2 py-0.5 bg-surface-container text-on-secondary-container text-[10px] rounded-full font-bold uppercase tracking-wide">常规</span>
+<span class="text-label-sm text-on-surface-variant">15%</span>
+</div>
+<h4 class="font-label-md text-on-surface leading-tight group-hover:text-primary transition-colors">智慧物流数字化转型项目</h4>
+<p class="text-body-sm text-on-surface-variant mt-1">中外运 (Sinotrans)</p>
+<div class="mt-4 flex items-center justify-between pt-3 border-t border-outline-variant">
+<div>
+<p class="text-[10px] text-on-surface-variant/60 uppercase">金额</p>
+<p class="font-bold text-on-surface">¥180,000</p>
+</div>
+<div class="w-6 h-6 rounded-full border-2 border-white bg-surface-container-high overflow-hidden">
+<img class="w-full h-full object-cover" data-alt="Portrait of a professional female sales manager, friendly expression, blurred office background." src="https://lh3.googleusercontent.com/aida-public/AB6AXuB17TjOYFRabiIO0Uv6d9QGFaoH8KGTFrPGY7PNR9T1Swhq5xqqpc7IDoSQr7Z77iWlSwyHdiimizBYtGbaNwxffKfiaB0olveYGA84YwFqt6Fro54yERKGAExIBCqSz01rmHf36HI8d1YXzpwcOhDHCzCJ182ko-X7epeYFWf9qg5K4RBaPDoUITjjeBvNMUFLlunD-6Y4NUueNq0TwT-eNZviWwDBKE9ER2w5KNwGLA2hNjvlB7sP"/>
+</div>
+</div>
+<div class="mt-3 flex items-center gap-2 text-[10px] text-on-surface-variant/60">
+<span class="material-symbols-outlined text-[14px]">event</span>
+<span>最后跟进: 昨天</span>
+</div>
+</div>
+<!-- AI Suggested Card -->
+<div class="glass-ai-module rounded-xl p-4 shadow-sm border border-primary/20 hover:shadow-md transition-shadow cursor-grab group relative overflow-hidden">
+<div class="absolute top-0 left-0 w-1 h-full bg-primary"></div>
+<div class="flex justify-between items-start mb-2">
+<span class="px-2 py-0.5 bg-primary-container text-on-primary text-[10px] rounded-full font-bold flex items-center gap-1 uppercase">
+<span class="material-symbols-outlined text-[12px]" style="font-variation-settings: 'FILL' 1;">auto_awesome</span> AI 推荐
+                            </span>
+<span class="text-label-sm text-primary font-bold">45%</span>
+</div>
+<h4 class="font-label-md text-on-surface leading-tight group-hover:text-primary transition-colors">零售店智能化升级第一期</h4>
+<p class="text-body-sm text-on-surface-variant mt-1">名创优品 (MINISO)</p>
+<div class="mt-4 flex items-center justify-between pt-3 border-t border-outline-variant">
+<div>
+<p class="text-[10px] text-on-surface-variant/60 uppercase">金额</p>
+<p class="font-bold text-on-surface">¥320,000</p>
+</div>
+<div class="w-6 h-6 rounded-full border-2 border-white bg-surface-container-high overflow-hidden">
+<img class="w-full h-full object-cover" data-alt="A smiling young professional with short hair, high quality studio lighting, sharp focus." src="https://lh3.googleusercontent.com/aida-public/AB6AXuAW_nzL30E_y6aj1CUr_QB1HL5LqZXdkIIEUmvXNZyd-3VSR4zIHkMVUyWrQLHwuuwrF8dfKd295A4s3Opv5tP6avw0-rWJ8BKoZfTdqFQmWVz36Srjr4RQDIDKl7Xhbf5J2x7lef3d1ueEWec8X6QIXuTf_mDM_MNuN1BBICSZQARbSt5TTb75yV93xf-7mWyEEpqRAc1ruMTtqzr9Agb-F09plkETbGl48LfdJauSqSh7s-TS0p-n"/>
+</div>
+</div>
+<div class="mt-2 bg-primary/5 rounded p-2 border border-primary/10">
+<p class="text-[10px] text-primary leading-tight font-medium">✨ 检测到采购负责人正在查阅产品手册，建议立即致电。</p>
+</div>
+</div>
+</div>
+</div>
+<!-- Validation Column -->
+<div class="kanban-column flex flex-col h-full opacity-90 hover:opacity-100 transition-opacity">
+<div class="flex items-center justify-between py-3 border-b-2 border-secondary/30 mb-4 sticky top-0 bg-surface z-10">
+<div class="flex items-center gap-2">
+<h3 class="font-label-md text-on-surface-variant uppercase tracking-wider">Validation</h3>
+<span class="px-2 py-0.5 bg-surface-container-high rounded text-[10px] font-bold">5</span>
+</div>
+<span class="text-label-sm text-on-surface-variant font-bold">¥2.4M</span>
+</div>
+<div class="flex-1 space-y-4 overflow-y-auto pr-1">
+<div class="bg-white rounded-xl p-4 shadow-sm border border-outline-variant hover:shadow-md transition-shadow cursor-grab group">
+<div class="flex justify-between items-start mb-2">
+<span class="px-2 py-0.5 bg-surface-container text-on-secondary-container text-[10px] rounded-full font-bold uppercase">常规</span>
+<span class="text-label-sm text-on-surface-variant">40%</span>
+</div>
+<h4 class="font-label-md text-on-surface leading-tight group-hover:text-primary transition-colors">智能客服系统集成案</h4>
+<p class="text-body-sm text-on-surface-variant mt-1">携程 (Trip.com)</p>
+<div class="mt-4 flex items-center justify-between pt-3 border-t border-outline-variant">
+<div>
+<p class="text-[10px] text-on-surface-variant/60 uppercase">金额</p>
+<p class="font-bold text-on-surface">¥1,200,000</p>
+</div>
+<div class="w-6 h-6 rounded-full border-2 border-white bg-surface-container-high overflow-hidden">
+<img class="w-full h-full object-cover" data-alt="Confident executive profile photo, modern business portrait with warm orange lighting accents." src="https://lh3.googleusercontent.com/aida-public/AB6AXuBhgl_lkPEjGXOJQYSV8F7BM3In2EKUCpAs-PGiNPo98Olwcs3Pb0_JOk6f8GvQZ_PrJDhsR9elZuOfRF4CyrF9NlqLenY2Ni1G47phJAlYAQXd8bir-7I403M60vFFKWISy2pb6VJsGOqmQTSAietz9P5ufOhAXukNozYugEg0_EkyjYQVNydrR0eAG74P2prT2iny8TVX532_slEl-0GwxTQ4vs5p53KVNGUxHli4wQbFI3k1rF5u"/>
+</div>
+</div>
+</div>
+<div class="bg-white rounded-xl p-4 shadow-sm border border-outline-variant hover:shadow-md transition-shadow cursor-grab group">
+<div class="flex justify-between items-start mb-2">
+<span class="px-2 py-0.5 bg-surface-container text-on-secondary-container text-[10px] rounded-full font-bold uppercase">常规</span>
+<span class="text-label-sm text-on-surface-variant">35%</span>
+</div>
+<h4 class="font-label-md text-on-surface leading-tight group-hover:text-primary transition-colors">API 数据同步接口开发</h4>
+<p class="text-body-sm text-on-surface-variant mt-1">美团 (Meituan)</p>
+<div class="mt-4 flex items-center justify-between pt-3 border-t border-outline-variant">
+<div>
+<p class="text-[10px] text-on-surface-variant/60 uppercase">金额</p>
+<p class="font-bold text-on-surface">¥68,000</p>
+</div>
+<div class="w-6 h-6 rounded-full border-2 border-white bg-surface-container-high overflow-hidden">
+<img class="w-full h-full object-cover" data-alt="Professional business person profile photo in a sleek modern office." src="https://lh3.googleusercontent.com/aida-public/AB6AXuBUySnyzEsFES5lI3dbk2j_UZCj0t9s1RdOA0BOaKDZjVYR33CJY6ezA9TwNNpEco4v3iTTqZyez4tfM8jsyw1dKPJJFgalS_b4VnceyGgXTnw--TBjg5JK2Zsp2OHa4ZkLW67RNEQzQIOYOenMjlcUsz-bk3BghsC3LvvrvMLfFNMSbw02Cden9T5mUOjpN0UBIv8WD2giwvJQJ8zff5nPrzgHfVdUszW9bC8eBl5MV2RXZ6qOpfij"/>
+</div>
+</div>
+</div>
+</div>
+</div>
+<!-- Solution Column -->
+<div class="kanban-column flex flex-col h-full opacity-80 hover:opacity-100 transition-opacity">
+<div class="flex items-center justify-between py-3 border-b-2 border-secondary/30 mb-4 sticky top-0 bg-surface z-10">
+<div class="flex items-center gap-2">
+<h3 class="font-label-md text-on-surface-variant uppercase tracking-wider">Solution</h3>
+<span class="px-2 py-0.5 bg-surface-container-high rounded text-[10px] font-bold">3</span>
+</div>
+<span class="text-label-sm text-on-surface-variant font-bold">¥540K</span>
+</div>
+<div class="flex-1 space-y-4 overflow-y-auto pr-1">
+<div class="bg-white rounded-xl p-4 shadow-sm border border-outline-variant hover:shadow-md transition-shadow cursor-grab group">
+<div class="flex justify-between items-start mb-2">
+<span class="px-2 py-0.5 bg-surface-container text-on-secondary-container text-[10px] rounded-full font-bold uppercase">常规</span>
+<span class="text-label-sm text-on-surface-variant">50%</span>
+</div>
+<h4 class="font-label-md text-on-surface leading-tight group-hover:text-primary transition-colors">海外市场 CRM 部署项目</h4>
+<p class="text-body-sm text-on-surface-variant mt-1">Shein</p>
+<div class="mt-4 flex items-center justify-between pt-3 border-t border-outline-variant">
+<div>
+<p class="text-[10px] text-on-surface-variant/60 uppercase">金额</p>
+<p class="font-bold text-on-surface">¥540,000</p>
+</div>
+<div class="w-6 h-6 rounded-full border-2 border-white bg-surface-container-high overflow-hidden">
+<img class="w-full h-full object-cover" data-alt="Portrait of a male business professional with a subtle smile, studio lighting." src="https://lh3.googleusercontent.com/aida-public/AB6AXuDYANSBIgHrJNiRrEgwbwLlLRkSl1jsw5XZpusMN3wBJ-RJvWDXqbFqbB5oABFiKOTKk7bTyvWdZAHoolbaZ2fCltW0u4ip2rRrFZD2iGWz6Cj0T_vL6cCFWmKPflQoB4_PTnNirQ0xbcO-MU04tgWXu9WaeKTsHoMB2ZpjZMowfSdf_bBrMNnFMmuw1VAEh8s0dg211X8ztfa61rZ3rdAn_gv0ei452PdZV7a3u3pTbVNjADT4Tyvq"/>
+</div>
+</div>
+</div>
+</div>
+</div>
+<!-- Demo Column -->
+<div class="kanban-column flex flex-col h-full opacity-80 hover:opacity-100 transition-opacity">
+<div class="flex items-center justify-between py-3 border-b-2 border-secondary/30 mb-4 sticky top-0 bg-surface z-10">
+<div class="flex items-center gap-2">
+<h3 class="font-label-md text-on-surface-variant uppercase tracking-wider">Demo</h3>
+<span class="px-2 py-0.5 bg-surface-container-high rounded text-[10px] font-bold">12</span>
+</div>
+<span class="text-label-sm text-on-surface-variant font-bold">¥3.8M</span>
+</div>
+<div class="bg-surface-container-low rounded-xl p-8 border-2 border-dashed border-outline-variant flex flex-col items-center justify-center text-center">
+<span class="material-symbols-outlined text-outline-variant text-display-lg mb-2">move_to_inbox</span>
+<p class="text-label-md text-on-surface-variant">拖拽商机到此阶段</p>
+</div>
+</div>
+<!-- Won Column (Success State) -->
+<div class="kanban-column flex flex-col h-full">
+<div class="flex items-center justify-between py-3 border-b-2 border-tertiary mb-4 sticky top-0 bg-surface z-10">
+<div class="flex items-center gap-2">
+<h3 class="font-label-md text-tertiary uppercase tracking-wider">Won</h3>
+<span class="px-2 py-0.5 bg-tertiary-container/20 text-tertiary rounded text-[10px] font-bold">24</span>
+</div>
+<span class="text-label-sm text-tertiary font-bold">¥12.5M</span>
+</div>
+<div class="flex-1 space-y-4 overflow-y-auto pr-1">
+<div class="bg-white rounded-xl p-4 shadow-sm border-l-4 border-tertiary hover:shadow-md transition-shadow group">
+<div class="flex justify-between items-start mb-2">
+<span class="px-2 py-0.5 bg-tertiary-container text-white text-[10px] rounded-full font-bold uppercase flex items-center gap-1">
+<span class="material-symbols-outlined text-[12px]" style="font-variation-settings: 'FILL' 1;">check_circle</span> 已成交
+                            </span>
+<span class="text-label-sm text-tertiary font-bold">100%</span>
+</div>
+<h4 class="font-label-md text-on-surface leading-tight group-hover:text-tertiary transition-colors">全球总部办公空间智能管理系统</h4>
+<p class="text-body-sm text-on-surface-variant mt-1">字节跳动 (ByteDance)</p>
+<div class="mt-4 flex items-center justify-between pt-3 border-t border-outline-variant">
+<div>
+<p class="text-[10px] text-on-surface-variant/60 uppercase">成交金额</p>
+<p class="font-bold text-tertiary">¥2,850,000</p>
+</div>
+<div class="w-6 h-6 rounded-full border-2 border-white bg-surface-container-high overflow-hidden">
+<img class="w-full h-full object-cover" data-alt="Business woman portrait, high key photography, vibrant secondary colors." src="https://lh3.googleusercontent.com/aida-public/AB6AXuDQ267iNunLuOH0UwwEpHf8Zo5epqtSynkljB4pJresBEogUWvTs2d6ox37J_ZwmcbzeN5Gs_gQ71MfA6gu1oon49zQO6tPIKtwU66z1jpWLpvBhg0Y0d1Xgg53vU2j6QpTe9Zh1piFUBRkr1cnae_6PJ0Us4ZT0wBeR_rihVlIJ__9oUkLDDMFWMVDNS7T4dXYnGni8ttk5T0BJkXK6eNgz1HWyXqOIYSpq25zk_czE-Hi3wxC3Vs1"/>
+</div>
+</div>
+</div>
+</div>
+</div>
+</div>
+<!-- Floating Action Button (FAB) - Suppression Rule: Only on Home/Main Dashboard. 
+             Since this is "Opportunity Management" main screen, it stays. -->
+<button class="fixed bottom-8 right-8 w-14 h-14 bg-primary text-on-primary rounded-full shadow-lg flex items-center justify-center hover:scale-110 active:scale-95 transition-all z-50">
+<span class="material-symbols-outlined text-display-lg" style="font-size: 24px;">smart_toy</span>
+</button>
+</main>
+<!-- Mini Side AI Panel (Right) -->
+<aside class="w-80 bg-surface-container-low border-l border-outline-variant flex flex-col hidden xl:flex">
+<div class="p-6 border-b border-outline-variant flex items-center justify-between">
+<h3 class="font-label-md text-on-surface flex items-center gap-2">
+<span class="material-symbols-outlined text-primary" style="font-variation-settings: 'FILL' 1;">auto_awesome</span>
+                AI 跟进建议
+            </h3>
+<button class="text-on-surface-variant hover:text-primary transition-colors">
+<span class="material-symbols-outlined text-sm">close</span>
+</button>
+</div>
+<div class="flex-1 overflow-y-auto p-4 space-y-4">
+<div class="bg-primary/5 rounded-xl p-4 border border-primary/10">
+<div class="flex items-start gap-3">
+<div class="w-8 h-8 rounded-lg bg-primary-container flex items-center justify-center shrink-0">
+<span class="material-symbols-outlined text-white text-sm">trending_up</span>
+</div>
+<div>
+<p class="font-label-md text-on-surface">赢率预警</p>
+<p class="text-body-sm text-on-surface-variant mt-1 leading-tight">
+                            "特斯拉中国" 项目近期缺乏有效互动，赢率从 32% 下降至 25%。建议预约下周二的技术演示。
+                        </p>
+</div>
+</div>
+<button class="w-full mt-3 py-2 bg-primary text-on-primary rounded-lg text-[12px] font-bold">立即生成邮件草案</button>
+</div>
+<div class="bg-white rounded-xl p-4 border border-outline-variant shadow-sm">
+<p class="text-[10px] text-on-surface-variant/60 uppercase font-bold tracking-widest mb-3">关键动态</p>
+<div class="space-y-4">
+<div class="flex gap-3">
+<div class="w-1.5 h-1.5 rounded-full bg-tertiary mt-1.5 shrink-0"></div>
+<p class="text-body-sm text-on-surface-variant">中外运项目负责人下载了《成本效益分析报告》</p>
+</div>
+<div class="flex gap-3">
+<div class="w-1.5 h-1.5 rounded-full bg-primary mt-1.5 shrink-0"></div>
+<p class="text-body-sm text-on-surface-variant">美团项目经理在 LinkedIn 上发布了数字化新动向</p>
+</div>
+</div>
+</div>
+</div>
+<div class="p-4 bg-surface-container-high/50 border-t border-outline-variant">
+<div class="relative">
+<input class="w-full pl-4 pr-10 py-2.5 bg-white border-outline-variant rounded-lg text-body-sm focus:ring-primary/20" placeholder="问问 AI 销售助手..." type="text"/>
+<button class="absolute right-2 top-1/2 -translate-y-1/2 text-primary">
+<span class="material-symbols-outlined">send</span>
+</button>
+</div>
+</div>
+</aside>
+<!-- Animation Overlay (Micro-interaction script) -->
+<script>
+        // Simple drag interaction simulation visual feedback
+        document.querySelectorAll('.kanban-column').forEach(column => {
+            column.addEventListener('dragover', e => {
+                e.preventDefault();
+                column.classList.add('bg-primary/5');
+            });
+            column.addEventListener('dragleave', () => {
+                column.classList.remove('bg-primary/5');
+            });
+            column.addEventListener('drop', () => {
+                column.classList.remove('bg-primary/5');
+            });
+        });
+
+        // View toggle interaction
+        const buttons = document.querySelectorAll('.bg-surface-container-high button');
+        buttons.forEach(btn => {
+            btn.addEventListener('click', () => {
+                buttons.forEach(b => {
+                    b.classList.remove('bg-white', 'text-primary', 'shadow-sm');
+                    b.classList.add('text-on-surface-variant');
+                });
+                btn.classList.add('bg-white', 'text-primary', 'shadow-sm');
+                btn.classList.remove('text-on-surface-variant');
+            });
+        });
+    </script>
+</body></html>

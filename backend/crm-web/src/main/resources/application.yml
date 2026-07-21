@@ -1,0 +1,84 @@
+server:
+  port: ${CRM_SERVER_PORT:8080}
+
+spring:
+  application:
+    name: intelligent-marketing-crm
+  datasource:
+    url: ${CRM_DB_URL:jdbc:postgresql://localhost:5432/crm}
+    username: ${CRM_DB_USERNAME:app_user}
+    password: ${CRM_DB_PASSWORD:app123456}
+    driver-class-name: org.postgresql.Driver
+  jpa:
+    database-platform: org.hibernate.dialect.PostgreSQLDialect
+    hibernate:
+      ddl-auto: ${CRM_JPA_DDL_AUTO:update}
+    open-in-view: false
+    properties:
+      hibernate:
+        format_sql: true
+  data:
+    redis:
+      host: ${CRM_REDIS_HOST:localhost}
+      port: ${CRM_REDIS_PORT:6379}
+      password: ${CRM_REDIS_PASSWORD:}
+
+mybatis-plus:
+  configuration:
+    map-underscore-to-camel-case: true
+
+logging:
+  config: classpath:logback-spring.xml
+  level:
+    root: ${CRM_LOG_LEVEL:INFO}
+
+crm:
+  logging:
+    path: ${CRM_LOG_PATH:./logs}
+    max-history: ${CRM_LOG_MAX_HISTORY:30}
+    max-file-size: ${CRM_LOG_MAX_FILE_SIZE:100MB}
+  jwt:
+    secret: ${CRM_JWT_SECRET:please-change-this-secret-key-to-at-least-32-bytes}
+    ttl-seconds: ${CRM_JWT_TTL_SECONDS:86400}
+  datasource:
+    druid:
+      initial-size: ${CRM_DRUID_INITIAL_SIZE:2}
+      min-idle: ${CRM_DRUID_MIN_IDLE:2}
+      max-active: ${CRM_DRUID_MAX_ACTIVE:20}
+      max-wait: ${CRM_DRUID_MAX_WAIT:60000}
+      time-between-eviction-runs-millis: ${CRM_DRUID_EVICTION_INTERVAL:60000}
+      min-evictable-idle-time-millis: ${CRM_DRUID_MIN_EVICTABLE_IDLE_TIME:300000}
+      validation-query: ${CRM_DRUID_VALIDATION_QUERY:select 1}
+      test-while-idle: ${CRM_DRUID_TEST_WHILE_IDLE:true}
+      test-on-borrow: ${CRM_DRUID_TEST_ON_BORROW:false}
+      test-on-return: ${CRM_DRUID_TEST_ON_RETURN:false}
+      pool-prepared-statements: ${CRM_DRUID_POOL_PREPARED_STATEMENTS:true}
+      max-pool-prepared-statement-per-connection-size: ${CRM_DRUID_MAX_PS_PER_CONNECTION:20}
+  redis:
+    enabled: ${CRM_REDIS_ENABLED:false}
+  nacos:
+    enabled: ${CRM_NACOS_ENABLED:false}
+    server-addr: ${CRM_NACOS_SERVER_ADDR:localhost:8848}
+    namespace: ${CRM_NACOS_NAMESPACE:}
+    group: ${CRM_NACOS_GROUP:DEFAULT_GROUP}
+  storage:
+    minio:
+      enabled: ${CRM_MINIO_ENABLED:false}
+      endpoint: ${CRM_MINIO_ENDPOINT:http://localhost:9000}
+      access-key: ${CRM_MINIO_ACCESS_KEY:}
+      secret-key: ${CRM_MINIO_SECRET_KEY:}
+      bucket: ${CRM_MINIO_BUCKET:crm}
+  search:
+    elasticsearch:
+      enabled: ${CRM_ES_ENABLED:false}
+      uris: ${CRM_ES_URIS:http://localhost:9200}
+      username: ${CRM_ES_USERNAME:}
+      password: ${CRM_ES_PASSWORD:}
+  agent:
+    workspace: ${CRM_AGENT_WORKSPACE:./data/agent-runtime}
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info,metrics

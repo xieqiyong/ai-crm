@@ -1,0 +1,286 @@
+<!DOCTYPE html>
+
+<html lang="zh-CN"><head>
+<meta charset="utf-8"/>
+<meta content="width=device-width, initial-scale=1.0" name="viewport"/>
+<title>智能营销管理系统 - 智能 CRM 登录</title>
+<script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<!-- Use predicted Tailwind config -->
+<script id="tailwind-config">
+      tailwind.config = {
+        darkMode: "class",
+        theme: {
+          extend: {
+            "colors": {
+                    "error": "#ba1a1a",
+                    "tertiary-fixed-dim": "#c0c1ff",
+                    "on-surface-variant": "#5a4136",
+                    "surface-bright": "#f8f9fa",
+                    "on-primary-fixed": "#351000",
+                    "on-error-container": "#93000a",
+                    "surface-container-high": "#e7e8e9",
+                    "outline-variant": "#e2bfb0",
+                    "surface-variant": "#e1e3e4",
+                    "background": "#f8f9fa",
+                    "primary": "#a04100",
+                    "secondary-fixed-dim": "#bdc7d9",
+                    "inverse-surface": "#2e3132",
+                    "on-primary": "#ffffff",
+                    "primary-fixed": "#ffdbcc",
+                    "inverse-primary": "#ffb693",
+                    "secondary": "#555f6f",
+                    "on-tertiary": "#ffffff",
+                    "on-error": "#ffffff",
+                    "primary-container": "#ff6b00",
+                    "on-background": "#191c1d",
+                    "on-tertiary-fixed-variant": "#2f2ebe",
+                    "surface": "#f8f9fa",
+                    "tertiary-container": "#8a8dff",
+                    "on-secondary-fixed": "#121c2a",
+                    "secondary-fixed": "#d9e3f6",
+                    "surface-dim": "#d9dadb",
+                    "on-primary-fixed-variant": "#7a3000",
+                    "surface-tint": "#a04100",
+                    "surface-container": "#edeeef",
+                    "on-tertiary-fixed": "#07006c",
+                    "surface-container-lowest": "#ffffff",
+                    "on-tertiary-container": "#1100ab",
+                    "on-secondary": "#ffffff",
+                    "on-secondary-container": "#596373",
+                    "on-primary-container": "#572000",
+                    "surface-container-highest": "#e1e3e4",
+                    "tertiary-fixed": "#e1e0ff",
+                    "outline": "#8e7164",
+                    "primary-fixed-dim": "#ffb693",
+                    "inverse-on-surface": "#f0f1f2",
+                    "error-container": "#ffdad6",
+                    "tertiary": "#494bd6",
+                    "on-surface": "#191c1d",
+                    "on-secondary-fixed-variant": "#3d4756",
+                    "surface-container-low": "#f3f4f5",
+                    "secondary-container": "#d6e0f3"
+            },
+            "borderRadius": {
+                    "DEFAULT": "0.25rem",
+                    "lg": "0.5rem",
+                    "xl": "0.75rem",
+                    "full": "9999px"
+            },
+            "spacing": {
+                    "stack-lg": "32px",
+                    "gutter": "16px",
+                    "stack-md": "16px",
+                    "container-padding": "24px",
+                    "base": "8px",
+                    "stack-sm": "8px"
+            },
+            "fontFamily": {
+                    "label-md": ["Inter"],
+                    "headline-lg-mobile": ["Inter"],
+                    "body-md": ["Inter"],
+                    "headline-lg": ["Inter"],
+                    "body-sm": ["Inter"],
+                    "body-lg": ["Inter"],
+                    "label-sm": ["Inter"],
+                    "headline-md": ["Inter"],
+                    "display-lg": ["Inter"]
+            },
+            "fontSize": {
+                    "label-md": ["14px", {"lineHeight": "16px", "fontWeight": "600"}],
+                    "headline-lg-mobile": ["24px", {"lineHeight": "32px", "fontWeight": "700"}],
+                    "body-md": ["16px", {"lineHeight": "24px", "fontWeight": "400"}],
+                    "headline-lg": ["32px", {"lineHeight": "40px", "letterSpacing": "-0.01em", "fontWeight": "700"}],
+                    "body-sm": ["14px", {"lineHeight": "20px", "fontWeight": "400"}],
+                    "body-lg": ["18px", {"lineHeight": "28px", "fontWeight": "400"}],
+                    "label-sm": ["12px", {"lineHeight": "14px", "fontWeight": "500"}],
+                    "headline-md": ["24px", {"lineHeight": "32px", "fontWeight": "600"}],
+                    "display-lg": ["48px", {"lineHeight": "56px", "letterSpacing": "-0.02em", "fontWeight": "700"}]
+            }
+          },
+        },
+      }
+    </script>
+<style>
+        body {
+            font-family: 'Inter', sans-serif;
+            background-color: #f8f9fa;
+        }
+        .glass-effect {
+            background: rgba(255, 255, 255, 0.7);
+            backdrop-filter: blur(20px);
+            -webkit-backdrop-filter: blur(20px);
+            border: 1px solid rgba(160, 65, 0, 0.1);
+        }
+        .ai-pulse {
+            box-shadow: 0 0 0 0 rgba(255, 107, 0, 0.4);
+            animation: pulse 2s infinite;
+        }
+        @keyframes pulse {
+            0% { box-shadow: 0 0 0 0 rgba(255, 107, 0, 0.4); }
+            70% { box-shadow: 0 0 0 15px rgba(255, 107, 0, 0); }
+            100% { box-shadow: 0 0 0 0 rgba(255, 107, 0, 0); }
+        }
+        .floating {
+            animation: floating 6s ease-in-out infinite;
+        }
+        @keyframes floating {
+            0% { transform: translateY(0px); }
+            50% { transform: translateY(-20px); }
+            100% { transform: translateY(0px); }
+        }
+    </style>
+</head>
+<body class="flex items-center justify-center min-h-screen">
+<div class="flex w-full h-screen overflow-hidden">
+<!-- Left Side: AI Visuals -->
+<section class="hidden lg:flex lg:w-3/5 bg-inverse-surface relative overflow-hidden items-center justify-center px-container-padding">
+<!-- Animated Background (Decorative) -->
+<div class="absolute inset-0 z-0 opacity-40">
+<div class="absolute top-[-10%] left-[-10%] w-[50%] h-[50%] bg-primary-container/30 blur-[120px] rounded-full"></div>
+<div class="absolute bottom-[-10%] right-[-10%] w-[40%] h-[40%] bg-tertiary-container/20 blur-[100px] rounded-full"></div>
+</div>
+<!-- Content Area -->
+<div class="relative z-10 w-full max-w-2xl text-center space-y-stack-lg">
+<div class="relative inline-block">
+<div class="w-24 h-24 bg-primary rounded-xl flex items-center justify-center mb-gutter mx-auto floating shadow-lg">
+<span class="material-symbols-outlined text-on-primary text-[48px]" style="font-variation-settings: 'FILL' 1;">auto_awesome</span>
+</div>
+<!-- Particle Decoration -->
+<div class="absolute -top-4 -right-4 w-12 h-12 glass-effect rounded-full flex items-center justify-center ai-pulse">
+<span class="material-symbols-outlined text-primary text-sm">trending_up</span>
+</div>
+</div>
+<h1 class="font-display-lg text-display-lg text-white tracking-tight">
+                    用 AI 智慧<br/>
+<span class="text-primary-container">赋能您的销售</span>
+</h1>
+<p class="font-body-lg text-body-lg text-secondary-fixed-dim max-w-lg mx-auto">
+                    智能营销管理系统整合了先进的机器学习能力，帮助高绩效团队洞察先机，加速增长，让每一笔交易都触手可及。
+                </p>
+<!-- Featured Card Bento Element -->
+<div class="grid grid-cols-2 gap-gutter mt-stack-lg text-left">
+<div class="glass-effect p-stack-md rounded-xl border-t-2 border-primary-container">
+<span class="material-symbols-outlined text-primary-container mb-2">insights</span>
+<h3 class="font-label-md text-label-md text-white">精准预测</h3>
+<p class="font-body-sm text-body-sm text-secondary-fixed-dim">AI 驱动的成交率预测模型。</p>
+</div>
+<div class="glass-effect p-stack-md rounded-xl">
+<span class="material-symbols-outlined text-tertiary-container mb-2">speed</span>
+<h3 class="font-label-md text-label-md text-white">流程加速</h3>
+<p class="font-body-sm text-body-sm text-secondary-fixed-dim">自动化的销售线索培育引擎。</p>
+</div>
+</div>
+</div>
+<!-- Absolute Image Background Elements -->
+<div class="absolute bottom-0 left-0 w-full p-gutter opacity-10 pointer-events-none">
+<div class="h-[400px] w-full rounded-t-3xl overflow-hidden grayscale contrast-150" data-alt="A futuristic, high-tech corporate office interior with glowing data nodes and holographic displays of sales metrics. The style is sleek, minimalist, and illuminated by vibrant orange and cool white lights, creating a high-performance enterprise atmosphere." style="background-image: url('https://lh3.googleusercontent.com/aida-public/AB6AXuCc7tl8tD-tu2D_CVf8ynKDhNHq6inCm7Zi22nia0_QSRHf8y4VUudfvFbOGDw-ltYeqQWSd-41RkXtdKo2Kxhb5-iOJ0dCn9FDiULgql5TrLh3-7JC26pSDEg0wBxn9oGMw8-Rkcn4ysTsXWwHx-p1v1WRAfFQ3dHh4QTH7oLVFpRGojx6iRS-vcqxT9Wgs1DBjRRCpBBQTuovC8ZXa-c6N6LSKPzD8x_DgR8P02vTefDSZImQ5q5D')"></div>
+</div>
+</section>
+<!-- Right Side: Login Form -->
+<main class="w-full lg:w-2/5 bg-surface flex items-center justify-center px-gutter md:px-container-padding relative">
+<div class="w-full max-w-md space-y-stack-lg">
+<!-- Brand Identity -->
+<div class="flex flex-col items-center lg:items-start text-center lg:text-left">
+<div class="flex items-center gap-2 mb-stack-md">
+<div class="w-10 h-10 bg-primary-container rounded-lg flex items-center justify-center shadow-sm">
+<span class="material-symbols-outlined text-on-primary-container text-2xl" style="font-variation-settings: 'FILL' 1;">rocket_launch</span>
+</div>
+<span class="font-headline-md text-headline-md text-primary font-bold">智能营销管理系统</span>
+</div>
+<h2 class="font-headline-lg text-headline-lg text-on-surface">欢迎回来</h2>
+<p class="font-body-md text-body-md text-on-secondary-container mt-1">登录以管理您的销售线索和商机</p>
+</div>
+<!-- Login Form -->
+<form action="#" class="space-y-stack-md" method="POST">
+<!-- Email Input -->
+<div class="space-y-2">
+<label class="font-label-md text-label-md text-on-surface-variant block" for="email">电子邮箱 / 用户名</label>
+<div class="relative">
+<span class="material-symbols-outlined absolute left-3 top-1/2 -translate-y-1/2 text-secondary">mail</span>
+<input class="w-full pl-10 pr-4 py-3 bg-white border border-outline-variant rounded-lg focus:ring-2 focus:ring-primary-container/20 focus:border-primary-container transition-all outline-none font-body-md text-body-md" id="email" name="email" placeholder="example@marketing-crm.com" required="" type="email"/>
+</div>
+</div>
+<!-- Password Input -->
+<div class="space-y-2">
+<div class="flex justify-between items-center">
+<label class="font-label-md text-label-md text-on-surface-variant" for="password">密码</label>
+<a class="font-label-sm text-label-sm text-primary hover:underline" href="#">忘记密码？</a>
+</div>
+<div class="relative">
+<span class="material-symbols-outlined absolute left-3 top-1/2 -translate-y-1/2 text-secondary">lock</span>
+<input class="w-full pl-10 pr-12 py-3 bg-white border border-outline-variant rounded-lg focus:ring-2 focus:ring-primary-container/20 focus:border-primary-container transition-all outline-none font-body-md text-body-md" id="password" name="password" placeholder="请输入您的密码" required="" type="password"/>
+<button class="absolute right-3 top-1/2 -translate-y-1/2 text-secondary hover:text-primary" type="button">
+<span class="material-symbols-outlined text-[20px]">visibility</span>
+</button>
+</div>
+</div>
+<!-- Remember Me -->
+<div class="flex items-center">
+<input class="w-4 h-4 text-primary-container border-outline rounded focus:ring-primary" id="remember" type="checkbox"/>
+<label class="ml-2 font-body-sm text-body-sm text-on-secondary-container" for="remember">保持登录状态</label>
+</div>
+<!-- Submit Button -->
+<button class="w-full bg-primary-container text-white font-label-md text-label-md py-4 rounded-lg shadow-lg hover:bg-primary transition-all active:scale-[0.98] focus:ring-4 focus:ring-primary-fixed-dim/50" type="submit">
+                        立即登录
+                    </button>
+</form>
+<!-- Divider -->
+<div class="relative py-4">
+<div class="absolute inset-0 flex items-center">
+<div class="w-full border-t border-outline-variant"></div>
+</div>
+<div class="relative flex justify-center text-label-sm text-label-sm uppercase">
+<span class="bg-surface px-4 text-on-secondary-container">或</span>
+</div>
+</div>
+<!-- Secondary Actions -->
+<div class="grid grid-cols-2 gap-gutter">
+<button class="flex items-center justify-center gap-2 py-3 border border-outline-variant rounded-lg font-label-md text-label-md text-on-surface hover:bg-surface-container-low transition-colors">
+<span class="material-symbols-outlined text-primary">key</span>
+                        SSO 登录
+                    </button>
+<button class="flex items-center justify-center gap-2 py-3 border border-outline-variant rounded-lg font-label-md text-label-md text-on-surface hover:bg-surface-container-low transition-colors">
+<span class="material-symbols-outlined text-primary">qr_code_scanner</span>
+                        扫码登录
+                    </button>
+</div>
+<!-- Footer -->
+<p class="text-center font-body-sm text-body-sm text-on-secondary-container">
+                    还没有账号？ 
+                    <a class="text-primary font-bold hover:underline" href="#">联系管理员</a>
+</p>
+<!-- Bottom Footer (Copyright) -->
+<footer class="absolute bottom-8 left-0 right-0 flex justify-center gap-gutter text-on-secondary-container font-label-sm text-label-sm">
+<span>© 2026 智能营销管理系统</span>
+<a class="hover:text-primary" href="#">隐私政策</a>
+<a class="hover:text-primary" href="#">服务条款</a>
+</footer>
+</div>
+</main>
+</div>
+<!-- Micro-interaction Script -->
+<script>
+        document.addEventListener('DOMContentLoaded', () => {
+            const formInputs = document.querySelectorAll('input');
+            
+            formInputs.forEach(input => {
+                input.addEventListener('focus', () => {
+                    const icon = input.previousElementSibling;
+                    if (icon && icon.classList.contains('material-symbols-outlined')) {
+                        icon.classList.add('text-primary');
+                    }
+                });
+                
+                input.addEventListener('blur', () => {
+                    const icon = input.previousElementSibling;
+                    if (icon && icon.classList.contains('material-symbols-outlined')) {
+                        icon.classList.remove('text-primary');
+                    }
+                });
+            });
+        });
+    </script>
+</body></html>
