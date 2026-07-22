@@ -20,6 +20,7 @@ export const leadApi = {
   page: (payload) => page('/api/lead', payload),
   detail: (id) => detail('/api/lead', id),
   save: (payload) => save('/api/lead', payload),
+  convertToCustomer: (payload) => request('/api/lead/convert-to-customer', { method: 'POST', body: JSON.stringify(payload) }),
   delete: (id) => remove('/api/lead', id),
 }
 

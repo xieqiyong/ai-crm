@@ -42,6 +42,16 @@ http://192.168.50.96:8888/xieqy/crm.git
 branch  Git 分支，默认 main
 ```
 
+流水线固定使用：
+
+```text
+JAVA_HOME=/root/liusu/jdk-21.0.1
+JDK_VERSION=21
+NODE_VERSION=22.22.2
+NODE_ENV=production
+GIT_CREDENTIALS_ID=liusu
+```
+
 流水线产物会归档到 Jenkins，同时复制到：
 
 ```text
@@ -60,13 +70,27 @@ branch  Git 分支，默认 main
 离线包输出位置：
 
 ```text
-deploy/output/intelligent-marketing-crm-版本号.tar.gz
+deploy/output/crm-分支-release.tar.gz
 ```
 
-如果需要指定版本号：
+Jenkins 默认会输出类似：
+
+```text
+crm-main-release.tar.gz
+crm-dev-release.tar.gz
+crm-feature-ai-release.tar.gz
+```
+
+如果需要指定内部镜像版本号：
 
 ```bash
 CRM_VERSION=1.0.0 bash deploy/scripts/build-offline-package.sh
+```
+
+如果只想指定最外层压缩包名称：
+
+```bash
+CRM_PACKAGE_FILE_NAME=crm-main-release.tar.gz bash deploy/scripts/build-offline-package.sh
 ```
 
 如果需要 Jenkins 注入生产密钥：
@@ -91,8 +115,8 @@ bash deploy/scripts/build-offline-package.sh
 上传离线包到服务器后执行：
 
 ```bash
-tar -xzf intelligent-marketing-crm-版本号.tar.gz
-cd intelligent-marketing-crm-版本号
+tar -xzf crm-main-release.tar.gz
+cd intelligent-marketing-crm-内部版本号
 bash scripts/deploy-offline.sh
 ```
 
@@ -118,7 +142,7 @@ http://服务器IP/
 离线包解压后结构如下：
 
 ```text
-intelligent-marketing-crm-版本号
+intelligent-marketing-crm-内部版本号
 ├── .env
 ├── VERSION
 ├── docker-compose.yml
@@ -162,7 +186,7 @@ uploads
 上传新的离线包，解压后执行：
 
 ```bash
-cd intelligent-marketing-crm-新版本号
+cd intelligent-marketing-crm-新内部版本号
 bash scripts/deploy-offline.sh
 ```
 

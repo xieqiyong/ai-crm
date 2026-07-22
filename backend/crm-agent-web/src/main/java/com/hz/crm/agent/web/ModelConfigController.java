@@ -1,5 +1,7 @@
 package com.hz.crm.agent.web;
 
+import com.hz.crm.agent.runtime.dto.ModelConfigDebugRequest;
+import com.hz.crm.agent.runtime.dto.ModelConfigDebugResponse;
 import com.hz.crm.agent.runtime.dto.ModelConfigIdRequest;
 import com.hz.crm.agent.runtime.dto.ModelConfigRequest;
 import com.hz.crm.agent.runtime.dto.ModelConfigResponse;
@@ -10,7 +12,6 @@ import com.hz.crm.common.api.ApiResult;
 import java.util.List;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.security.access.prepost.PreAuthorize;
-import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
@@ -22,12 +23,6 @@ public class ModelConfigController {
 
     @Autowired
     private ModelConfigService modelConfigService;
-
-    @GetMapping("/list")
-    @PreAuthorize("hasAuthority('*') or hasAuthority('crm:model:view') or hasAuthority('crm:model:manage')")
-    public ApiResult<List<ModelConfigResponse>> list(JwtPrincipal principal) {
-        return ApiResult.ok(modelConfigService.list(principal.getTenantId()));
-    }
 
     @PostMapping("/list")
     @PreAuthorize("hasAuthority('*') or hasAuthority('crm:model:view') or hasAuthority('crm:model:manage')")
@@ -58,5 +53,12 @@ public class ModelConfigController {
     @PreAuthorize("hasAuthority('*') or hasAuthority('crm:model:view') or hasAuthority('crm:model:manage')")
     public ApiResult<ModelConfigStatusResponse> status(@RequestBody ModelConfigIdRequest request, JwtPrincipal principal) {
         return ApiResult.ok(modelConfigService.status(principal.getTenantId(), request));
+    }
+
+    @PostMapping("/debug")
+    @PreAuthorize("hasAuthority('*') or hasAuthority('crm:model:manage')")
+    public ApiResult<ModelConfigDebugResponse> debug(
+            @RequestBody ModelConfigDebugRequest request, JwtPrincipal principal) {
+        return ApiResult.ok(modelConfigService.debug(principal.getTenantId(), request));
     }
 }

@@ -11,13 +11,18 @@ import com.hz.crm.application.lead.dto.LeadSaveRequest;
 import com.hz.crm.common.api.PageData;
 import com.hz.crm.common.exception.BusinessException;
 import com.hz.crm.common.id.SnowflakeIdGenerator;
+import com.hz.crm.common.user.UserNameResolver;
 import com.hz.crm.domain.channel.ChannelRecordEntity;
 import com.hz.crm.domain.channel.ChannelStatus;
 import com.hz.crm.domain.channel.ChannelType;
 import com.hz.crm.domain.channel.repository.ChannelRecordRepository;
 import com.hz.crm.domain.lead.LeadStatus;
 import java.util.ArrayList;
+import java.util.HashSet;
 import java.util.List;
+import java.util.Locale;
+import java.util.Map;
+import java.util.Set;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageRequest;
@@ -38,6 +43,9 @@ public class ChannelApplicationService {
     @Autowired
     private SnowflakeIdGenerator snowflakeIdGenerator;
 
+    @Autowired(required = false)
+    private UserNameResolver userNameResolver;
+
     @Transactional(readOnly = true)
     public PageData<ChannelResponse> page(String tenantId, Long userId, String dataScope, ChannelQuery query) {
         ChannelQuery safeQuery = query == null ? new ChannelQuery() : query;
@@ -47,7 +55,7 @@ public class ChannelApplicationService {
         Page<ChannelRecordEntity> page = channelRecordRepository.search(
                 tenantId,
                 ownerId,
-                trimToNull(safeQuery.getKeyword()),
+                likeKeyword(safeQuery.getKeyword()),
                 safeQuery.getStatus(),
                 safeQuery.getChannelType(),
                 pageRequest);
@@ -55,7 +63,17 @@ public class ChannelApplicationService {
         for (ChannelRecordEntity entity : page.getContent()) {
             records.add(toResponse(entity));
         }
+        fillOwnerNames(tenantId, records);
         return PageData.of(page.getTotalElements(), safeQuery.safePageNo(), safeQuery.safePageSize(), records);
+    }
+
+    @Transactional(readOnly = true)
+    public ChannelResponse detail(String tenantId, Long userId, String dataScope, Long id) {
+        ChannelRecordEntity entity = findOne(tenantId, id);
+        checkDataScope(userId, dataScope, entity.getOwnerId());
+        ChannelResponse response = toResponse(entity);
+        fillOwnerName(tenantId, response);
+        return response;
     }
 
     @Transactional
@@ -74,15 +92,25 @@ public class ChannelApplicationService {
             entity = findOne(tenantId, request.getId());
             checkDataScope(operatorId, dataScope, entity.getOwnerId());
         }
-        entity.setTitle(request.getTitle());
+        entity.setTitle(trimToNull(request.getTitle()));
         entity.setChannelType(request.getChannelType() == null ? ChannelType.MANUAL : request.getChannelType());
-        entity.setSource(request.getSource());
-        entity.setContactName(request.getContactName());
-        entity.setCompanyName(request.getCompanyName());
-        entity.setPhone(request.getPhone());
-        entity.setEmail(request.getEmail());
-        entity.setRemark(request.getRemark());
-        return toResponse(channelRecordRepository.save(entity));
+        entity.setSource(trimToNull(request.getSource()));
+        entity.setContactName(trimToNull(request.getContactName()));
+        entity.setCompanyName(trimToNull(request.getCompanyName()));
+        entity.setPhone(trimToNull(request.getPhone()));
+        entity.setEmail(trimToNull(request.getEmail()));
+        entity.setRemark(trimToNull(request.getRemark()));
+        ChannelResponse response = toResponse(channelRecordRepository.save(entity));
+        fillOwnerName(tenantId, response);
+        return response;
+    }
+
+    @Transactional
+    public void delete(String tenantId, Long userId, String dataScope, Long id) {
+        ChannelRecordEntity entity = findOne(tenantId, id);
+        checkDataScope(userId, dataScope, entity.getOwnerId());
+        entity.setDeleted(true);
+        channelRecordRepository.save(entity);
     }
 
     @Transactional
@@ -97,17 +125,19 @@ public class ChannelApplicationService {
         entity.setTitle(resolveMediaTitle(request));
         entity.setChannelType(resolveMediaType(request));
         entity.setStatus(ChannelStatus.WAITING_TRANSCRIPTION);
-        entity.setSource(request.getSource());
-        entity.setContactName(request.getContactName());
-        entity.setCompanyName(request.getCompanyName());
-        entity.setPhone(request.getPhone());
-        entity.setEmail(request.getEmail());
-        entity.setMediaFileName(request.getMediaFileName());
-        entity.setMediaContentType(request.getMediaContentType());
+        entity.setSource(trimToNull(request.getSource()));
+        entity.setContactName(trimToNull(request.getContactName()));
+        entity.setCompanyName(trimToNull(request.getCompanyName()));
+        entity.setPhone(trimToNull(request.getPhone()));
+        entity.setEmail(trimToNull(request.getEmail()));
+        entity.setMediaFileName(trimToNull(request.getMediaFileName()));
+        entity.setMediaContentType(trimToNull(request.getMediaContentType()));
         entity.setMediaSize(request.getMediaSize());
-        entity.setMediaStorageKey(request.getMediaStorageKey());
-        entity.setRemark(request.getRemark());
-        return toResponse(channelRecordRepository.save(entity));
+        entity.setMediaStorageKey(trimToNull(request.getMediaStorageKey()));
+        entity.setRemark(trimToNull(request.getRemark()));
+        ChannelResponse response = toResponse(channelRecordRepository.save(entity));
+        fillOwnerName(tenantId, response);
+        return response;
     }
 
     @Transactional
@@ -116,7 +146,9 @@ public class ChannelApplicationService {
         checkDataScope(userId, dataScope, entity.getOwnerId());
         checkNotPromoted(entity);
         entity.setStatus(ChannelStatus.WAITING_TRANSCRIPTION);
-        return toResponse(channelRecordRepository.save(entity));
+        ChannelResponse response = toResponse(channelRecordRepository.save(entity));
+        fillOwnerName(tenantId, response);
+        return response;
     }
 
     @Transactional
@@ -125,7 +157,9 @@ public class ChannelApplicationService {
         checkDataScope(userId, dataScope, entity.getOwnerId());
         checkNotPromoted(entity);
         entity.setStatus(ChannelStatus.WAITING_AI_ANALYSIS);
-        return toResponse(channelRecordRepository.save(entity));
+        ChannelResponse response = toResponse(channelRecordRepository.save(entity));
+        fillOwnerName(tenantId, response);
+        return response;
     }
 
     @Transactional
@@ -145,13 +179,15 @@ public class ChannelApplicationService {
         leadRequest.setPhone(entity.getPhone());
         leadRequest.setEmail(entity.getEmail());
         leadRequest.setSource(resolveLeadSource(entity));
-        leadRequest.setStatus(LeadStatus.NEW);
+        leadRequest.setStatus(LeadStatus.recommended());
         leadRequest.setOwnerId(request.getOwnerId() == null ? entity.getOwnerId() : request.getOwnerId());
         leadRequest.setRemark(resolveLeadRemark(entity));
-        LeadResponse lead = leadApplicationService.save(tenantId, operatorId, leadRequest);
+        LeadResponse lead = leadApplicationService.save(tenantId, operatorId, dataScope, leadRequest);
         entity.setLeadId(lead.getId());
         entity.setStatus(ChannelStatus.PROMOTED);
-        return toResponse(channelRecordRepository.save(entity));
+        ChannelResponse response = toResponse(channelRecordRepository.save(entity));
+        fillOwnerName(tenantId, response);
+        return response;
     }
 
     private ChannelRecordEntity findOne(String tenantId, Long id) {
@@ -240,6 +276,11 @@ public class ChannelApplicationService {
         return value.trim();
     }
 
+    private String likeKeyword(String value) {
+        String keyword = trimToNull(value);
+        return keyword == null ? null : "%" + keyword.toLowerCase(Locale.ROOT) + "%";
+    }
+
     private ChannelResponse toResponse(ChannelRecordEntity entity) {
         ChannelResponse response = new ChannelResponse();
         response.setId(entity.getId());
@@ -265,5 +306,32 @@ public class ChannelApplicationService {
         response.setCreatedAt(entity.getCreatedAt());
         response.setUpdatedAt(entity.getUpdatedAt());
         return response;
+    }
+
+    private void fillOwnerName(String tenantId, ChannelResponse response) {
+        List<ChannelResponse> records = new ArrayList<ChannelResponse>();
+        records.add(response);
+        fillOwnerNames(tenantId, records);
+    }
+
+    private void fillOwnerNames(String tenantId, List<ChannelResponse> records) {
+        if (userNameResolver == null || records == null || records.isEmpty()) {
+            return;
+        }
+        Set<Long> ownerIds = new HashSet<Long>();
+        for (ChannelResponse response : records) {
+            if (response.getOwnerId() != null) {
+                ownerIds.add(response.getOwnerId());
+            }
+        }
+        if (ownerIds.isEmpty()) {
+            return;
+        }
+        Map<Long, String> names = userNameResolver.resolve(tenantId, ownerIds);
+        for (ChannelResponse response : records) {
+            if (response.getOwnerId() != null) {
+                response.setOwnerName(names.get(response.getOwnerId()));
+            }
+        }
     }
 }

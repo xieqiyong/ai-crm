@@ -1,6 +1,8 @@
 package com.hz.crm.application.dashboard.dto;
 
 import java.math.BigDecimal;
+import java.util.ArrayList;
+import java.util.List;
 import lombok.Getter;
 import lombok.Setter;
 
@@ -14,5 +16,17 @@ public class DashboardOverviewResponse {
 
     private long opportunityCount;
 
+    private long channelCount;
+
     private BigDecimal opportunityAmount = BigDecimal.ZERO;
+
+    private BigDecimal wonAmount = BigDecimal.ZERO;
+
+    private List<DashboardCountItem> leadStatusCounts = new ArrayList<DashboardCountItem>();
+
+    private List<DashboardCountItem> customerStatusCounts = new ArrayList<DashboardCountItem>();
+
+    private List<DashboardCountItem> opportunityStageCounts = new ArrayList<DashboardCountItem>();
+
+    private List<DashboardCountItem> channelStatusCounts = new ArrayList<DashboardCountItem>();
 }

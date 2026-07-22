@@ -18,13 +18,13 @@ public interface ChannelRecordRepository extends JpaRepository<ChannelRecordEnti
             + "and (:ownerId is null or c.ownerId = :ownerId) "
             + "and (:status is null or c.status = :status) "
             + "and (:channelType is null or c.channelType = :channelType) "
-            + "and (:keyword is null or :keyword = '' "
-            + "or lower(c.title) like lower(concat('%', :keyword, '%')) "
-            + "or lower(coalesce(c.source, '')) like lower(concat('%', :keyword, '%')) "
-            + "or lower(coalesce(c.contactName, '')) like lower(concat('%', :keyword, '%')) "
-            + "or lower(coalesce(c.companyName, '')) like lower(concat('%', :keyword, '%')) "
-            + "or lower(coalesce(c.phone, '')) like lower(concat('%', :keyword, '%')) "
-            + "or lower(coalesce(c.email, '')) like lower(concat('%', :keyword, '%')))")
+            + "and (:keyword is null "
+            + "or lower(coalesce(c.title, '')) like :keyword "
+            + "or lower(coalesce(c.source, '')) like :keyword "
+            + "or lower(coalesce(c.contactName, '')) like :keyword "
+            + "or lower(coalesce(c.companyName, '')) like :keyword "
+            + "or lower(coalesce(c.phone, '')) like :keyword "
+            + "or lower(coalesce(c.email, '')) like :keyword)")
     Page<ChannelRecordEntity> search(
             @Param("tenantId") String tenantId,
             @Param("ownerId") Long ownerId,
@@ -34,4 +34,12 @@ public interface ChannelRecordRepository extends JpaRepository<ChannelRecordEnti
             Pageable pageable);
 
     Optional<ChannelRecordEntity> findByIdAndTenantIdAndDeletedFalse(Long id, String tenantId);
+
+    long countByTenantIdAndDeletedFalse(String tenantId);
+
+    long countByTenantIdAndOwnerIdAndDeletedFalse(String tenantId, Long ownerId);
+
+    long countByTenantIdAndStatusAndDeletedFalse(String tenantId, ChannelStatus status);
+
+    long countByTenantIdAndOwnerIdAndStatusAndDeletedFalse(String tenantId, Long ownerId, ChannelStatus status);
 }

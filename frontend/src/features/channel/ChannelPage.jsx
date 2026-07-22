@@ -10,10 +10,12 @@ import {
   RefreshCw,
   Search,
   Sparkles,
+  Trash2,
   Upload,
 } from 'lucide-react'
 import { api } from '../../api'
-import { Badge, Button, Card, Field, Modal, PageHeader } from '../../components'
+import { Badge, Button, Card, ConfirmDialog, Field, Modal, PageHeader, useConfirmDialog } from '../../components'
+import { ownerName } from '../../hooks/useOwnerOptions'
 
 const typeOptions = [
   { value: '', label: '全部类型' },
@@ -118,6 +120,7 @@ export function ChannelPage({ can, notify }) {
   const canManage = can('crm:channel:manage')
   const canMedia = can('crm:channel:media') || canManage
   const canPromote = can('crm:channel:promote')
+  const { confirm, dialogProps } = useConfirmDialog()
 
   const [query, setQuery] = useState({
     keyword: '',
@@ -155,6 +158,35 @@ export function ChannelPage({ can, notify }) {
   }, [])
 
   const refreshFirstPage = () => load({ ...query, pageNo: 1 })
+
+  const openDetail = async (row) => {
+    setSelected(row)
+    try {
+      setSelected(await api.channel.detail(row.id))
+    } catch (err) {
+      notify(err.message || '渠道详情加载失败', 'info')
+    }
+  }
+
+  const deleteChannel = async (row) => {
+    const confirmed = await confirm({
+      title: '删除渠道',
+      description: '删除后该渠道不会再出现在列表和统计中，请确认当前操作。',
+      target: row.title,
+      confirmText: '确认删除',
+    })
+    if (!confirmed) return
+    try {
+      await api.channel.delete(row.id)
+      notify('渠道已删除', 'success')
+      if (selected?.id === row.id) {
+        setSelected(null)
+      }
+      load({ ...query, pageNo: 1 })
+    } catch (err) {
+      notify(err.message || '渠道删除失败', 'info')
+    }
+  }
 
   const handlePrepareTranscription = async (row) => {
     try {
@@ -248,10 +280,11 @@ export function ChannelPage({ can, notify }) {
           totalPages={totalPages}
           onLoad={load}
           onEdit={setEditing}
-          onSelect={setSelected}
+          onSelect={openDetail}
           onPrepareTranscription={handlePrepareTranscription}
           onPrepareAnalysis={handlePrepareAnalysis}
           onPromote={handlePromote}
+          onDelete={deleteChannel}
         />
 
         <ChannelReserveCard />
@@ -273,13 +306,16 @@ export function ChannelPage({ can, notify }) {
       <ChannelDetailModal
         open={Boolean(selected)}
         data={selected}
+        canManage={canManage}
         canMedia={canMedia}
         canPromote={canPromote}
         onClose={() => setSelected(null)}
         onPrepareTranscription={handlePrepareTranscription}
         onPrepareAnalysis={handlePrepareAnalysis}
         onPromote={handlePromote}
+        onDelete={deleteChannel}
       />
+      <ConfirmDialog {...dialogProps} />
     </div>
   )
 }
@@ -351,6 +387,7 @@ function ChannelTable({
   onPrepareTranscription,
   onPrepareAnalysis,
   onPromote,
+  onDelete,
 }) {
   return (
     <Card className="table-card channel-table-card">
@@ -363,6 +400,7 @@ function ChannelTable({
               <th>类型</th>
               <th>文件</th>
               <th>状态</th>
+              <th>负责人</th>
               <th>创建时间</th>
               <th>操作</th>
             </tr>
@@ -380,6 +418,7 @@ function ChannelTable({
                 onPrepareTranscription={onPrepareTranscription}
                 onPrepareAnalysis={onPrepareAnalysis}
                 onPromote={onPromote}
+                onDelete={onDelete}
               />
             ))}
           </tbody>
@@ -401,9 +440,9 @@ function ChannelTable({
         )}
       </div>
 
-      <div className="table-footer">
-        <span>共 {page.total || 0} 条，当前第 {currentPage} / {totalPages} 页</span>
-        <div className="pagination">
+      <div className="table-footer channel-table-footer">
+        <span className="channel-page-info">共 {page.total || 0} 条，当前第 {currentPage} / {totalPages} 页</span>
+        <div className="pagination channel-pagination">
           <button
             disabled={currentPage <= 1}
             onClick={() => onLoad({ ...query, pageNo: currentPage - 1 })}
@@ -433,6 +472,7 @@ function ChannelTableRow({
   onPrepareTranscription,
   onPrepareAnalysis,
   onPromote,
+  onDelete,
 }) {
   const promoted = Boolean(row.leadId)
 
@@ -465,6 +505,7 @@ function ChannelTableRow({
           {statusText[row.status] || row.status}
         </Badge>
       </td>
+      <td>{ownerName(row)}</td>
       <td>{formatDateTime(row.createdAt)}</td>
       <td onClick={(event) => event.stopPropagation()}>
         <div className="channel-actions">
@@ -474,6 +515,11 @@ function ChannelTableRow({
           {canManage && (
             <button className="text-action" onClick={() => onEdit(toEditForm(row))}>
               编辑
+            </button>
+          )}
+          {canManage && (
+            <button className="text-action danger" onClick={() => onDelete(row)}>
+              删除
             </button>
           )}
           <button
@@ -735,12 +781,14 @@ function ChannelImportModal({ open, onClose, notify, reload }) {
 function ChannelDetailModal({
   open,
   data,
+  canManage,
   canMedia,
   canPromote,
   onClose,
   onPrepareTranscription,
   onPrepareAnalysis,
   onPromote,
+  onDelete,
 }) {
   if (!data) return null
   const promoted = Boolean(data.leadId)
@@ -766,6 +814,11 @@ function ChannelDetailModal({
       <Button disabled={!canPromote || promoted} icon={ArrowUpRight} onClick={() => onPromote(data)}>
         晋升线索
       </Button>
+      {canManage && (
+        <Button variant="ghost" icon={Trash2} onClick={() => onDelete(data)}>
+          删除
+        </Button>
+      )}
     </>
   )
 
@@ -783,6 +836,7 @@ function ChannelDetailModal({
         <DetailItem label="音视频文件" value={data.mediaFileName} />
         <DetailItem label="文件大小" value={formatSize(data.mediaSize)} />
         <DetailItem label="线索ID" value={data.leadId} />
+        <DetailItem label="负责人" value={ownerName(data)} />
         <DetailItem label="创建时间" value={formatDateTime(data.createdAt)} />
       </div>
       <TextBlock label="备注" value={data.remark || '暂无备注'} />

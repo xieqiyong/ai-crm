@@ -8,7 +8,7 @@ import lombok.Setter;
 @Setter
 public class ModelConfigResponse {
 
-    private Long id;
+    private String id;
 
     private String provider;
 

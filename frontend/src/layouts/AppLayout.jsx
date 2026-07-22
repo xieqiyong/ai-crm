@@ -1,10 +1,33 @@
 import { useState } from 'react'
 import {
   Bell, Bot, ChevronDown, HelpCircle, LogOut, Menu, Search, ShieldCheck,
-  Sparkles, Target, X, Zap,
+  Sparkles, X, Zap,
 } from 'lucide-react'
-import { Badge, BrandLogo, Button, Card } from '../components'
+import { Badge, BrandLogo, Card } from '../components'
 import { backendAddressLabel } from '../config/env'
+
+function formatUsage(user) {
+  const raw = user?.usagePercent
+    ?? user?.aiUsagePercent
+    ?? user?.quotaUsagePercent
+    ?? user?.usageRate
+  if (raw === undefined || raw === null || raw === '') return '--'
+  const numberValue = Number(raw)
+  if (!Number.isFinite(numberValue)) return String(raw)
+  const percent = numberValue <= 1 ? numberValue * 100 : numberValue
+  return `${Math.max(0, percent).toFixed(percent % 1 === 0 ? 0 : 1)}%`
+}
+
+function resolveUnreadCount(user) {
+  const raw = user?.unreadNotificationCount
+    ?? user?.notificationUnreadCount
+    ?? user?.unreadMessageCount
+    ?? user?.noticeUnreadCount
+    ?? 0
+  const numberValue = Number(raw)
+  if (!Number.isFinite(numberValue)) return 0
+  return Math.max(0, Math.floor(numberValue))
+}
 
 export function AppLayout({
   children,
@@ -26,6 +49,10 @@ export function AppLayout({
     onNavigate(next)
     setMobileOpen(false)
   }
+  const activeRouteKey = String(routeKey || '').startsWith('customers/detail/') ? 'customers' : routeKey
+  const usageText = formatUsage(currentUser)
+  const unreadCount = resolveUnreadCount(currentUser)
+  const unreadBadge = unreadCount > 99 ? '99+' : String(unreadCount)
 
   return (
     <div className="app-shell">
@@ -40,7 +67,7 @@ export function AppLayout({
               <div className="nav-group" key={group.label}>
                 <div className="nav-label">{group.label}</div>
                 {visible.map(({ key, label, icon: Icon }) => (
-                  <button className={`nav-item ${routeKey === key ? 'active' : ''}`} key={key} onClick={() => go(key)}>
+                  <button className={`nav-item ${activeRouteKey === key ? 'active' : ''}`} key={key} onClick={() => go(key)}>
                     <Icon size={19} />
                     <span>{label}</span>
                     {key === 'assistant' && <i className="nav-live" />}
@@ -51,15 +78,25 @@ export function AppLayout({
           })}
         </nav>
         <div className="sidebar-foot">
-          <div className="workspace-meter">
-            <span><Zap size={14} /> AI 用量</span><b>68%</b>
-            <div><i /></div>
+          <div className="sidebar-profile-wrap">
+            <button className="sidebar-profile-button" onClick={() => setProfileOpen(!profileOpen)}>
+              <span className="avatar">{currentRole.name.slice(0, 1)}</span>
+              <span className="sidebar-profile-copy">
+                <strong>{currentRole.name}</strong>
+                <small>{currentRole.label}</small>
+              </span>
+              <span className="usage-pill"><Zap size={12} />AI用量 {usageText}</span>
+              <ChevronDown size={14} />
+            </button>
+            {profileOpen && (
+              <div className="profile-menu sidebar-profile-menu">
+                <div className="profile-menu-head">
+                  <strong>{currentUser.username}</strong>
+                </div>
+                <button className="logout" onClick={onLogout}><LogOut size={16} />退出登录</button>
+              </div>
+            )}
           </div>
-          {can('crm:lead:create') && (
-            <Button icon={Target} onClick={() => { go('leads'); onNotify('已打开线索创建入口') }}>
-              新建线索
-            </Button>
-          )}
         </div>
       </aside>
 
@@ -69,25 +106,15 @@ export function AppLayout({
           <div className="global-search"><Search size={18} /><input aria-label="全局搜索" placeholder="搜索线索、客户或商机…" /></div>
           <div className="topbar-actions">
             {can('crm:assistant:use') && <button className="ai-top-button" onClick={() => setAssistantOpen(true)}><Sparkles size={17} />AI 洞察</button>}
-            <button className="icon-button notification-button" onClick={() => onNotify('暂无新的未读通知', 'info')} aria-label="通知"><Bell size={19} /><i /></button>
+            <button
+              className="icon-button notification-button"
+              onClick={() => onNotify(unreadCount > 0 ? `有 ${unreadCount} 条未读消息` : '暂无未读消息', 'info')}
+              aria-label={`通知，${unreadCount} 条未读`}
+            >
+              <Bell size={19} />
+              <span className="notification-count">{unreadBadge}</span>
+            </button>
             <button className="icon-button hide-mobile" onClick={() => onNotify('帮助中心正在完善中', 'info')} aria-label="帮助"><HelpCircle size={19} /></button>
-            <div className="profile-wrap">
-              <button className="profile-button" onClick={() => setProfileOpen(!profileOpen)}>
-                <span className="avatar">{currentRole.name.slice(0, 1)}</span>
-                <span className="profile-copy"><strong>{currentRole.name}</strong><small>{currentRole.label}</small></span>
-                <ChevronDown size={15} />
-              </button>
-              {profileOpen && (
-                <div className="profile-menu">
-                  <div className="profile-menu-head">
-                    <strong>{currentUser.username}</strong>
-                    <small>租户：{currentUser.tenantId} · 数据权限：{currentRole.label}</small>
-                    <small>后台：{backendAddressLabel()}</small>
-                  </div>
-                  <button className="logout" onClick={onLogout}><LogOut size={16} />退出登录</button>
-                </div>
-              )}
-            </div>
           </div>
         </header>
         <main className="content">{children}</main>

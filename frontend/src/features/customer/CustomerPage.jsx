@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react'
 import {
+  ArrowUpRight,
   Building2,
   CalendarDays,
   Edit2,
@@ -13,19 +14,16 @@ import {
   X,
 } from 'lucide-react'
 import { api } from '../../api'
-import { Badge, Button, Card, Field, Modal, PageHeader } from '../../components'
-
-const levelText = {
-  NORMAL: '普通客户',
-  IMPORTANT: '重点客户',
-  STRATEGIC: '战略客户',
-}
-
-const levelTone = {
-  NORMAL: 'neutral',
-  IMPORTANT: 'warning',
-  STRATEGIC: 'success',
-}
+import { Badge, Button, Card, ConfirmDialog, Field, Modal, PageHeader, useConfirmDialog } from '../../components'
+import {
+  customerLevelText,
+  customerLevelTone,
+  customerStatusOptions,
+  customerStatusText,
+  customerStatusTone,
+  recommendedCustomerStatus,
+} from '../../models/crmStatus'
+import { ownerName, ownerOptionLabel, useOwnerOptions } from '../../hooks/useOwnerOptions'
 
 const emptyPage = {
   total: 0,
@@ -41,6 +39,7 @@ const emptyForm = {
   contactPhone: '',
   contactEmail: '',
   level: 'NORMAL',
+  status: recommendedCustomerStatus,
   ownerId: '',
   remark: '',
 }
@@ -57,6 +56,7 @@ function compactQuery(query) {
     pageNo: query.pageNo || 1,
     pageSize: query.pageSize || 20,
     keyword: query.keyword || undefined,
+    status: query.status || undefined,
   }
 }
 
@@ -69,6 +69,7 @@ function toForm(row) {
     contactPhone: row.contactPhone || '',
     contactEmail: row.contactEmail || '',
     level: row.level || 'NORMAL',
+    status: row.status || recommendedCustomerStatus,
     ownerId: row.ownerId || '',
     remark: row.remark || '',
   }
@@ -83,15 +84,18 @@ function toPayload(form) {
     contactPhone: form.contactPhone || null,
     contactEmail: form.contactEmail || null,
     level: form.level || 'NORMAL',
-    ownerId: form.ownerId ? Number(form.ownerId) : null,
+    status: form.status || recommendedCustomerStatus,
+    ownerId: form.ownerId || null,
     remark: form.remark || null,
   }
 }
 
-export function CustomerPage({ can, notify }) {
+export function CustomerPage({ can, notify, navigate }) {
   const canWrite = can('crm:customer:manage') || can('crm:customer:edit')
   const canDelete = can('crm:customer:manage')
-  const [query, setQuery] = useState({ keyword: '', pageNo: 1, pageSize: 20 })
+  const ownerOptions = useOwnerOptions(notify)
+  const { confirm, dialogProps } = useConfirmDialog()
+  const [query, setQuery] = useState({ keyword: '', status: '', pageNo: 1, pageSize: 20 })
   const [page, setPage] = useState(emptyPage)
   const [loading, setLoading] = useState(true)
   const [selected, setSelected] = useState(null)
@@ -145,7 +149,13 @@ export function CustomerPage({ can, notify }) {
   }
 
   const deleteCustomer = async (row) => {
-    if (!window.confirm(`确认删除客户“${row.name}”？`)) return
+    const confirmed = await confirm({
+      title: '删除客户',
+      description: '删除后该客户不会再出现在列表和统计中，请确认当前操作。',
+      target: row.name,
+      confirmText: '确认删除',
+    })
+    if (!confirmed) return
     try {
       await api.customer.delete(row.id)
       notify('客户已删除', 'success')
@@ -156,6 +166,11 @@ export function CustomerPage({ can, notify }) {
     } catch (err) {
       notify(err.message || '客户删除失败', 'info')
     }
+  }
+
+  const openFullDetail = (row) => {
+    if (!row?.id) return
+    navigate(`customers/detail/${encodeURIComponent(row.id)}`)
   }
 
   const records = page.records || []
@@ -185,6 +200,13 @@ export function CustomerPage({ can, notify }) {
             placeholder="搜索客户名称、行业、联系人、电话或邮箱"
           />
         </div>
+        <label>
+          <span>状态</span>
+          <select value={query.status} onChange={(event) => setQuery({ ...query, status: event.target.value })}>
+            <option value="">全部状态</option>
+            {customerStatusOptions.map((item) => <option value={item.value} key={item.value}>{item.label}</option>)}
+          </select>
+        </label>
         <Button type="submit" variant="secondary" icon={Search}>查询</Button>
       </form>
 
@@ -199,7 +221,8 @@ export function CustomerPage({ can, notify }) {
                   <th>联系人</th>
                   <th>联系方式</th>
                   <th>客户级别</th>
-                  <th>负责人ID</th>
+                  <th>状态</th>
+                  <th>负责人</th>
                   <th>更新时间</th>
                   <th>操作</th>
                 </tr>
@@ -218,8 +241,9 @@ export function CustomerPage({ can, notify }) {
                       <span>{row.contactPhone || '-'}</span>
                       <small>{row.contactEmail || '-'}</small>
                     </td>
-                    <td><Badge tone={levelTone[row.level] || 'neutral'}>{levelText[row.level] || row.level || '-'}</Badge></td>
-                    <td>{row.ownerId || '-'}</td>
+                    <td><Badge tone={customerLevelTone[row.level] || 'neutral'}>{customerLevelText[row.level] || row.level || '-'}</Badge></td>
+                    <td><Badge dot tone={customerStatusTone[row.status] || 'neutral'}>{customerStatusText[row.status] || row.status || '-'}</Badge></td>
+                    <td>{ownerName(row)}</td>
                     <td>{formatDateTime(row.updatedAt || row.createdAt)}</td>
                     <td>
                       <div className="table-action-row" onClick={(event) => event.stopPropagation()}>
@@ -228,6 +252,9 @@ export function CustomerPage({ can, notify }) {
                             <Edit2 size={17} />
                           </button>
                         )}
+                        <button className="icon-button" title="查看完整详情" onClick={() => openFullDetail(row)}>
+                          <ArrowUpRight size={17} />
+                        </button>
                         {canDelete && (
                           <button className="icon-button" onClick={() => deleteCustomer(row)}>
                             <Trash2 size={17} />
@@ -270,6 +297,7 @@ export function CustomerPage({ can, notify }) {
           canDelete={canDelete}
           onEdit={() => setEditing(toForm(selected))}
           onDelete={() => deleteCustomer(selected)}
+          onOpenFull={() => openFullDetail(selected)}
           onClose={() => setSelected(null)}
         />
       </div>
@@ -277,15 +305,17 @@ export function CustomerPage({ can, notify }) {
       <CustomerFormModal
         open={Boolean(editing)}
         form={editing || emptyForm}
+        ownerOptions={ownerOptions}
         onChange={setEditing}
         onClose={() => setEditing(null)}
         onSave={saveCustomer}
       />
+      <ConfirmDialog {...dialogProps} />
     </div>
   )
 }
 
-function CustomerDetailCard({ data, canWrite, canDelete, onEdit, onDelete, onClose }) {
+function CustomerDetailCard({ data, canWrite, canDelete, onEdit, onDelete, onOpenFull, onClose }) {
   if (!data) {
     return (
       <Card className="customer-detail-panel empty">
@@ -307,6 +337,7 @@ function CustomerDetailCard({ data, canWrite, canDelete, onEdit, onDelete, onClo
         <button className="icon-button" onClick={onClose}><X size={18} /></button>
       </div>
       <div className="customer-detail-actions">
+        <Button icon={ArrowUpRight} onClick={onOpenFull}>完整详情</Button>
         {canWrite && <Button variant="secondary" icon={Edit2} onClick={onEdit}>编辑客户</Button>}
         {canDelete && <Button variant="ghost" icon={Trash2} onClick={onDelete}>删除</Button>}
       </div>
@@ -315,8 +346,9 @@ function CustomerDetailCard({ data, canWrite, canDelete, onEdit, onDelete, onClo
         <DetailItem icon={UserRound} label="联系人" value={data.contactName} />
         <DetailItem icon={Phone} label="电话" value={data.contactPhone} />
         <DetailItem icon={Mail} label="邮箱" value={data.contactEmail} />
-        <DetailItem label="客户级别" value={levelText[data.level] || data.level} />
-        <DetailItem label="负责人ID" value={data.ownerId} />
+        <DetailItem label="客户级别" value={customerLevelText[data.level] || data.level} />
+        <DetailItem label="客户状态" value={customerStatusText[data.status] || data.status} />
+        <DetailItem label="负责人" value={ownerName(data)} />
         <DetailItem icon={CalendarDays} label="创建时间" value={formatDateTime(data.createdAt)} />
         <DetailItem icon={CalendarDays} label="更新时间" value={formatDateTime(data.updatedAt)} />
       </div>
@@ -341,8 +373,9 @@ function DetailItem({ icon: Icon, label, value }) {
   )
 }
 
-function CustomerFormModal({ open, form, onChange, onClose, onSave }) {
+function CustomerFormModal({ open, form, ownerOptions, onChange, onClose, onSave }) {
   const update = (patch) => onChange({ ...form, ...patch })
+  const hasSelectedOwner = ownerOptions.some((item) => String(item.id) === String(form.ownerId || ''))
   return (
     <Modal
       open={open}
@@ -366,11 +399,20 @@ function CustomerFormModal({ open, form, onChange, onClose, onSave }) {
             <option value="STRATEGIC">战略客户</option>
           </select>
         </Field>
+        <Field label="客户状态">
+          <select value={form.status || recommendedCustomerStatus} onChange={(event) => update({ status: event.target.value })}>
+            {customerStatusOptions.map((item) => <option value={item.value} key={item.value}>{item.label}</option>)}
+          </select>
+        </Field>
         <Field label="行业">
           <input value={form.industry || ''} onChange={(event) => update({ industry: event.target.value })} />
         </Field>
-        <Field label="负责人ID" hint="不填则由后台设置为当前登录用户">
-          <input value={form.ownerId || ''} onChange={(event) => update({ ownerId: event.target.value })} />
+        <Field label="负责人" hint="不选则由后台设置为当前登录用户">
+          <select value={form.ownerId || ''} onChange={(event) => update({ ownerId: event.target.value })}>
+            <option value="">默认当前登录用户</option>
+            {form.ownerId && !hasSelectedOwner && <option value={form.ownerId}>当前负责人</option>}
+            {ownerOptions.map((item) => <option value={item.id} key={item.id}>{ownerOptionLabel(item)}</option>)}
+          </select>
         </Field>
         <Field label="联系人">
           <input value={form.contactName || ''} onChange={(event) => update({ contactName: event.target.value })} />

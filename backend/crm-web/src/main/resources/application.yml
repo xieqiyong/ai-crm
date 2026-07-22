@@ -61,6 +61,8 @@ crm:
       max-pool-prepared-statement-per-connection-size: ${CRM_DRUID_MAX_PS_PER_CONNECTION:20}
   redis:
     enabled: ${CRM_REDIS_ENABLED:true}
+  channel:
+    upload-dir: ${CRM_CHANNEL_UPLOAD_DIR:./uploads/channel}
   nacos:
     enabled: ${CRM_NACOS_ENABLED:false}
     server-addr: ${CRM_NACOS_SERVER_ADDR:localhost:8848}

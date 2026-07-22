@@ -2,8 +2,16 @@ package com.hz.crm.domain.lead;
 
 public enum LeadStatus {
     NEW,
+    CONTACTED,
     FOLLOWING,
     QUALIFIED,
+    NURTURING,
     CONVERTED,
-    CLOSED
+    INVALID,
+    DUPLICATE,
+    CLOSED;
+
+    public static LeadStatus recommended() {
+        return NEW;
+    }
 }

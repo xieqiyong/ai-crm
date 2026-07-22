@@ -5,14 +5,13 @@ import {
 import { ModelConfigPage } from '../features/admin/ModelConfigPage'
 import { OrganizationAdminPage } from '../features/admin/OrganizationAdminPage'
 import { ChannelPage } from '../features/channel/ChannelPage'
+import { CustomerDetailPage } from '../features/customer/CustomerDetailPage'
 import { CustomerPage } from '../features/customer/CustomerPage'
-import {
-  DashboardPage,
-  LeadsPage,
-  OpportunitiesPage,
-  SettingsPage,
-  SimpleModulePage,
-} from '../features/pages'
+import { DashboardPage } from '../features/dashboard/DashboardPage'
+import { LeadPage } from '../features/lead/LeadPage'
+import { SimpleModulePage } from '../features/module/SimpleModulePage'
+import { OpportunityPage } from '../features/opportunity/OpportunityPage'
+import { SettingsPage } from '../features/settings/SettingsPage'
 
 export const DEFAULT_ROUTE = 'dashboard'
 
@@ -32,7 +31,7 @@ export const routeGroups = [
         label: '线索管理',
         icon: BarChart3,
         permission: 'menu.leads',
-        component: LeadsPage,
+        component: LeadPage,
       },
       {
         key: 'channels',
@@ -53,7 +52,7 @@ export const routeGroups = [
         label: '商机管理',
         icon: BriefcaseBusiness,
         permission: 'menu.opportunities',
-        component: OpportunitiesPage,
+        component: OpportunityPage,
       },
       {
         key: 'followups',
@@ -122,15 +121,41 @@ export const routeGroups = [
   },
 ]
 
-export const routes = routeGroups.flatMap((group) => group.items)
+export const hiddenRoutes = [
+  {
+    key: 'customers/detail',
+    label: '客户详情',
+    permission: 'menu.customers',
+    component: CustomerDetailPage,
+    navKey: 'customers',
+  },
+]
+
+export const routes = [...routeGroups.flatMap((group) => group.items), ...hiddenRoutes]
 
 export const routeMap = routes.reduce((map, route) => {
   map[route.key] = route
   return map
 }, {})
 
+export function normalizeRouteKey(routeKey) {
+  const key = String(routeKey || DEFAULT_ROUTE).split('?')[0]
+  if (key.startsWith('customers/detail/')) {
+    return 'customers/detail'
+  }
+  return key
+}
+
+export function resolveRouteParams(routeKey) {
+  const key = String(routeKey || '')
+  if (key.startsWith('customers/detail/')) {
+    return { id: decodeURIComponent(key.slice('customers/detail/'.length).split('?')[0]) }
+  }
+  return {}
+}
+
 export function resolveRoute(routeKey) {
-  return routeMap[routeKey] || routeMap[DEFAULT_ROUTE]
+  return routeMap[normalizeRouteKey(routeKey)] || routeMap[DEFAULT_ROUTE]
 }
 
 export function canAccessRoute(routeKey, can) {
@@ -141,8 +166,9 @@ export function canAccessRoute(routeKey, can) {
 export function renderRoute(routeKey, props) {
   const route = resolveRoute(routeKey)
   const Component = route.component
+  const routeParams = resolveRouteParams(routeKey)
   if (route.pageType) {
-    return <Component type={route.pageType} {...props} />
+    return <Component type={route.pageType} routeKey={routeKey} routeParams={routeParams} {...props} />
   }
-  return <Component {...props} />
+  return <Component routeKey={routeKey} routeParams={routeParams} {...props} />
 }

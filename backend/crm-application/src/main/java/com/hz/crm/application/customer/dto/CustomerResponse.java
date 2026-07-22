@@ -1,6 +1,7 @@
 package com.hz.crm.application.customer.dto;
 
 import com.hz.crm.domain.customer.CustomerLevel;
+import com.hz.crm.domain.customer.CustomerStatus;
 import java.time.LocalDateTime;
 import lombok.Getter;
 import lombok.Setter;
@@ -25,7 +26,11 @@ public class CustomerResponse {
 
     private CustomerLevel level;
 
+    private CustomerStatus status;
+
     private Long ownerId;
+
+    private String ownerName;
 
     private String remark;
 

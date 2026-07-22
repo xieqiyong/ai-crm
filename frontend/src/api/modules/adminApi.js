@@ -1,7 +1,7 @@
 import { request } from '../httpClient'
 
 export const adminApi = {
-  overview: () => request('/api/admin/security/overview'),
+  overview: () => request('/api/admin/security/overview', { method: 'POST' }),
   saveDepartment: (payload) => request('/api/admin/security/departments/save', { method: 'POST', body: JSON.stringify(payload) }),
   deleteDepartment: (id) => request('/api/admin/security/departments/delete', { method: 'POST', body: JSON.stringify({ id }) }),
   savePermission: (payload) => request('/api/admin/security/permissions/save', { method: 'POST', body: JSON.stringify(payload) }),
@@ -15,9 +15,10 @@ export const adminApi = {
 }
 
 export const modelConfigApi = {
-  list: () => request('/api/admin/model-configs/list'),
+  list: () => request('/api/admin/model-configs/list', { method: 'POST' }),
   save: (payload) => request('/api/admin/model-configs/save', { method: 'POST', body: JSON.stringify(payload) }),
   delete: (id) => request('/api/admin/model-configs/delete', { method: 'POST', body: JSON.stringify({ id }) }),
   setDefault: (id) => request('/api/admin/model-configs/default', { method: 'POST', body: JSON.stringify({ id }) }),
   status: (id) => request('/api/admin/model-configs/status', { method: 'POST', body: JSON.stringify({ id }) }),
+  debug: (payload) => request('/api/admin/model-configs/debug', { method: 'POST', body: JSON.stringify(payload) }),
 }

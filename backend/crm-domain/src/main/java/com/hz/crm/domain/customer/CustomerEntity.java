@@ -36,6 +36,10 @@ public class CustomerEntity extends BaseEntity {
     @Column(nullable = false, length = 32)
     private CustomerLevel level = CustomerLevel.NORMAL;
 
+    @Enumerated(EnumType.STRING)
+    @Column(nullable = false, length = 32, columnDefinition = "varchar(32) default 'POTENTIAL'")
+    private CustomerStatus status = CustomerStatus.recommended();
+
     private Long ownerId;
 
     @Column(length = 512)

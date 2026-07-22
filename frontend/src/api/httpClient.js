@@ -1,5 +1,6 @@
 import { runtimeConfig } from '../config/env'
 import { clearAuth, getStoredAuth } from '../store/authStorage'
+import { parseJsonPreservingLargeIntegers } from '../utils/json'
 
 function joinUrl(path) {
   const normalizedPath = path.startsWith('/') ? path : `/${path}`
@@ -35,7 +36,14 @@ export async function request(path, options = {}) {
     clearAuth()
     throw new Error('登录已失效，请重新登录')
   }
-  const result = await response.json().catch(() => null)
+  const text = await response.text().catch(() => '')
+  const result = (() => {
+    try {
+      return parseJsonPreservingLargeIntegers(text)
+    } catch {
+      return null
+    }
+  })()
   if (!result) throw new Error('服务响应格式不正确')
   if (!result.success) throw new Error(result.message || '请求处理失败')
   return result.data

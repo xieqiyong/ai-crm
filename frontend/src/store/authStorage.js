@@ -1,4 +1,5 @@
 import { STORAGE_KEYS } from '../config/appConfig'
+import { parseJsonPreservingLargeIntegers } from '../utils/json'
 import { removeStorage } from '../utils/storage'
 
 export function getStoredAuth() {
@@ -6,7 +7,7 @@ export function getStoredAuth() {
   const userText = localStorage.getItem(STORAGE_KEYS.user)
   if (!token || !userText) return null
   try {
-    return { token, user: JSON.parse(userText) }
+    return { token, user: parseJsonPreservingLargeIntegers(userText) }
   } catch {
     removeStorage(STORAGE_KEYS.user)
     return null

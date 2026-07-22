@@ -21,7 +21,19 @@ if [ -z "${CRM_VERSION:-}" ]; then
 fi
 
 PACKAGE_NAME="intelligent-marketing-crm-$CRM_VERSION"
+if [ -n "${CRM_PACKAGE_FILE_NAME:-}" ]; then
+  PACKAGE_FILE_NAME="$CRM_PACKAGE_FILE_NAME"
+else
+  PACKAGE_BRANCH="${CRM_PACKAGE_BRANCH:-$CRM_VERSION}"
+  PACKAGE_BRANCH="${PACKAGE_BRANCH#crm-}"
+  PACKAGE_BRANCH="${PACKAGE_BRANCH%-[0-9]*}"
+  PACKAGE_FILE_NAME="crm-$PACKAGE_BRANCH-release.tar.gz"
+fi
+if [[ "$PACKAGE_FILE_NAME" != *.tar.gz ]]; then
+  PACKAGE_FILE_NAME="$PACKAGE_FILE_NAME.tar.gz"
+fi
 PACKAGE_DIR="$OUTPUT_DIR/$PACKAGE_NAME"
+PACKAGE_ARCHIVE="$OUTPUT_DIR/$PACKAGE_FILE_NAME"
 IMAGE_ARCHIVE="$PACKAGE_DIR/images/crm-images.tar"
 
 random_text() {
@@ -44,6 +56,7 @@ run_frontend_install() {
 echo "开始构建智能营销管理系统离线包：$CRM_VERSION"
 
 rm -rf "$BUILD_DIR" "$PACKAGE_DIR"
+rm -f "$PACKAGE_ARCHIVE" "$PACKAGE_ARCHIVE.sha256"
 mkdir -p "$BUILD_DIR/backend" "$BUILD_DIR/frontend" "$PACKAGE_DIR/images" "$PACKAGE_DIR/scripts" "$OUTPUT_DIR"
 
 echo "构建后端 Jar"
@@ -116,6 +129,7 @@ CRM_JWT_SECRET=$CRM_JWT_SECRET_VALUE
 CRM_JWT_TTL_SECONDS=${CRM_JWT_TTL_SECONDS:-86400}
 CRM_PASSWORD_RESET_EXPOSE_TOKEN=${CRM_PASSWORD_RESET_EXPOSE_TOKEN:-false}
 CRM_LOG_LEVEL=${CRM_LOG_LEVEL:-INFO}
+CRM_CHANNEL_UPLOAD_DIR=${CRM_CHANNEL_UPLOAD_DIR:-/app/uploads/channel}
 
 CRM_NACOS_ENABLED=${CRM_NACOS_ENABLED:-false}
 CRM_MINIO_ENABLED=${CRM_MINIO_ENABLED:-false}
@@ -130,10 +144,10 @@ EOF
 
 echo "压缩离线包"
 cd "$OUTPUT_DIR"
-tar -czf "$PACKAGE_NAME.tar.gz" "$PACKAGE_NAME"
+tar -czf "$PACKAGE_FILE_NAME" "$PACKAGE_NAME"
 
 if command -v sha256sum >/dev/null 2>&1; then
-  sha256sum "$PACKAGE_NAME.tar.gz" > "$PACKAGE_NAME.tar.gz.sha256"
+  sha256sum "$PACKAGE_FILE_NAME" > "$PACKAGE_FILE_NAME.sha256"
 fi
 
-echo "离线包已生成：$OUTPUT_DIR/$PACKAGE_NAME.tar.gz"
+echo "离线包已生成：$PACKAGE_ARCHIVE"

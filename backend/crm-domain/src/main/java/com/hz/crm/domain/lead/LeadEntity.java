@@ -7,6 +7,8 @@ import jakarta.persistence.Entity;
 import jakarta.persistence.EnumType;
 import jakarta.persistence.Enumerated;
 import jakarta.persistence.Table;
+import java.math.BigDecimal;
+import java.time.LocalDateTime;
 import lombok.Getter;
 import lombok.Setter;
 
@@ -33,8 +35,31 @@ public class LeadEntity extends BaseEntity {
     private String source;
 
     @Enumerated(EnumType.STRING)
-    @Column(nullable = false, length = 32)
-    private LeadStatus status = LeadStatus.NEW;
+    @Column(nullable = false, length = 32, columnDefinition = "varchar(32) default 'NEW'")
+    private LeadStatus status = LeadStatus.recommended();
+
+    private Long customerId;
+
+    private LocalDateTime convertedAt;
+
+    private Long convertedBy;
+
+    @Enumerated(EnumType.STRING)
+    @Column(length = 32)
+    private LeadConvertType convertedType;
+
+    @Column(length = 1024)
+    private String aiSummary;
+
+    @Column(length = 128)
+    private String aiSuggestedCustomerName;
+
+    @Column(length = 128)
+    private String aiSuggestedContactName;
+
+    private BigDecimal aiConfidence;
+
+    private LocalDateTime aiAnalyzedAt;
 
     private Long ownerId;
 

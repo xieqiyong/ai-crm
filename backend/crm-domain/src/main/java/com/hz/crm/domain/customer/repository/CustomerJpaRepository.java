@@ -1,6 +1,9 @@
 package com.hz.crm.domain.customer.repository;
 
 import com.hz.crm.domain.customer.CustomerEntity;
+import com.hz.crm.domain.customer.CustomerStatus;
+import java.util.Collection;
+import java.util.List;
 import java.util.Optional;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
@@ -15,30 +18,44 @@ public interface CustomerJpaRepository extends JpaRepository<CustomerEntity, Lon
     Page<CustomerEntity> findByTenantIdAndOwnerIdAndDeletedFalse(String tenantId, Long ownerId, Pageable pageable);
 
     @Query("select c from CustomerEntity c where c.tenantId = :tenantId and c.deleted = false "
-            + "and (:keyword is null or lower(c.name) like lower(concat('%', :keyword, '%')) "
-            + "or lower(c.industry) like lower(concat('%', :keyword, '%')) "
-            + "or lower(c.contactName) like lower(concat('%', :keyword, '%')) "
-            + "or lower(c.contactPhone) like lower(concat('%', :keyword, '%')) "
-            + "or lower(c.contactEmail) like lower(concat('%', :keyword, '%')))")
+            + "and (:status is null or c.status = :status) "
+            + "and (:keyword is null "
+            + "or lower(coalesce(c.name, '')) like :keyword "
+            + "or lower(coalesce(c.industry, '')) like :keyword "
+            + "or lower(coalesce(c.contactName, '')) like :keyword "
+            + "or lower(coalesce(c.contactPhone, '')) like :keyword "
+            + "or lower(coalesce(c.contactEmail, '')) like :keyword)")
     Page<CustomerEntity> searchByTenantId(
-            @Param("tenantId") String tenantId, @Param("keyword") String keyword, Pageable pageable);
+            @Param("tenantId") String tenantId,
+            @Param("keyword") String keyword,
+            @Param("status") CustomerStatus status,
+            Pageable pageable);
 
     @Query("select c from CustomerEntity c where c.tenantId = :tenantId and c.ownerId = :ownerId "
             + "and c.deleted = false "
-            + "and (:keyword is null or lower(c.name) like lower(concat('%', :keyword, '%')) "
-            + "or lower(c.industry) like lower(concat('%', :keyword, '%')) "
-            + "or lower(c.contactName) like lower(concat('%', :keyword, '%')) "
-            + "or lower(c.contactPhone) like lower(concat('%', :keyword, '%')) "
-            + "or lower(c.contactEmail) like lower(concat('%', :keyword, '%')))")
+            + "and (:status is null or c.status = :status) "
+            + "and (:keyword is null "
+            + "or lower(coalesce(c.name, '')) like :keyword "
+            + "or lower(coalesce(c.industry, '')) like :keyword "
+            + "or lower(coalesce(c.contactName, '')) like :keyword "
+            + "or lower(coalesce(c.contactPhone, '')) like :keyword "
+            + "or lower(coalesce(c.contactEmail, '')) like :keyword)")
     Page<CustomerEntity> searchByTenantIdAndOwnerId(
             @Param("tenantId") String tenantId,
             @Param("ownerId") Long ownerId,
             @Param("keyword") String keyword,
+            @Param("status") CustomerStatus status,
             Pageable pageable);
 
     Optional<CustomerEntity> findByIdAndTenantIdAndDeletedFalse(Long id, String tenantId);
 
+    List<CustomerEntity> findByTenantIdAndIdInAndDeletedFalse(String tenantId, Collection<Long> ids);
+
     long countByTenantIdAndDeletedFalse(String tenantId);
 
     long countByTenantIdAndOwnerIdAndDeletedFalse(String tenantId, Long ownerId);
+
+    long countByTenantIdAndStatusAndDeletedFalse(String tenantId, CustomerStatus status);
+
+    long countByTenantIdAndOwnerIdAndStatusAndDeletedFalse(String tenantId, Long ownerId, CustomerStatus status);
 }

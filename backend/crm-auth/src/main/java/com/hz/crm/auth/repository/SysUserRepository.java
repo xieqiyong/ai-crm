@@ -13,6 +13,8 @@ public interface SysUserRepository extends JpaRepository<SysUserEntity, Long> {
 
     List<SysUserEntity> findByTenantIdAndDeletedFalseOrderByCreatedAtDesc(String tenantId);
 
+    List<SysUserEntity> findByTenantIdAndIdInAndDeletedFalse(String tenantId, List<Long> ids);
+
     Optional<SysUserEntity> findByIdAndTenantIdAndDeletedFalse(Long id, String tenantId);
 
     boolean existsByUsernameAndTenantIdAndDeletedFalse(String username, String tenantId);

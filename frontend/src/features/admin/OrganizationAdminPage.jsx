@@ -4,7 +4,7 @@ import {
   RefreshCw, RotateCcw, ShieldCheck, Trash2,
 } from 'lucide-react'
 import { api } from '../../api'
-import { Badge, Button, Card, Field, Modal, PageHeader } from '../../components'
+import { Badge, Button, Card, Drawer, Field, Modal, PageHeader } from '../../components'
 
 const DATA_SCOPE_LABELS = {
   ALL: '全部数据',
@@ -339,7 +339,7 @@ function DepartmentModal({ open, data, departments = [], onClose, reload }) {
   const save = async () => {
     await api.admin.saveDepartment({
       ...form,
-      parentId: form.parentId ? Number(form.parentId) : null,
+      parentId: form.parentId || null,
       sortNo: Number(form.sortNo) || 0,
     })
     onClose()
@@ -382,6 +382,10 @@ function RoleModal({ open, data, overview, onClose, reload, notify }) {
   useEffect(() => setForm(data || { code: '', name: '', dataScope: 'SELF', enabled: true, permissionCodes: [] }), [data, open])
 
   const permissionModules = useMemo(() => buildPermissionModules(overview.permissions), [overview.permissions])
+  const menuActionCodes = useMemo(() => permissionModules.flatMap((group) => (
+    [...group.menuPermissions, ...group.actionPermissions].map((permission) => permission.code)
+  )), [permissionModules])
+  const selectedMenuActionCount = (form.permissionCodes || []).filter((code) => menuActionCodes.includes(code)).length
   const dataPermissions = useMemo(
     () => overview.permissions.filter((permission) => permission.permissionType === 'DATA'),
     [overview.permissions],
@@ -436,66 +440,67 @@ function RoleModal({ open, data, overview, onClose, reload, notify }) {
   )
 
   return (
-    <Modal open={open} size="lg" title={data?.id ? '编辑角色' : '新建角色'} onClose={onClose} footer={footer}>
-      <div className="role-form-layout">
-        <Card className="role-basic-card">
-          <div className="card-heading">
-            <div>
-              <h2>角色信息</h2>
-              <p>角色编码由后台自动生成</p>
+    <Drawer open={open} size="wide" title={data?.id ? '编辑角色' : '新建角色'} onClose={onClose} footer={footer}>
+      <div className="role-drawer-layout">
+        <aside className="role-config-column">
+          <Card className="role-basic-card">
+            <div className="card-heading">
+              <div>
+                <h2>角色信息</h2>
+              </div>
             </div>
-          </div>
-          <Field label="角色名称" required>
-            <input value={form.name} onChange={(event) => setForm({ ...form, name: event.target.value })} />
-          </Field>
-        </Card>
+            <Field label="角色名称" required>
+              <input value={form.name} onChange={(event) => setForm({ ...form, name: event.target.value })} />
+            </Field>
+          </Card>
 
-        <Card className="role-scope-card">
-          <div className="card-heading">
-            <div>
-              <h2><Database size={17} />数据权限</h2>
-              <p>数据权限按角色只能选择一种范围</p>
+          <Card className="role-scope-card">
+            <div className="card-heading">
+              <div>
+                <h2><Database size={17} />数据权限</h2>
+              </div>
+              <Badge tone="info">{DATA_SCOPE_LABELS[form.dataScope] || '未选择'}</Badge>
             </div>
+            <div className="data-scope-grid">
+              {Object.entries(DATA_SCOPE_LABELS).map(([value, label]) => (
+                <label className={`data-scope-option ${form.dataScope === value ? 'active' : ''}`} key={value}>
+                  <input
+                    type="radio"
+                    name="dataScope"
+                    checked={form.dataScope === value}
+                    onChange={() => changeDataScope(value)}
+                  />
+                  <span>
+                    <b>{label}</b>
+                  </span>
+                </label>
+              ))}
+            </div>
+          </Card>
+        </aside>
+
+        <section className="role-permission-column">
+          <div className="module-permission-head">
+            <div>
+              <h3><Menu size={17} />菜单与功能权限</h3>
+            </div>
+            <Badge tone="info">已选 {selectedMenuActionCount} 项</Badge>
           </div>
-          <div className="data-scope-grid">
-            {Object.entries(DATA_SCOPE_LABELS).map(([value, label]) => (
-              <label className={`data-scope-option ${form.dataScope === value ? 'active' : ''}`} key={value}>
-                <input
-                  type="radio"
-                  name="dataScope"
-                  checked={form.dataScope === value}
-                  onChange={() => changeDataScope(value)}
-                />
-                <span>
-                  <b>{label}</b>
-                  <small>{DATA_SCOPE_CODE_BY_SCOPE[value]}</small>
-                </span>
-              </label>
+
+          <div className="module-permission-grid">
+            {permissionModules.map((group) => (
+              <PermissionModuleCard
+                group={group}
+                selectedCodes={form.permissionCodes || []}
+                onToggleModule={toggleModule}
+                onTogglePermission={togglePermission}
+                key={group.key}
+              />
             ))}
           </div>
-        </Card>
+        </section>
       </div>
-
-      <div className="module-permission-head">
-        <div>
-          <h3><Menu size={17} />菜单与功能权限</h3>
-          <p>按模块勾选菜单入口和操作权限，权限编码由后台按规则生成。</p>
-        </div>
-        <Badge tone="info">已选 {(form.permissionCodes || []).length} 项</Badge>
-      </div>
-
-      <div className="module-permission-grid">
-        {permissionModules.map((group) => (
-          <PermissionModuleCard
-            group={group}
-            selectedCodes={form.permissionCodes || []}
-            onToggleModule={toggleModule}
-            onTogglePermission={togglePermission}
-            key={group.key}
-          />
-        ))}
-      </div>
-    </Modal>
+    </Drawer>
   )
 }
 
@@ -504,22 +509,23 @@ function PermissionModuleCard({ group, selectedCodes, onToggleModule, onTogglePe
   const enabledCodes = permissions.filter((permission) => permission.enabled).map((permission) => permission.code)
   const checkedCount = enabledCodes.filter((code) => selectedCodes.includes(code)).length
   const allChecked = enabledCodes.length > 0 && checkedCount === enabledCodes.length
-  const partialChecked = checkedCount > 0 && !allChecked
 
   return (
     <Card className={`module-permission-card ${allChecked ? 'checked' : ''}`}>
-      <label className="module-check-line">
-        <input
-          type="checkbox"
-          checked={allChecked}
-          disabled={enabledCodes.length === 0}
-          onChange={(event) => onToggleModule(group, event.target.checked)}
-        />
-        <span>
-          <b>{group.label}</b>
-          <small>{partialChecked ? `已选 ${checkedCount} / ${enabledCodes.length}` : `${enabledCodes.length} 项权限`}</small>
-        </span>
-      </label>
+      <div className="module-check-row">
+        <label className="module-check-line">
+          <input
+            type="checkbox"
+            checked={allChecked}
+            disabled={enabledCodes.length === 0}
+            onChange={(event) => onToggleModule(group, event.target.checked)}
+          />
+          <span>
+            <b>{group.label}</b>
+          </span>
+        </label>
+        <Badge tone={checkedCount ? 'info' : 'neutral'}>{checkedCount}/{enabledCodes.length}</Badge>
+      </div>
 
       <PermissionBlock
         title="菜单入口"
@@ -555,7 +561,6 @@ function PermissionBlock({ title, permissions, selectedCodes, onTogglePermission
             />
             <span>
               <b>{permission.name}</b>
-              <small>{permission.code}</small>
             </span>
           </label>
         ))}

@@ -41,13 +41,15 @@ public class CustomerController {
     @PostMapping("/save")
     @PreAuthorize("hasAuthority('*') or hasAuthority('crm:customer:manage') or hasAuthority('crm:customer:edit')")
     public ApiResult<CustomerResponse> save(@Valid @RequestBody CustomerSaveRequest request, JwtPrincipal principal) {
-        return ApiResult.ok(customerApplicationService.save(principal.getTenantId(), principal.getUserId(), request));
+        return ApiResult.ok(customerApplicationService.save(
+                principal.getTenantId(), principal.getUserId(), principal.getDataScope(), request));
     }
 
     @PostMapping("/delete")
     @PreAuthorize("hasAuthority('*') or hasAuthority('crm:customer:manage')")
     public ApiResult<Void> delete(@RequestBody IdRequest request, JwtPrincipal principal) {
-        customerApplicationService.delete(principal.getTenantId(), request.getId());
+        customerApplicationService.delete(
+                principal.getTenantId(), principal.getUserId(), principal.getDataScope(), request.getId());
         return ApiResult.ok(null);
     }
 }

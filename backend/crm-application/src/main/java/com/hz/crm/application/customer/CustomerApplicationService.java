@@ -6,11 +6,17 @@ import com.hz.crm.application.customer.dto.CustomerSaveRequest;
 import com.hz.crm.common.api.PageData;
 import com.hz.crm.common.exception.BusinessException;
 import com.hz.crm.common.id.SnowflakeIdGenerator;
+import com.hz.crm.common.user.UserNameResolver;
 import com.hz.crm.domain.customer.CustomerEntity;
 import com.hz.crm.domain.customer.CustomerLevel;
+import com.hz.crm.domain.customer.CustomerStatus;
 import com.hz.crm.domain.customer.repository.CustomerJpaRepository;
 import java.util.ArrayList;
+import java.util.HashSet;
 import java.util.List;
+import java.util.Locale;
+import java.util.Map;
+import java.util.Set;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageRequest;
@@ -27,22 +33,26 @@ public class CustomerApplicationService {
     @Autowired
     private SnowflakeIdGenerator snowflakeIdGenerator;
 
+    @Autowired(required = false)
+    private UserNameResolver userNameResolver;
+
     @Transactional(readOnly = true)
     public PageData<CustomerResponse> page(String tenantId, Long userId, String dataScope, CustomerQuery query) {
         CustomerQuery safeQuery = query == null ? new CustomerQuery() : query;
         PageRequest pageRequest = PageRequest.of(
                 safeQuery.safePageNo() - 1, safeQuery.safePageSize(), Sort.by(Sort.Direction.DESC, "createdAt"));
-        String keyword = trimToNull(safeQuery.getKeyword());
+        String keyword = likeKeyword(safeQuery.getKeyword());
         Page<CustomerEntity> page;
         if ("SELF".equals(dataScope)) {
-            page = customerRepository.searchByTenantIdAndOwnerId(tenantId, userId, keyword, pageRequest);
+            page = customerRepository.searchByTenantIdAndOwnerId(tenantId, userId, keyword, safeQuery.getStatus(), pageRequest);
         } else {
-            page = customerRepository.searchByTenantId(tenantId, keyword, pageRequest);
+            page = customerRepository.searchByTenantId(tenantId, keyword, safeQuery.getStatus(), pageRequest);
         }
         List<CustomerResponse> records = new ArrayList<CustomerResponse>();
         for (CustomerEntity entity : page.getContent()) {
             records.add(toResponse(entity));
         }
+        fillOwnerNames(tenantId, records);
         return PageData.of(page.getTotalElements(), safeQuery.safePageNo(), safeQuery.safePageSize(), records);
     }
 
@@ -50,11 +60,16 @@ public class CustomerApplicationService {
     public CustomerResponse detail(String tenantId, Long userId, String dataScope, Long id) {
         CustomerEntity entity = findOne(tenantId, id);
         checkDataScope(userId, dataScope, entity.getOwnerId());
-        return toResponse(entity);
+        CustomerResponse response = toResponse(entity);
+        fillOwnerName(tenantId, response);
+        return response;
     }
 
     @Transactional
-    public CustomerResponse save(String tenantId, Long operatorId, CustomerSaveRequest request) {
+    public CustomerResponse save(String tenantId, Long operatorId, String dataScope, CustomerSaveRequest request) {
+        if (request == null || trimToNull(request.getName()) == null) {
+            throw new BusinessException("CUSTOMER_003", "客户名称不能为空");
+        }
         CustomerEntity entity;
         if (request.getId() == null) {
             entity = new CustomerEntity();
@@ -62,21 +77,28 @@ public class CustomerApplicationService {
             entity.setTenantId(tenantId);
         } else {
             entity = findOne(tenantId, request.getId());
+            checkDataScope(operatorId, dataScope, entity.getOwnerId());
         }
-        entity.setName(request.getName());
-        entity.setIndustry(request.getIndustry());
-        entity.setContactName(request.getContactName());
-        entity.setContactPhone(request.getContactPhone());
-        entity.setContactEmail(request.getContactEmail());
+        entity.setName(trimToNull(request.getName()));
+        entity.setIndustry(trimToNull(request.getIndustry()));
+        entity.setContactName(trimToNull(request.getContactName()));
+        entity.setContactPhone(trimToNull(request.getContactPhone()));
+        entity.setContactEmail(trimToNull(request.getContactEmail()));
         entity.setLevel(request.getLevel() == null ? CustomerLevel.NORMAL : request.getLevel());
-        entity.setOwnerId(request.getOwnerId() == null ? operatorId : request.getOwnerId());
-        entity.setRemark(request.getRemark());
-        return toResponse(customerRepository.save(entity));
+        entity.setStatus(request.getStatus() == null ? CustomerStatus.recommended() : request.getStatus());
+        Long targetOwnerId = request.getOwnerId() == null ? operatorId : request.getOwnerId();
+        checkOwnerScope(operatorId, dataScope, targetOwnerId);
+        entity.setOwnerId(targetOwnerId);
+        entity.setRemark(trimToNull(request.getRemark()));
+        CustomerResponse response = toResponse(customerRepository.save(entity));
+        fillOwnerName(tenantId, response);
+        return response;
     }
 
     @Transactional
-    public void delete(String tenantId, Long id) {
+    public void delete(String tenantId, Long userId, String dataScope, Long id) {
         CustomerEntity entity = findOne(tenantId, id);
+        checkDataScope(userId, dataScope, entity.getOwnerId());
         entity.setDeleted(true);
         customerRepository.save(entity);
     }
@@ -96,11 +118,22 @@ public class CustomerApplicationService {
         }
     }
 
+    private void checkOwnerScope(Long userId, String dataScope, Long ownerId) {
+        if ("SELF".equals(dataScope) && (ownerId == null || !ownerId.equals(userId))) {
+            throw new BusinessException("DATA_002", "本人数据权限不能分配给其他负责人");
+        }
+    }
+
     private String trimToNull(String value) {
         if (value == null || value.trim().length() == 0) {
             return null;
         }
         return value.trim();
+    }
+
+    private String likeKeyword(String value) {
+        String keyword = trimToNull(value);
+        return keyword == null ? null : "%" + keyword.toLowerCase(Locale.ROOT) + "%";
     }
 
     private CustomerResponse toResponse(CustomerEntity entity) {
@@ -113,10 +146,38 @@ public class CustomerApplicationService {
         response.setContactPhone(entity.getContactPhone());
         response.setContactEmail(entity.getContactEmail());
         response.setLevel(entity.getLevel());
+        response.setStatus(entity.getStatus());
         response.setOwnerId(entity.getOwnerId());
         response.setRemark(entity.getRemark());
         response.setCreatedAt(entity.getCreatedAt());
         response.setUpdatedAt(entity.getUpdatedAt());
         return response;
+    }
+
+    private void fillOwnerName(String tenantId, CustomerResponse response) {
+        List<CustomerResponse> records = new ArrayList<CustomerResponse>();
+        records.add(response);
+        fillOwnerNames(tenantId, records);
+    }
+
+    private void fillOwnerNames(String tenantId, List<CustomerResponse> records) {
+        if (userNameResolver == null || records == null || records.isEmpty()) {
+            return;
+        }
+        Set<Long> ownerIds = new HashSet<Long>();
+        for (CustomerResponse response : records) {
+            if (response.getOwnerId() != null) {
+                ownerIds.add(response.getOwnerId());
+            }
+        }
+        if (ownerIds.isEmpty()) {
+            return;
+        }
+        Map<Long, String> names = userNameResolver.resolve(tenantId, ownerIds);
+        for (CustomerResponse response : records) {
+            if (response.getOwnerId() != null) {
+                response.setOwnerName(names.get(response.getOwnerId()));
+            }
+        }
     }
 }

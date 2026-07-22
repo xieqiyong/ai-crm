@@ -48,6 +48,8 @@ public class ChannelResponse {
 
     private Long ownerId;
 
+    private String ownerName;
+
     private String remark;
 
     private LocalDateTime createdAt;

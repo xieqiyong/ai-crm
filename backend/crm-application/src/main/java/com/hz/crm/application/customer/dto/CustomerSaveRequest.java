@@ -1,6 +1,7 @@
 package com.hz.crm.application.customer.dto;
 
 import com.hz.crm.domain.customer.CustomerLevel;
+import com.hz.crm.domain.customer.CustomerStatus;
 import jakarta.validation.constraints.NotBlank;
 import lombok.Getter;
 import lombok.Setter;
@@ -23,6 +24,8 @@ public class CustomerSaveRequest {
     private String contactEmail;
 
     private CustomerLevel level;
+
+    private CustomerStatus status;
 
     private Long ownerId;
 

@@ -1,6 +1,8 @@
 package com.hz.crm.application.lead.dto;
 
 import com.hz.crm.domain.lead.LeadStatus;
+import com.hz.crm.domain.lead.LeadConvertType;
+import java.math.BigDecimal;
 import java.time.LocalDateTime;
 import lombok.Getter;
 import lombok.Setter;
@@ -25,7 +27,31 @@ public class LeadResponse {
 
     private LeadStatus status;
 
+    private Long customerId;
+
+    private String customerName;
+
+    private LocalDateTime convertedAt;
+
+    private Long convertedBy;
+
+    private String convertedByName;
+
+    private LeadConvertType convertedType;
+
+    private String aiSummary;
+
+    private String aiSuggestedCustomerName;
+
+    private String aiSuggestedContactName;
+
+    private BigDecimal aiConfidence;
+
+    private LocalDateTime aiAnalyzedAt;
+
     private Long ownerId;
+
+    private String ownerName;
 
     private String remark;
 

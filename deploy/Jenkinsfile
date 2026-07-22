@@ -15,7 +15,9 @@ pipeline {
     GIT_CREDENTIALS_ID = "liusu"
     PRODUCT_ID = "crm"
     PRODUCT_PATH_BASE = "/app/builds/products"
-    NODE_VERSION = "18"
+    JAVA_HOME = "/root/liusu/jdk-21.0.1"
+    JDK_VERSION = "21"
+    NODE_VERSION = "22.22.2"
     FRONTEND_PORT = "80"
     NVM_DIR = "${HOME}/.nvm"
   }
@@ -40,6 +42,8 @@ pipeline {
         sh '''
           set -e
           echo "检查基础环境"
+          export PATH="$JAVA_HOME/bin:$PATH"
+          echo "使用 JDK $JDK_VERSION：$JAVA_HOME"
           java -version
           mvn -version
           docker version
@@ -50,6 +54,7 @@ pipeline {
             . "$NVM_DIR/nvm.sh"
             nvm use "$NODE_VERSION"
           fi
+          export NODE_ENV=production
 
           node -v
           npm -v
@@ -62,19 +67,24 @@ pipeline {
         script {
           def safeBranch = params.branch.trim().replaceAll('[^A-Za-z0-9_.-]', '-')
           def version = "${env.PRODUCT_ID}-${safeBranch}-${env.BUILD_NUMBER}"
+          def packageFileName = "${env.PRODUCT_ID}-${safeBranch}-release.tar.gz"
           env.CRM_PACKAGE_VERSION = version
+          env.CRM_PACKAGE_FILE_NAME = packageFileName
 
           withEnv([
             "CRM_VERSION=${version}",
+            "CRM_PACKAGE_FILE_NAME=${packageFileName}",
             "CRM_FRONTEND_PORT=${env.FRONTEND_PORT}"
           ]) {
             sh '''
               set -e
+              export PATH="$JAVA_HOME/bin:$PATH"
               export NVM_DIR="$HOME/.nvm"
               if [ -s "$NVM_DIR/nvm.sh" ]; then
                 . "$NVM_DIR/nvm.sh"
                 nvm use "$NODE_VERSION"
               fi
+              export NODE_ENV=production
 
               bash deploy/scripts/build-offline-package.sh
             '''
@@ -83,7 +93,7 @@ pipeline {
       }
       post {
         always {
-          archiveArtifacts artifacts: 'deploy/output/*.tar.gz,deploy/output/*.sha256', fingerprint: true, allowEmptyArchive: true
+          archiveArtifacts artifacts: "deploy/output/${env.CRM_PACKAGE_FILE_NAME},deploy/output/${env.CRM_PACKAGE_FILE_NAME}.sha256", fingerprint: true, allowEmptyArchive: true
         }
       }
     }
@@ -95,9 +105,9 @@ pipeline {
           OUTPUT_DIR="$PRODUCT_PATH_BASE/$PRODUCT_ID"
           echo "创建产品产物目录：$OUTPUT_DIR"
           mkdir -p "$OUTPUT_DIR"
-          cp -f deploy/output/*.tar.gz "$OUTPUT_DIR/"
-          if ls deploy/output/*.sha256 >/dev/null 2>&1; then
-            cp -f deploy/output/*.sha256 "$OUTPUT_DIR/"
+          cp -f "deploy/output/$CRM_PACKAGE_FILE_NAME" "$OUTPUT_DIR/"
+          if [ -f "deploy/output/$CRM_PACKAGE_FILE_NAME.sha256" ]; then
+            cp -f "deploy/output/$CRM_PACKAGE_FILE_NAME.sha256" "$OUTPUT_DIR/"
           fi
           echo "离线包已上传到：$OUTPUT_DIR"
         '''
@@ -107,7 +117,7 @@ pipeline {
 
   post {
     success {
-      echo "构建成功：${env.CRM_PACKAGE_VERSION}"
+      echo "构建成功：${env.CRM_PACKAGE_FILE_NAME}，内部版本：${env.CRM_PACKAGE_VERSION}"
     }
     failure {
       echo "构建失败，请检查 Maven、Node、Docker 或网络依赖"

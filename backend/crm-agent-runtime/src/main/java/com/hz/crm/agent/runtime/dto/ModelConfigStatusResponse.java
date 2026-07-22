@@ -7,7 +7,7 @@ import lombok.Setter;
 @Setter
 public class ModelConfigStatusResponse {
 
-    private Long id;
+    private String id;
 
     private boolean available;
 

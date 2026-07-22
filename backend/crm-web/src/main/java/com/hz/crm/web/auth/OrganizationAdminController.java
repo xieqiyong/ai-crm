@@ -18,7 +18,6 @@ import com.hz.crm.auth.service.OrganizationAdminService;
 import com.hz.crm.common.api.ApiResult;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.security.access.prepost.PreAuthorize;
-import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
@@ -30,12 +29,6 @@ public class OrganizationAdminController {
 
     @Autowired
     private OrganizationAdminService organizationAdminService;
-
-    @GetMapping("/overview")
-    @PreAuthorize("hasAuthority('*') or hasAuthority('crm:org:view') or hasAuthority('crm:org:manage')")
-    public ApiResult<AdminOverviewResponse> overview(JwtPrincipal principal) {
-        return ApiResult.ok(organizationAdminService.overview(principal.getTenantId()));
-    }
 
     @PostMapping("/overview")
     @PreAuthorize("hasAuthority('*') or hasAuthority('crm:org:view') or hasAuthority('crm:org:manage')")
