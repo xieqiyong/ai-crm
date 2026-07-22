@@ -1,5 +1,6 @@
 package com.hz.crm.web.observability;
 
+import com.hz.crm.auth.security.CurrentUserContext;
 import com.hz.crm.auth.security.JwtPrincipal;
 import com.hz.crm.observability.dto.RequestLogRecord;
 import com.hz.crm.observability.service.RequestLogService;
@@ -15,8 +16,6 @@ import org.slf4j.MDC;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.core.Ordered;
 import org.springframework.core.annotation.Order;
-import org.springframework.security.core.Authentication;
-import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.stereotype.Component;
 import org.springframework.web.filter.OncePerRequestFilter;
 
@@ -82,9 +81,8 @@ public class RequestLogFilter extends OncePerRequestFilter {
     }
 
     private void fillUser(RequestLogRecord record) {
-        Authentication authentication = SecurityContextHolder.getContext().getAuthentication();
-        if (authentication != null && authentication.getPrincipal() instanceof JwtPrincipal) {
-            JwtPrincipal principal = (JwtPrincipal) authentication.getPrincipal();
+        JwtPrincipal principal = CurrentUserContext.getPrincipal();
+        if (principal != null) {
             record.setTenantId(principal.getTenantId());
             record.setOperatorId(principal.getUserId());
             record.setUsername(principal.getUsername());

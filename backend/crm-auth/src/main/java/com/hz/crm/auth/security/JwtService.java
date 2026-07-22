@@ -20,19 +20,37 @@ public class JwtService {
     @Autowired
     private JwtProperties jwtProperties;
 
-    public String createToken(SysUserEntity user, PermissionProfile profile) {
+    public JwtPrincipal createPrincipal(SysUserEntity user, PermissionProfile profile, String sessionId) {
+        JwtPrincipal principal = new JwtPrincipal();
+        principal.setUserId(user.getId());
+        principal.setTenantId(user.getTenantId());
+        principal.setUsername(user.getUsername());
+        principal.setDisplayName(user.getDisplayName());
+        principal.setSessionId(sessionId);
+        principal.setPermissions(new ArrayList<String>(profile.getPermissions()));
+        principal.setMenuPermissions(new ArrayList<String>(profile.getMenuPermissions()));
+        principal.setDataPermissions(new ArrayList<String>(profile.getDataPermissions()));
+        principal.setDataScope(profile.getDataScope().name());
+        return principal;
+    }
+
+    public String createToken(JwtPrincipal principal) {
         long now = System.currentTimeMillis();
+        long expiresAt = now + jwtProperties.getTtlSeconds() * 1000L;
+        principal.setExpiresAt(expiresAt);
+        principal.setTtlSeconds(jwtProperties.getTtlSeconds());
         return Jwts.builder()
-                .subject(String.valueOf(user.getId()))
-                .claim("tenantId", user.getTenantId())
-                .claim("username", user.getUsername())
-                .claim("displayName", user.getDisplayName())
-                .claim("permissions", new ArrayList<String>(profile.getPermissions()))
-                .claim("menuPermissions", new ArrayList<String>(profile.getMenuPermissions()))
-                .claim("dataPermissions", new ArrayList<String>(profile.getDataPermissions()))
-                .claim("dataScope", profile.getDataScope().name())
+                .subject(String.valueOf(principal.getUserId()))
+                .claim("tenantId", principal.getTenantId())
+                .claim("username", principal.getUsername())
+                .claim("displayName", principal.getDisplayName())
+                .claim("sessionId", principal.getSessionId())
+                .claim("permissions", new ArrayList<String>(principal.getPermissions()))
+                .claim("menuPermissions", new ArrayList<String>(principal.getMenuPermissions()))
+                .claim("dataPermissions", new ArrayList<String>(principal.getDataPermissions()))
+                .claim("dataScope", principal.getDataScope())
                 .issuedAt(new Date(now))
-                .expiration(new Date(now + jwtProperties.getTtlSeconds() * 1000L))
+                .expiration(new Date(expiresAt))
                 .signWith(signingKey())
                 .compact();
     }
@@ -44,6 +62,12 @@ public class JwtService {
         principal.setTenantId(claims.get("tenantId", String.class));
         principal.setUsername(claims.get("username", String.class));
         principal.setDisplayName(claims.get("displayName", String.class));
+        principal.setSessionId(claims.get("sessionId", String.class));
+        if (claims.getExpiration() != null) {
+            principal.setExpiresAt(claims.getExpiration().getTime());
+            long ttlSeconds = (claims.getExpiration().getTime() - System.currentTimeMillis()) / 1000L;
+            principal.setTtlSeconds(ttlSeconds < 0L ? 0L : ttlSeconds);
+        }
         principal.setPermissions(readStringList(claims.get("permissions")));
         principal.setMenuPermissions(readStringList(claims.get("menuPermissions")));
         principal.setDataPermissions(readStringList(claims.get("dataPermissions")));

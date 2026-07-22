@@ -8,11 +8,9 @@ import com.hz.crm.auth.security.JwtPrincipal;
 import com.hz.crm.common.api.ApiResult;
 import com.hz.crm.common.api.PageData;
 import com.hz.crm.web.support.IdRequest;
-import com.hz.crm.web.support.WebUserSupport;
 import jakarta.validation.Valid;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.security.access.prepost.PreAuthorize;
-import org.springframework.security.core.Authentication;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
@@ -27,13 +25,9 @@ public class OpportunityController {
     @Autowired
     private OpportunityApplicationService opportunityApplicationService;
 
-    @Autowired
-    private WebUserSupport webUserSupport;
-
     @GetMapping("/page")
     @PreAuthorize("hasAuthority('*') or hasAuthority('crm:opportunity:view')")
-    public ApiResult<PageData<OpportunityResponse>> page(OpportunityQuery query, Authentication authentication) {
-        JwtPrincipal principal = webUserSupport.current(authentication);
+    public ApiResult<PageData<OpportunityResponse>> page(OpportunityQuery query, JwtPrincipal principal) {
         return ApiResult.ok(opportunityApplicationService.page(
                 principal.getTenantId(), principal.getUserId(), principal.getDataScope(), query));
     }
@@ -41,24 +35,21 @@ public class OpportunityController {
     @PostMapping("/page")
     @PreAuthorize("hasAuthority('*') or hasAuthority('crm:opportunity:view')")
     public ApiResult<PageData<OpportunityResponse>> pagePost(
-            @RequestBody(required = false) OpportunityQuery query, Authentication authentication) {
-        JwtPrincipal principal = webUserSupport.current(authentication);
+            @RequestBody(required = false) OpportunityQuery query, JwtPrincipal principal) {
         return ApiResult.ok(opportunityApplicationService.page(
                 principal.getTenantId(), principal.getUserId(), principal.getDataScope(), query));
     }
 
     @GetMapping("/detail")
     @PreAuthorize("hasAuthority('*') or hasAuthority('crm:opportunity:view')")
-    public ApiResult<OpportunityResponse> detail(@RequestParam Long id, Authentication authentication) {
-        JwtPrincipal principal = webUserSupport.current(authentication);
+    public ApiResult<OpportunityResponse> detail(@RequestParam Long id, JwtPrincipal principal) {
         return ApiResult.ok(opportunityApplicationService.detail(
                 principal.getTenantId(), principal.getUserId(), principal.getDataScope(), id));
     }
 
     @PostMapping("/detail")
     @PreAuthorize("hasAuthority('*') or hasAuthority('crm:opportunity:view')")
-    public ApiResult<OpportunityResponse> detailPost(@RequestBody IdRequest request, Authentication authentication) {
-        JwtPrincipal principal = webUserSupport.current(authentication);
+    public ApiResult<OpportunityResponse> detailPost(@RequestBody IdRequest request, JwtPrincipal principal) {
         return ApiResult.ok(opportunityApplicationService.detail(
                 principal.getTenantId(), principal.getUserId(), principal.getDataScope(), request.getId()));
     }
@@ -66,16 +57,14 @@ public class OpportunityController {
     @PostMapping("/save")
     @PreAuthorize("hasAuthority('*') or hasAuthority('crm:opportunity:manage')")
     public ApiResult<OpportunityResponse> save(
-            @Valid @RequestBody OpportunitySaveRequest request, Authentication authentication) {
-        JwtPrincipal principal = webUserSupport.current(authentication);
+            @Valid @RequestBody OpportunitySaveRequest request, JwtPrincipal principal) {
         return ApiResult.ok(
                 opportunityApplicationService.save(principal.getTenantId(), principal.getUserId(), request));
     }
 
     @PostMapping("/delete")
     @PreAuthorize("hasAuthority('*') or hasAuthority('crm:opportunity:manage')")
-    public ApiResult<Void> delete(@RequestBody IdRequest request, Authentication authentication) {
-        JwtPrincipal principal = webUserSupport.current(authentication);
+    public ApiResult<Void> delete(@RequestBody IdRequest request, JwtPrincipal principal) {
         opportunityApplicationService.delete(principal.getTenantId(), request.getId());
         return ApiResult.ok(null);
     }

@@ -46,7 +46,7 @@
         <jakarta-validation.version>3.1.1</jakarta-validation.version>
         <kotlin-stdlib.version>1.8.21</kotlin-stdlib.version>
         <httpcore5.version>5.4</httpcore5.version>
-        <jedis.version>7.4.1</jedis.version>
+        <redisson.version>3.52.0</redisson.version>
     </properties>
 
     <dependencyManagement>
@@ -117,9 +117,9 @@
                 <version>${kotlin-stdlib.version}</version>
             </dependency>
             <dependency>
-                <groupId>redis.clients</groupId>
-                <artifactId>jedis</artifactId>
-                <version>${jedis.version}</version>
+                <groupId>org.redisson</groupId>
+                <artifactId>redisson</artifactId>
+                <version>${redisson.version}</version>
             </dependency>
             <dependency>
                 <groupId>org.apache.httpcomponents.core5</groupId>

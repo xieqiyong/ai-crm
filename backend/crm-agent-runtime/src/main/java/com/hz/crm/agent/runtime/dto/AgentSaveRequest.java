@@ -20,14 +20,14 @@ public class AgentSaveRequest {
 
     private String systemPrompt;
 
+    private Long modelConfigId;
+
     private String modelProvider;
 
-    @NotBlank(message = "模型名称不能为空")
     private String modelName;
 
     private String baseUrl;
 
-    @NotBlank(message = "密钥环境变量不能为空")
     private String apiKeyEnv;
 
     private Integer maxIters;

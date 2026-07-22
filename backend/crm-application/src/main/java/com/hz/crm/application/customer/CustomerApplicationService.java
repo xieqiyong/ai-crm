@@ -32,11 +32,12 @@ public class CustomerApplicationService {
         CustomerQuery safeQuery = query == null ? new CustomerQuery() : query;
         PageRequest pageRequest = PageRequest.of(
                 safeQuery.safePageNo() - 1, safeQuery.safePageSize(), Sort.by(Sort.Direction.DESC, "createdAt"));
+        String keyword = trimToNull(safeQuery.getKeyword());
         Page<CustomerEntity> page;
         if ("SELF".equals(dataScope)) {
-            page = customerRepository.findByTenantIdAndOwnerIdAndDeletedFalse(tenantId, userId, pageRequest);
+            page = customerRepository.searchByTenantIdAndOwnerId(tenantId, userId, keyword, pageRequest);
         } else {
-            page = customerRepository.findByTenantIdAndDeletedFalse(tenantId, pageRequest);
+            page = customerRepository.searchByTenantId(tenantId, keyword, pageRequest);
         }
         List<CustomerResponse> records = new ArrayList<CustomerResponse>();
         for (CustomerEntity entity : page.getContent()) {
@@ -93,6 +94,13 @@ public class CustomerApplicationService {
         if ("SELF".equals(dataScope) && (ownerId == null || !ownerId.equals(userId))) {
             throw new BusinessException("DATA_001", "无权访问该数据");
         }
+    }
+
+    private String trimToNull(String value) {
+        if (value == null || value.trim().length() == 0) {
+            return null;
+        }
+        return value.trim();
     }
 
     private CustomerResponse toResponse(CustomerEntity entity) {

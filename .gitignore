@@ -22,6 +22,8 @@ frontend/data/
 .env
 .env.*
 !.env.example
+!frontend/.env.development
+!frontend/.env.production
 application-local.yml
 application-local.yaml
 application-dev-local.yml
@@ -54,6 +56,8 @@ tmp/
 temp/
 .tmp/
 .temp/
+deploy/.build/
+deploy/output/
 
 # 上传与对象存储本地目录
 uploads/

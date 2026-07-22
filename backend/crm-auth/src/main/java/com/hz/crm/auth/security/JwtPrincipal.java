@@ -17,6 +17,12 @@ public class JwtPrincipal {
 
     private String displayName;
 
+    private String sessionId;
+
+    private Long expiresAt;
+
+    private Long ttlSeconds;
+
     private List<String> permissions = new ArrayList<String>();
 
     private List<String> menuPermissions = new ArrayList<String>();

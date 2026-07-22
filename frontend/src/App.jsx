@@ -1,62 +1,28 @@
 import { useEffect, useMemo, useState } from 'react'
-import { api, clearAuth, getStoredAuth, saveAuth } from './api'
-import { AppShell, LoginPage, SetupPage, Toast } from './components'
-import {
-  CustomerPage,
-  DashboardPage,
-  LeadsPage,
-  OpportunitiesPage,
-  OrganizationPage,
-  SettingsPage,
-  SimpleModulePage,
-} from './pages'
-
-export const APP_NAME = '智能营销管理系统'
-
-const pagePermissions = {
-  dashboard: 'menu.dashboard',
-  leads: 'menu.leads',
-  customers: 'menu.customers',
-  opportunities: 'menu.opportunities',
-  followups: 'menu.followups',
-  tasks: 'menu.tasks',
-  assistant: 'menu.assistant',
-  knowledge: 'menu.knowledge',
-  organization: 'menu.organization',
-  settings: 'menu.settings',
-}
-
-const getStored = (key, fallback) => {
-  try {
-    const value = localStorage.getItem(key)
-    return value === null ? fallback : value
-  } catch {
-    return fallback
-  }
-}
-
-const dataScopeLabel = {
-  ALL: '全部数据',
-  DEPARTMENT_AND_CHILD: '部门及下级数据',
-  DEPARTMENT: '部门数据',
-  SELF: '本人数据',
-}
+import { api } from './api'
+import { Toast } from './components'
+import { DATA_SCOPE_LABELS } from './config/appConfig'
+import { LoginPage } from './features/auth/LoginPage'
+import { SetupPage } from './features/auth/SetupPage'
+import { useHashRoute } from './hooks/useHashRoute'
+import { useThemePreferences } from './hooks/useThemePreferences'
+import { useToast } from './hooks/useToast'
+import { AppLayout } from './layouts'
+import { canAccessRoute, DEFAULT_ROUTE, renderRoute, routeGroups } from './router/routes'
+import { clearAuth, getStoredAuth, saveAuth } from './store/authStorage'
 
 export default function App() {
   const storedAuth = getStoredAuth()
   const [booting, setBooting] = useState(true)
   const [installed, setInstalled] = useState(true)
   const [currentUser, setCurrentUser] = useState(storedAuth?.user || null)
-  const [page, setPage] = useState(() => window.location.hash.replace('#/', '') || 'dashboard')
-  const [theme, setTheme] = useState(() => getStored('crm.theme', 'light'))
-  const [accent, setAccent] = useState(() => getStored('crm.accent', '#f45b0b'))
-  const [density, setDensity] = useState(() => getStored('crm.density', 'comfortable'))
-  const [logo, setLogo] = useState(() => getStored('crm.logo', ''))
-  const [toast, setToast] = useState(null)
+  const [routeKey, navigate] = useHashRoute(DEFAULT_ROUTE)
+  const [preferences, updatePreferences] = useThemePreferences()
+  const { toast, notify, closeToast } = useToast()
 
   const currentRole = useMemo(() => ({
     name: currentUser?.displayName || currentUser?.username || '用户',
-    label: dataScopeLabel[currentUser?.dataScope] || '未授权',
+    label: DATA_SCOPE_LABELS[currentUser?.dataScope] || '未授权',
     department: currentUser?.tenantId || 'default',
     permissions: currentUser?.permissions || [],
   }), [currentUser])
@@ -73,7 +39,7 @@ export default function App() {
     let mounted = true
     const bootstrap = async () => {
       try {
-        const status = await api.installStatus()
+        const status = await api.install.status()
         if (!mounted) return
         setInstalled(status.installed)
         if (!status.installed) {
@@ -84,13 +50,13 @@ export default function App() {
         }
         const auth = getStoredAuth()
         if (auth?.token) {
-          const user = await api.me()
+          const user = await api.auth.me()
           if (!mounted) return
           const nextUser = { ...auth.user, ...user, token: auth.token }
           saveAuth(nextUser)
           setCurrentUser(nextUser)
         }
-      } catch (error) {
+      } catch {
         clearAuth()
         if (mounted) setCurrentUser(null)
       } finally {
@@ -104,77 +70,34 @@ export default function App() {
   }, [])
 
   useEffect(() => {
-    const applyTheme = () => {
-      const resolved = theme === 'system'
-        ? (window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light')
-        : theme
-      document.documentElement.dataset.theme = resolved
-      document.documentElement.dataset.density = density
-      document.documentElement.style.setProperty('--brand', accent)
+    if (currentUser && !canAccessRoute(routeKey, can)) {
+      navigate(DEFAULT_ROUTE)
     }
-    applyTheme()
-    const media = window.matchMedia('(prefers-color-scheme: dark)')
-    media.addEventListener?.('change', applyTheme)
-    return () => media.removeEventListener?.('change', applyTheme)
-  }, [theme, accent, density])
-
-  useEffect(() => {
-    const onHash = () => setPage(window.location.hash.replace('#/', '') || 'dashboard')
-    window.addEventListener('hashchange', onHash)
-    return () => window.removeEventListener('hashchange', onHash)
-  }, [])
-
-  useEffect(() => {
-    if (currentUser && !can(pagePermissions[page] || 'menu.dashboard')) navigate('dashboard')
-  }, [page, currentUser, can])
-
-  const notify = (message, tone = 'success') => {
-    setToast({ message, tone, id: Date.now() })
-  }
-
-  const navigate = (nextPage) => {
-    window.location.hash = `/${nextPage}`
-    setPage(nextPage)
-    window.scrollTo({ top: 0, behavior: 'smooth' })
-  }
+  }, [routeKey, currentUser, can, navigate])
 
   const login = async (payload) => {
-    const response = await api.login(payload)
+    const response = await api.auth.login(payload)
     saveAuth(response)
     setCurrentUser(response)
-    navigate('dashboard')
+    navigate(DEFAULT_ROUTE)
   }
 
   const setup = async (payload) => {
-    const response = await api.setupSuperAdmin(payload)
+    const response = await api.install.setupSuperAdmin(payload)
     saveAuth(response)
     setInstalled(true)
     setCurrentUser(response)
-    navigate('dashboard')
+    navigate(DEFAULT_ROUTE)
   }
 
-  const logout = () => {
-    clearAuth()
-    setCurrentUser(null)
-  }
-
-  const updatePreferences = (next) => {
-    if (next.theme) {
-      setTheme(next.theme)
-      localStorage.setItem('crm.theme', next.theme)
-    }
-    if (next.accent) {
-      setAccent(next.accent)
-      localStorage.setItem('crm.accent', next.accent)
-    }
-    if (next.density) {
-      setDensity(next.density)
-      localStorage.setItem('crm.density', next.density)
-    }
-    if (Object.prototype.hasOwnProperty.call(next, 'logo')) {
-      setLogo(next.logo)
-      if (next.logo) localStorage.setItem('crm.logo', next.logo)
-      else localStorage.removeItem('crm.logo')
+  const logout = async () => {
+    try {
+      await api.auth.logout()
+    } catch {
+      return
+    } finally {
+      clearAuth()
+      setCurrentUser(null)
     }
   }
 
@@ -183,42 +106,39 @@ export default function App() {
   }
 
   if (!installed) {
-    return <SetupPage onSetup={setup} logo={logo} />
+    return <SetupPage onSetup={setup} logo={preferences.logo} />
   }
 
   if (!currentUser) {
-    return <LoginPage onLogin={login} logo={logo} />
+    return <LoginPage onLogin={login} logo={preferences.logo} />
   }
 
-  const shared = { can, navigate, notify, currentUser, currentRole }
-  const pages = {
-    dashboard: <DashboardPage {...shared} />,
-    leads: <LeadsPage {...shared} />,
-    customers: <CustomerPage {...shared} />,
-    opportunities: <OpportunitiesPage {...shared} />,
-    followups: <SimpleModulePage type="followups" {...shared} />,
-    tasks: <SimpleModulePage type="tasks" {...shared} />,
-    assistant: <SimpleModulePage type="assistant" {...shared} />,
-    knowledge: <SimpleModulePage type="knowledge" {...shared} />,
-    organization: <OrganizationPage {...shared} />,
-    settings: <SettingsPage {...shared} preferences={{ theme, accent, density, logo }} onUpdate={updatePreferences} />,
+  const sharedProps = {
+    can,
+    navigate,
+    notify,
+    currentUser,
+    currentRole,
+    preferences,
+    onUpdate: updatePreferences,
   }
 
   return (
     <>
-      <AppShell
-        page={page}
+      <AppLayout
+        routeKey={routeKey}
+        routeGroups={routeGroups}
         onNavigate={navigate}
         can={can}
         currentUser={currentUser}
         currentRole={currentRole}
         onLogout={logout}
-        logo={logo}
+        logo={preferences.logo}
         onNotify={notify}
       >
-        {pages[page] || pages.dashboard}
-      </AppShell>
-      {toast && <Toast key={toast.id} {...toast} onClose={() => setToast(null)} />}
+        {renderRoute(routeKey, sharedProps)}
+      </AppLayout>
+      {toast && <Toast key={toast.id} {...toast} onClose={closeToast} />}
     </>
   )
 }

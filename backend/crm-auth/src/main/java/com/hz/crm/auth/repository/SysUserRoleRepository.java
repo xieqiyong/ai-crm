@@ -8,5 +8,11 @@ public interface SysUserRoleRepository extends JpaRepository<SysUserRoleEntity, 
 
     List<SysUserRoleEntity> findByUserIdAndTenantIdAndDeletedFalse(Long userId, String tenantId);
 
+    List<SysUserRoleEntity> findByTenantIdAndDeletedFalse(String tenantId);
+
+    List<SysUserRoleEntity> findByRoleIdAndTenantIdAndDeletedFalse(Long roleId, String tenantId);
+
     boolean existsByRoleIdAndTenantIdAndDeletedFalse(Long roleId, String tenantId);
+
+    long countByRoleIdAndTenantIdAndDeletedFalse(Long roleId, String tenantId);
 }

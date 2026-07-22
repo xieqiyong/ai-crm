@@ -8,8 +8,8 @@ import {
   RefreshCw, Search, Send, Settings2, ShieldCheck, SlidersHorizontal, Sparkles,
   Target, TrendingUp, Upload, UserPlus, Users, Waypoints, X, Zap,
 } from 'lucide-react'
-import { APP_NAME } from './App'
-import { Badge, Button, Card, Field, Modal, PageHeader } from './components'
+import { APP_NAME } from '../../config/appConfig'
+import { Badge, Button, Card, Field, Modal, PageHeader } from '../../components'
 
 const fmt = new Intl.NumberFormat('zh-CN')
 

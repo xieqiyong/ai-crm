@@ -13,15 +13,16 @@ spring:
     database-platform: org.hibernate.dialect.PostgreSQLDialect
     hibernate:
       ddl-auto: ${CRM_JPA_DDL_AUTO:update}
-    open-in-view: false
+    open-in-view: true
     properties:
       hibernate:
         format_sql: true
   data:
     redis:
-      host: ${CRM_REDIS_HOST:localhost}
+      host: ${CRM_REDIS_HOST:127.0.0.1}
       port: ${CRM_REDIS_PORT:6379}
       password: ${CRM_REDIS_PASSWORD:}
+      database: ${CRM_REDIS_DATABASE:1}
 
 mybatis-plus:
   configuration:
@@ -40,6 +41,10 @@ crm:
   jwt:
     secret: ${CRM_JWT_SECRET:please-change-this-secret-key-to-at-least-32-bytes}
     ttl-seconds: ${CRM_JWT_TTL_SECONDS:86400}
+  auth:
+    password-reset:
+      ttl-seconds: ${CRM_PASSWORD_RESET_TTL_SECONDS:900}
+      expose-token: ${CRM_PASSWORD_RESET_EXPOSE_TOKEN:true}
   datasource:
     druid:
       initial-size: ${CRM_DRUID_INITIAL_SIZE:2}
@@ -55,7 +60,7 @@ crm:
       pool-prepared-statements: ${CRM_DRUID_POOL_PREPARED_STATEMENTS:true}
       max-pool-prepared-statement-per-connection-size: ${CRM_DRUID_MAX_PS_PER_CONNECTION:20}
   redis:
-    enabled: ${CRM_REDIS_ENABLED:false}
+    enabled: ${CRM_REDIS_ENABLED:true}
   nacos:
     enabled: ${CRM_NACOS_ENABLED:false}
     server-addr: ${CRM_NACOS_SERVER_ADDR:localhost:8848}

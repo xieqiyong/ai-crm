@@ -10,5 +10,11 @@ public interface SysRoleRepository extends JpaRepository<SysRoleEntity, Long> {
 
     List<SysRoleEntity> findByIdInAndTenantIdAndEnabledTrueAndDeletedFalse(Collection<Long> ids, String tenantId);
 
+    List<SysRoleEntity> findByTenantIdAndDeletedFalseOrderByCreatedAtAsc(String tenantId);
+
+    List<SysRoleEntity> findByCodeAndDeletedFalse(String code);
+
     Optional<SysRoleEntity> findByCodeAndTenantIdAndDeletedFalse(String code, String tenantId);
+
+    Optional<SysRoleEntity> findByIdAndTenantIdAndDeletedFalse(Long id, String tenantId);
 }

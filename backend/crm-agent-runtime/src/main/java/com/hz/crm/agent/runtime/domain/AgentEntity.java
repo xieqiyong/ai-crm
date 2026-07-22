@@ -36,6 +36,8 @@ public class AgentEntity {
     @Lob
     private String systemPrompt;
 
+    private Long modelConfigId;
+
     @Column(nullable = false, length = 64)
     private String modelProvider = "OPENAI";
 

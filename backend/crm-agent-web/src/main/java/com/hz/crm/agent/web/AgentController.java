@@ -19,7 +19,6 @@ import java.io.IOException;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.MediaType;
 import org.springframework.security.access.prepost.PreAuthorize;
-import org.springframework.security.core.Authentication;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
@@ -40,46 +39,40 @@ public class AgentController {
 
     @GetMapping("/page")
     @PreAuthorize("hasAuthority('*') or hasAuthority('crm:agent:manage')")
-    public ApiResult<PageData<AgentEntity>> page(PageQuery query, Authentication authentication) {
-        JwtPrincipal principal = current(authentication);
+    public ApiResult<PageData<AgentEntity>> page(PageQuery query, JwtPrincipal principal) {
         return ApiResult.ok(agentDefinitionService.page(principal.getTenantId(), query));
     }
 
     @PostMapping("/page")
     @PreAuthorize("hasAuthority('*') or hasAuthority('crm:agent:manage')")
     public ApiResult<PageData<AgentEntity>> pagePost(
-            @RequestBody(required = false) PageQuery query, Authentication authentication) {
-        JwtPrincipal principal = current(authentication);
+            @RequestBody(required = false) PageQuery query, JwtPrincipal principal) {
         return ApiResult.ok(agentDefinitionService.page(principal.getTenantId(), query));
     }
 
     @PostMapping("/save")
     @PreAuthorize("hasAuthority('*') or hasAuthority('crm:agent:manage')")
-    public ApiResult<AgentEntity> save(@Valid @RequestBody AgentSaveRequest request, Authentication authentication) {
-        JwtPrincipal principal = current(authentication);
+    public ApiResult<AgentEntity> save(@Valid @RequestBody AgentSaveRequest request, JwtPrincipal principal) {
         return ApiResult.ok(agentDefinitionService.saveAgent(principal.getTenantId(), request));
     }
 
     @PostMapping("/mcp/save")
     @PreAuthorize("hasAuthority('*') or hasAuthority('crm:agent:manage')")
     public ApiResult<AgentMcpEntity> saveMcp(
-            @Valid @RequestBody AgentMcpSaveRequest request, Authentication authentication) {
-        JwtPrincipal principal = current(authentication);
+            @Valid @RequestBody AgentMcpSaveRequest request, JwtPrincipal principal) {
         return ApiResult.ok(agentDefinitionService.saveMcp(principal.getTenantId(), request));
     }
 
     @PostMapping("/skill/save")
     @PreAuthorize("hasAuthority('*') or hasAuthority('crm:agent:manage')")
     public ApiResult<AgentSkillEntity> saveSkill(
-            @Valid @RequestBody AgentSkillSaveRequest request, Authentication authentication) {
-        JwtPrincipal principal = current(authentication);
+            @Valid @RequestBody AgentSkillSaveRequest request, JwtPrincipal principal) {
         return ApiResult.ok(agentDefinitionService.saveSkill(principal.getTenantId(), request));
     }
 
     @PostMapping(value = "/run/stream", produces = MediaType.TEXT_EVENT_STREAM_VALUE)
     @PreAuthorize("hasAuthority('*') or hasAuthority('crm:agent:manage')")
-    public SseEmitter runStream(@Valid @RequestBody AgentRunRequest request, Authentication authentication) {
-        JwtPrincipal principal = current(authentication);
+    public SseEmitter runStream(@Valid @RequestBody AgentRunRequest request, JwtPrincipal principal) {
         SseEmitter emitter = new SseEmitter(0L);
         Disposable disposable = agentRunService
                 .run(principal.getTenantId(), principal.getUserId(), request)
@@ -99,9 +92,5 @@ public class AgentController {
         } catch (IOException ex) {
             emitter.completeWithError(ex);
         }
-    }
-
-    private JwtPrincipal current(Authentication authentication) {
-        return (JwtPrincipal) authentication.getPrincipal();
     }
 }

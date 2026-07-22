@@ -1,0 +1,139 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
+DEPLOY_DIR="$ROOT_DIR/deploy"
+OUTPUT_DIR="$DEPLOY_DIR/output"
+BUILD_DIR="$DEPLOY_DIR/.build"
+
+if command -v git >/dev/null 2>&1; then
+  GIT_SHORT_SHA="$(git -C "$ROOT_DIR" rev-parse --short HEAD 2>/dev/null || true)"
+else
+  GIT_SHORT_SHA=""
+fi
+
+if [ -z "${CRM_VERSION:-}" ]; then
+  if [ -n "$GIT_SHORT_SHA" ]; then
+    CRM_VERSION="$(date +%Y%m%d%H%M%S)-$GIT_SHORT_SHA"
+  else
+    CRM_VERSION="$(date +%Y%m%d%H%M%S)"
+  fi
+fi
+
+PACKAGE_NAME="intelligent-marketing-crm-$CRM_VERSION"
+PACKAGE_DIR="$OUTPUT_DIR/$PACKAGE_NAME"
+IMAGE_ARCHIVE="$PACKAGE_DIR/images/crm-images.tar"
+
+random_text() {
+  if command -v openssl >/dev/null 2>&1; then
+    openssl rand -hex 24
+    return
+  fi
+  date +%s%N | sha256sum | awk '{print $1}'
+}
+
+run_frontend_install() {
+  cd "$ROOT_DIR/frontend"
+  if [ -f package-lock.json ]; then
+    npm ci
+  else
+    npm install
+  fi
+}
+
+echo "开始构建智能营销管理系统离线包：$CRM_VERSION"
+
+rm -rf "$BUILD_DIR" "$PACKAGE_DIR"
+mkdir -p "$BUILD_DIR/backend" "$BUILD_DIR/frontend" "$PACKAGE_DIR/images" "$PACKAGE_DIR/scripts" "$OUTPUT_DIR"
+
+echo "构建后端 Jar"
+cd "$ROOT_DIR/backend"
+mvn -DskipTests clean package
+
+BACKEND_JAR="$(find "$ROOT_DIR/backend/crm-web/target" -maxdepth 1 -name 'crm-web-*.jar' ! -name '*.original' | head -n 1)"
+if [ -z "$BACKEND_JAR" ]; then
+  echo "未找到后端 Jar：backend/crm-web/target/crm-web-*.jar"
+  exit 1
+fi
+
+cp "$BACKEND_JAR" "$BUILD_DIR/backend/app.jar"
+cp "$DEPLOY_DIR/docker/backend/Dockerfile" "$BUILD_DIR/backend/Dockerfile"
+
+echo "构建前端 Dist"
+run_frontend_install
+npm run build
+
+cp -R "$ROOT_DIR/frontend/dist" "$BUILD_DIR/frontend/dist"
+cp "$DEPLOY_DIR/docker/frontend/Dockerfile" "$BUILD_DIR/frontend/Dockerfile"
+cp "$DEPLOY_DIR/docker/frontend/nginx.conf" "$BUILD_DIR/frontend/nginx.conf"
+cp "$DEPLOY_DIR/docker/frontend/write-runtime-config.sh" "$BUILD_DIR/frontend/write-runtime-config.sh"
+
+echo "构建 Docker 镜像"
+docker build -t "crm-backend:$CRM_VERSION" "$BUILD_DIR/backend"
+docker build -t "crm-frontend:$CRM_VERSION" "$BUILD_DIR/frontend"
+
+echo "准备中间件镜像"
+docker image inspect postgres:16-alpine >/dev/null 2>&1 || docker pull postgres:16-alpine
+docker image inspect redis:7-alpine >/dev/null 2>&1 || docker pull redis:7-alpine
+
+echo "保存离线镜像"
+docker save -o "$IMAGE_ARCHIVE" \
+  "crm-backend:$CRM_VERSION" \
+  "crm-frontend:$CRM_VERSION" \
+  postgres:16-alpine \
+  redis:7-alpine
+
+cp "$DEPLOY_DIR/docker-compose.yml" "$PACKAGE_DIR/docker-compose.yml"
+cp "$DEPLOY_DIR/env.example" "$PACKAGE_DIR/env.example"
+cp "$DEPLOY_DIR/scripts/deploy-offline.sh" "$PACKAGE_DIR/scripts/deploy-offline.sh"
+cp "$DEPLOY_DIR/README.md" "$PACKAGE_DIR/README.md"
+chmod +x "$PACKAGE_DIR/scripts/"*.sh
+
+CRM_DB_PASSWORD_VALUE="${CRM_DB_PASSWORD:-$(random_text)}"
+CRM_REDIS_PASSWORD_VALUE="${CRM_REDIS_PASSWORD:-$(random_text)}"
+CRM_JWT_SECRET_VALUE="${CRM_JWT_SECRET:-$(random_text)}"
+
+cat > "$PACKAGE_DIR/.env" <<EOF
+CRM_VERSION=$CRM_VERSION
+COMPOSE_PROJECT_NAME=${COMPOSE_PROJECT_NAME:-crm}
+CRM_TIMEZONE=${CRM_TIMEZONE:-Asia/Shanghai}
+
+CRM_FRONTEND_PORT=${CRM_FRONTEND_PORT:-80}
+CRM_FRONTEND_API_BASE_URL=${CRM_FRONTEND_API_BASE_URL:-}
+CRM_FRONTEND_API_TIMEOUT=${CRM_FRONTEND_API_TIMEOUT:-30000}
+
+CRM_DB_NAME=${CRM_DB_NAME:-crm}
+CRM_DB_USERNAME=${CRM_DB_USERNAME:-app_user}
+CRM_DB_PASSWORD=$CRM_DB_PASSWORD_VALUE
+CRM_JPA_DDL_AUTO=${CRM_JPA_DDL_AUTO:-update}
+
+CRM_REDIS_ENABLED=${CRM_REDIS_ENABLED:-true}
+CRM_REDIS_PASSWORD=$CRM_REDIS_PASSWORD_VALUE
+CRM_REDIS_DATABASE=${CRM_REDIS_DATABASE:-1}
+
+CRM_JAVA_OPTS=${CRM_JAVA_OPTS:--Xms512m -Xmx1024m -Dfile.encoding=UTF-8}
+CRM_JWT_SECRET=$CRM_JWT_SECRET_VALUE
+CRM_JWT_TTL_SECONDS=${CRM_JWT_TTL_SECONDS:-86400}
+CRM_PASSWORD_RESET_EXPOSE_TOKEN=${CRM_PASSWORD_RESET_EXPOSE_TOKEN:-false}
+CRM_LOG_LEVEL=${CRM_LOG_LEVEL:-INFO}
+
+CRM_NACOS_ENABLED=${CRM_NACOS_ENABLED:-false}
+CRM_MINIO_ENABLED=${CRM_MINIO_ENABLED:-false}
+CRM_ES_ENABLED=${CRM_ES_ENABLED:-false}
+EOF
+
+cat > "$PACKAGE_DIR/VERSION" <<EOF
+CRM_VERSION=$CRM_VERSION
+BUILD_TIME=$(date '+%Y-%m-%d %H:%M:%S')
+GIT_SHORT_SHA=$GIT_SHORT_SHA
+EOF
+
+echo "压缩离线包"
+cd "$OUTPUT_DIR"
+tar -czf "$PACKAGE_NAME.tar.gz" "$PACKAGE_NAME"
+
+if command -v sha256sum >/dev/null 2>&1; then
+  sha256sum "$PACKAGE_NAME.tar.gz" > "$PACKAGE_NAME.tar.gz.sha256"
+fi
+
+echo "离线包已生成：$OUTPUT_DIR/$PACKAGE_NAME.tar.gz"

@@ -40,7 +40,12 @@ public class AuthSecurityConfiguration {
                 .authorizeHttpRequests(authorize -> authorize
                         .requestMatchers(HttpMethod.OPTIONS, "/**")
                         .permitAll()
-                        .requestMatchers("/api/auth/login", "/api/install/**", "/actuator/health")
+                        .requestMatchers(
+                                "/api/auth/login",
+                                "/api/auth/forgot-password",
+                                "/api/auth/reset-password",
+                                "/api/install/**",
+                                "/actuator/health")
                         .permitAll()
                         .anyRequest()
                         .authenticated())

@@ -20,6 +20,9 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
     @Autowired
     private JwtService jwtService;
 
+    @Autowired
+    private LoginSessionService loginSessionService;
+
     @Override
     protected void doFilterInternal(
             HttpServletRequest request, HttpServletResponse response, FilterChain filterChain)
@@ -27,7 +30,13 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
         String header = request.getHeader("Authorization");
         if (header != null && header.startsWith("Bearer ")) {
             try {
-                JwtPrincipal principal = jwtService.parseToken(header.substring(7));
+                String token = header.substring(7);
+                JwtPrincipal principal = jwtService.parseToken(token);
+                if (!loginSessionService.validate(principal, token)) {
+                    SecurityContextHolder.clearContext();
+                    filterChain.doFilter(request, response);
+                    return;
+                }
                 List<SimpleGrantedAuthority> authorities = new ArrayList<SimpleGrantedAuthority>();
                 for (String permission : principal.getPermissions()) {
                     authorities.add(new SimpleGrantedAuthority(permission));

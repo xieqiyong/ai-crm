@@ -32,6 +32,8 @@ public class SysUserEntity {
     @Column(length = 64)
     private String displayName;
 
+    private Long departmentId;
+
     @Column(nullable = false)
     private boolean enabled = true;
 

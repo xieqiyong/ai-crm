@@ -1,0 +1,62 @@
+package com.hz.crm.agent.web;
+
+import com.hz.crm.agent.runtime.dto.ModelConfigIdRequest;
+import com.hz.crm.agent.runtime.dto.ModelConfigRequest;
+import com.hz.crm.agent.runtime.dto.ModelConfigResponse;
+import com.hz.crm.agent.runtime.dto.ModelConfigStatusResponse;
+import com.hz.crm.agent.runtime.service.ModelConfigService;
+import com.hz.crm.auth.security.JwtPrincipal;
+import com.hz.crm.common.api.ApiResult;
+import java.util.List;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.security.access.prepost.PreAuthorize;
+import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.RequestBody;
+import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RestController;
+
+@RestController
+@RequestMapping("/api/admin/model-configs")
+public class ModelConfigController {
+
+    @Autowired
+    private ModelConfigService modelConfigService;
+
+    @GetMapping("/list")
+    @PreAuthorize("hasAuthority('*') or hasAuthority('crm:model:view') or hasAuthority('crm:model:manage')")
+    public ApiResult<List<ModelConfigResponse>> list(JwtPrincipal principal) {
+        return ApiResult.ok(modelConfigService.list(principal.getTenantId()));
+    }
+
+    @PostMapping("/list")
+    @PreAuthorize("hasAuthority('*') or hasAuthority('crm:model:view') or hasAuthority('crm:model:manage')")
+    public ApiResult<List<ModelConfigResponse>> listPost(JwtPrincipal principal) {
+        return ApiResult.ok(modelConfigService.list(principal.getTenantId()));
+    }
+
+    @PostMapping("/save")
+    @PreAuthorize("hasAuthority('*') or hasAuthority('crm:model:manage')")
+    public ApiResult<ModelConfigResponse> save(@RequestBody ModelConfigRequest request, JwtPrincipal principal) {
+        return ApiResult.ok(modelConfigService.save(principal.getTenantId(), request));
+    }
+
+    @PostMapping("/delete")
+    @PreAuthorize("hasAuthority('*') or hasAuthority('crm:model:manage')")
+    public ApiResult<Void> delete(@RequestBody ModelConfigIdRequest request, JwtPrincipal principal) {
+        modelConfigService.delete(principal.getTenantId(), request);
+        return ApiResult.ok(null);
+    }
+
+    @PostMapping("/default")
+    @PreAuthorize("hasAuthority('*') or hasAuthority('crm:model:manage')")
+    public ApiResult<ModelConfigResponse> setDefault(@RequestBody ModelConfigIdRequest request, JwtPrincipal principal) {
+        return ApiResult.ok(modelConfigService.setDefault(principal.getTenantId(), request));
+    }
+
+    @PostMapping("/status")
+    @PreAuthorize("hasAuthority('*') or hasAuthority('crm:model:view') or hasAuthority('crm:model:manage')")
+    public ApiResult<ModelConfigStatusResponse> status(@RequestBody ModelConfigIdRequest request, JwtPrincipal principal) {
+        return ApiResult.ok(modelConfigService.status(principal.getTenantId(), request));
+    }
+}

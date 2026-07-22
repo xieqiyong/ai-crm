@@ -1,0 +1,119 @@
+pipeline {
+  agent any
+
+  options {
+    timestamps()
+    disableConcurrentBuilds()
+  }
+
+  parameters {
+    string(name: 'branch', defaultValue: 'main', description: 'Git 分支')
+  }
+
+  environment {
+    GIT_URL = "http://192.168.50.96:8888/xieqy/crm.git"
+    GIT_CREDENTIALS_ID = "liusu"
+    PRODUCT_ID = "crm"
+    PRODUCT_PATH_BASE = "/app/builds/products"
+    NODE_VERSION = "18"
+    FRONTEND_PORT = "80"
+    NVM_DIR = "${HOME}/.nvm"
+  }
+
+  stages {
+    stage('拉取代码') {
+      steps {
+        echo "拉取代码分支：${params.branch}"
+        checkout([
+          $class: 'GitSCM',
+          branches: [[name: params.branch]],
+          userRemoteConfigs: [[
+            url: env.GIT_URL,
+            credentialsId: env.GIT_CREDENTIALS_ID
+          ]]
+        ])
+      }
+    }
+
+    stage('检查构建环境') {
+      steps {
+        sh '''
+          set -e
+          echo "检查基础环境"
+          java -version
+          mvn -version
+          docker version
+          docker compose version || docker-compose version
+
+          export NVM_DIR="$HOME/.nvm"
+          if [ -s "$NVM_DIR/nvm.sh" ]; then
+            . "$NVM_DIR/nvm.sh"
+            nvm use "$NODE_VERSION"
+          fi
+
+          node -v
+          npm -v
+        '''
+      }
+    }
+
+    stage('打离线部署包') {
+      steps {
+        script {
+          def safeBranch = params.branch.trim().replaceAll('[^A-Za-z0-9_.-]', '-')
+          def version = "${env.PRODUCT_ID}-${safeBranch}-${env.BUILD_NUMBER}"
+          env.CRM_PACKAGE_VERSION = version
+
+          withEnv([
+            "CRM_VERSION=${version}",
+            "CRM_FRONTEND_PORT=${env.FRONTEND_PORT}"
+          ]) {
+            sh '''
+              set -e
+              export NVM_DIR="$HOME/.nvm"
+              if [ -s "$NVM_DIR/nvm.sh" ]; then
+                . "$NVM_DIR/nvm.sh"
+                nvm use "$NODE_VERSION"
+              fi
+
+              bash deploy/scripts/build-offline-package.sh
+            '''
+          }
+        }
+      }
+      post {
+        always {
+          archiveArtifacts artifacts: 'deploy/output/*.tar.gz,deploy/output/*.sha256', fingerprint: true, allowEmptyArchive: true
+        }
+      }
+    }
+
+    stage('上传构建物') {
+      steps {
+        sh '''
+          set -e
+          OUTPUT_DIR="$PRODUCT_PATH_BASE/$PRODUCT_ID"
+          echo "创建产品产物目录：$OUTPUT_DIR"
+          mkdir -p "$OUTPUT_DIR"
+          cp -f deploy/output/*.tar.gz "$OUTPUT_DIR/"
+          if ls deploy/output/*.sha256 >/dev/null 2>&1; then
+            cp -f deploy/output/*.sha256 "$OUTPUT_DIR/"
+          fi
+          echo "离线包已上传到：$OUTPUT_DIR"
+        '''
+      }
+    }
+  }
+
+  post {
+    success {
+      echo "构建成功：${env.CRM_PACKAGE_VERSION}"
+    }
+    failure {
+      echo "构建失败，请检查 Maven、Node、Docker 或网络依赖"
+    }
+    always {
+      echo "构建流程结束"
+    }
+  }
+}

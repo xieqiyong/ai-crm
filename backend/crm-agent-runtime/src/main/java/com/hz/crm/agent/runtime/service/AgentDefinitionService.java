@@ -3,12 +3,14 @@ package com.hz.crm.agent.runtime.service;
 import com.hz.crm.agent.runtime.domain.AgentEntity;
 import com.hz.crm.agent.runtime.domain.AgentMcpEntity;
 import com.hz.crm.agent.runtime.domain.AgentSkillEntity;
+import com.hz.crm.agent.runtime.domain.ModelConfigEntity;
 import com.hz.crm.agent.runtime.dto.AgentMcpSaveRequest;
 import com.hz.crm.agent.runtime.dto.AgentSaveRequest;
 import com.hz.crm.agent.runtime.dto.AgentSkillSaveRequest;
 import com.hz.crm.agent.runtime.repository.AgentMcpRepository;
 import com.hz.crm.agent.runtime.repository.AgentRepository;
 import com.hz.crm.agent.runtime.repository.AgentSkillRepository;
+import com.hz.crm.agent.runtime.repository.ModelConfigRepository;
 import com.hz.crm.common.api.PageData;
 import com.hz.crm.common.api.PageQuery;
 import com.hz.crm.common.exception.BusinessException;
@@ -32,6 +34,9 @@ public class AgentDefinitionService {
 
     @Autowired
     private AgentSkillRepository agentSkillRepository;
+
+    @Autowired
+    private ModelConfigRepository modelConfigRepository;
 
     @Autowired
     private SnowflakeIdGenerator snowflakeIdGenerator;
@@ -64,10 +69,7 @@ public class AgentDefinitionService {
         entity.setName(request.getName());
         entity.setDescription(request.getDescription());
         entity.setSystemPrompt(request.getSystemPrompt());
-        entity.setModelProvider(request.getModelProvider() == null ? "OPENAI" : request.getModelProvider());
-        entity.setModelName(request.getModelName());
-        entity.setBaseUrl(request.getBaseUrl());
-        entity.setApiKeyEnv(request.getApiKeyEnv());
+        applyModelConfig(tenantId, entity, request);
         entity.setMaxIters(request.getMaxIters() == null ? 8 : request.getMaxIters());
         entity.setEnabled(request.getEnabled() == null || request.getEnabled());
         return agentRepository.save(entity);
@@ -128,6 +130,31 @@ public class AgentDefinitionService {
         return agentSkillRepository.findByAgentIdAndTenantIdAndEnabledTrueAndDeletedFalse(agentId, tenantId);
     }
 
+    private void applyModelConfig(String tenantId, AgentEntity entity, AgentSaveRequest request) {
+        if (request.getModelConfigId() != null) {
+            ModelConfigEntity config = modelConfigRepository
+                    .findByIdAndTenantIdAndDeletedFalse(request.getModelConfigId(), tenantId)
+                    .orElseThrow(() -> new BusinessException("MODEL_003", "模型配置不存在"));
+            if (!config.isEnabled()) {
+                throw new BusinessException("MODEL_004", "模型配置已停用");
+            }
+            entity.setModelConfigId(config.getId());
+            entity.setModelProvider(config.getProvider());
+            entity.setModelName(config.getModelName());
+            entity.setBaseUrl(config.getBaseUrl());
+            entity.setApiKeyEnv(config.getApiKeyEnv());
+            return;
+        }
+        if (blank(request.getModelName()) || blank(request.getApiKeyEnv())) {
+            throw new BusinessException("AGENT_003", "模型名称和密钥环境变量不能为空");
+        }
+        entity.setModelConfigId(null);
+        entity.setModelProvider(blank(request.getModelProvider()) ? "OPENAI" : request.getModelProvider());
+        entity.setModelName(request.getModelName());
+        entity.setBaseUrl(request.getBaseUrl());
+        entity.setApiKeyEnv(request.getApiKeyEnv());
+    }
+
     private AgentEntity findAgent(String tenantId, Long id) {
         if (id == null) {
             throw new BusinessException("AGENT_001", "Agent编号不能为空");
@@ -135,5 +162,9 @@ public class AgentDefinitionService {
         return agentRepository
                 .findByIdAndTenantIdAndDeletedFalse(id, tenantId)
                 .orElseThrow(() -> new BusinessException("AGENT_002", "Agent不存在"));
+    }
+
+    private boolean blank(String value) {
+        return value == null || value.trim().length() == 0;
     }
 }
