@@ -22,8 +22,8 @@ public class SysRoleEntity {
     @Id
     private Long id;
 
-    @Column(nullable = false, length = 64)
-    private String tenantId;
+    @Column(nullable = false, columnDefinition = "bigint")
+    private Long tenantId;
 
     @Column(nullable = false, length = 64)
     private String code;

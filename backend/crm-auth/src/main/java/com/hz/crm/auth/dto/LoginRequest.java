@@ -7,7 +7,7 @@ import lombok.Setter;
 @Setter
 public class LoginRequest {
 
-    private String tenantId;
+    private Long tenantId;
 
     private String username;
 

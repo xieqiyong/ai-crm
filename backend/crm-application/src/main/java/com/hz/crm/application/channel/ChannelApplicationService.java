@@ -47,7 +47,7 @@ public class ChannelApplicationService {
     private UserNameResolver userNameResolver;
 
     @Transactional(readOnly = true)
-    public PageData<ChannelResponse> page(String tenantId, Long userId, String dataScope, ChannelQuery query) {
+    public PageData<ChannelResponse> page(Long tenantId, Long userId, String dataScope, ChannelQuery query) {
         ChannelQuery safeQuery = query == null ? new ChannelQuery() : query;
         PageRequest pageRequest = PageRequest.of(
                 safeQuery.safePageNo() - 1, safeQuery.safePageSize(), Sort.by(Sort.Direction.DESC, "createdAt"));
@@ -68,7 +68,7 @@ public class ChannelApplicationService {
     }
 
     @Transactional(readOnly = true)
-    public ChannelResponse detail(String tenantId, Long userId, String dataScope, Long id) {
+    public ChannelResponse detail(Long tenantId, Long userId, String dataScope, Long id) {
         ChannelRecordEntity entity = findOne(tenantId, id);
         checkDataScope(userId, dataScope, entity.getOwnerId());
         ChannelResponse response = toResponse(entity);
@@ -77,7 +77,7 @@ public class ChannelApplicationService {
     }
 
     @Transactional
-    public ChannelResponse save(String tenantId, Long operatorId, String dataScope, ChannelSaveRequest request) {
+    public ChannelResponse save(Long tenantId, Long operatorId, String dataScope, ChannelSaveRequest request) {
         if (request == null || !StringUtils.hasText(request.getTitle())) {
             throw new BusinessException("CHANNEL_001", "渠道标题不能为空");
         }
@@ -106,7 +106,7 @@ public class ChannelApplicationService {
     }
 
     @Transactional
-    public void delete(String tenantId, Long userId, String dataScope, Long id) {
+    public void delete(Long tenantId, Long userId, String dataScope, Long id) {
         ChannelRecordEntity entity = findOne(tenantId, id);
         checkDataScope(userId, dataScope, entity.getOwnerId());
         entity.setDeleted(true);
@@ -114,7 +114,7 @@ public class ChannelApplicationService {
     }
 
     @Transactional
-    public ChannelResponse importMedia(String tenantId, Long operatorId, ChannelMediaImportRequest request) {
+    public ChannelResponse importMedia(Long tenantId, Long operatorId, ChannelMediaImportRequest request) {
         if (request == null || !StringUtils.hasText(request.getMediaFileName())) {
             throw new BusinessException("CHANNEL_002", "请上传录音或视频文件");
         }
@@ -141,7 +141,7 @@ public class ChannelApplicationService {
     }
 
     @Transactional
-    public ChannelResponse prepareTranscription(String tenantId, Long userId, String dataScope, Long id) {
+    public ChannelResponse prepareTranscription(Long tenantId, Long userId, String dataScope, Long id) {
         ChannelRecordEntity entity = findOne(tenantId, id);
         checkDataScope(userId, dataScope, entity.getOwnerId());
         checkNotPromoted(entity);
@@ -152,7 +152,7 @@ public class ChannelApplicationService {
     }
 
     @Transactional
-    public ChannelResponse prepareAiAnalysis(String tenantId, Long userId, String dataScope, Long id) {
+    public ChannelResponse prepareAiAnalysis(Long tenantId, Long userId, String dataScope, Long id) {
         ChannelRecordEntity entity = findOne(tenantId, id);
         checkDataScope(userId, dataScope, entity.getOwnerId());
         checkNotPromoted(entity);
@@ -164,7 +164,7 @@ public class ChannelApplicationService {
 
     @Transactional
     public ChannelResponse promoteToLead(
-            String tenantId, Long operatorId, String dataScope, ChannelPromoteRequest request) {
+            Long tenantId, Long operatorId, String dataScope, ChannelPromoteRequest request) {
         if (request == null || request.getId() == null) {
             throw new BusinessException("CHANNEL_003", "渠道编号不能为空");
         }
@@ -190,7 +190,7 @@ public class ChannelApplicationService {
         return response;
     }
 
-    private ChannelRecordEntity findOne(String tenantId, Long id) {
+    private ChannelRecordEntity findOne(Long tenantId, Long id) {
         if (id == null) {
             throw new BusinessException("CHANNEL_003", "渠道编号不能为空");
         }
@@ -308,13 +308,13 @@ public class ChannelApplicationService {
         return response;
     }
 
-    private void fillOwnerName(String tenantId, ChannelResponse response) {
+    private void fillOwnerName(Long tenantId, ChannelResponse response) {
         List<ChannelResponse> records = new ArrayList<ChannelResponse>();
         records.add(response);
         fillOwnerNames(tenantId, records);
     }
 
-    private void fillOwnerNames(String tenantId, List<ChannelResponse> records) {
+    private void fillOwnerNames(Long tenantId, List<ChannelResponse> records) {
         if (userNameResolver == null || records == null || records.isEmpty()) {
             return;
         }

@@ -27,7 +27,7 @@
 ## 技术栈要求
 - java21
 - springboot 4.0 版本以上
-- pgsql做数据源，jpa作为DDL实例化和实体，mybatis-plus作为查询层，分页器可以使用pagehelper
+- pgsql做数据源，jpa保留用于实体DDL初始化和表结构演进；业务逻辑禁止使用JpaRepository和EntityManager做数据读写，业务查询、分页、增删改统一使用mybatis-plus，分页器可以使用pagehelper
 - 遵循DDL领域模型
 - 引入中间件redis，配置中心nacos，MinIO，Elasticsearch
 - 使用fastjson，lombok等接入

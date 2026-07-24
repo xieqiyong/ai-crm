@@ -5,5 +5,5 @@ import java.util.Map;
 
 public interface UserNameResolver {
 
-    Map<Long, String> resolve(String tenantId, Collection<Long> userIds);
+    Map<Long, String> resolve(Long tenantId, Collection<Long> userIds);
 }

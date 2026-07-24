@@ -59,7 +59,7 @@ public class JwtService {
         Claims claims = Jwts.parser().verifyWith(signingKey()).build().parseSignedClaims(token).getPayload();
         JwtPrincipal principal = new JwtPrincipal();
         principal.setUserId(Long.valueOf(claims.getSubject()));
-        principal.setTenantId(claims.get("tenantId", String.class));
+        principal.setTenantId(readLong(claims.get("tenantId")));
         principal.setUsername(claims.get("username", String.class));
         principal.setDisplayName(claims.get("displayName", String.class));
         principal.setSessionId(claims.get("sessionId", String.class));
@@ -73,6 +73,16 @@ public class JwtService {
         principal.setDataPermissions(readStringList(claims.get("dataPermissions")));
         principal.setDataScope(claims.get("dataScope", String.class));
         return principal;
+    }
+
+    private Long readLong(Object value) {
+        if (value == null) {
+            return null;
+        }
+        if (value instanceof Number) {
+            return ((Number) value).longValue();
+        }
+        return Long.valueOf(String.valueOf(value));
     }
 
     private List<String> readStringList(Object value) {

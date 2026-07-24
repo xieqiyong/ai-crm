@@ -3,12 +3,23 @@ server:
 
 spring:
   application:
-    name: intelligent-marketing-crm
+    name: crm
   datasource:
     url: ${CRM_DB_URL:jdbc:postgresql://localhost:5432/crm}
     username: ${CRM_DB_USERNAME:app_user}
     password: ${CRM_DB_PASSWORD:app123456}
     driver-class-name: org.postgresql.Driver
+    druid:
+      initial-size: ${CRM_DRUID_INITIAL_SIZE:1}
+      min-idle: ${CRM_DRUID_MIN_IDLE:1}
+      max-active: ${CRM_DRUID_MAX_ACTIVE:20}
+      max-wait: ${CRM_DRUID_MAX_WAIT:60000}
+      time-between-eviction-runs-millis: ${CRM_DRUID_EVICTION_INTERVAL:60000}
+      min-evictable-idle-time-millis: ${CRM_DRUID_MIN_EVICTABLE_IDLE_TIME:300000}
+      validation-query: ${CRM_DRUID_VALIDATION_QUERY:select 1}
+      max-open-prepared-statements: 20
+      pool-prepared-statements: false
+      max-pool-prepared-statement-per-connection-size: 0
   jpa:
     database-platform: org.hibernate.dialect.PostgreSQLDialect
     hibernate:
@@ -45,20 +56,6 @@ crm:
     password-reset:
       ttl-seconds: ${CRM_PASSWORD_RESET_TTL_SECONDS:900}
       expose-token: ${CRM_PASSWORD_RESET_EXPOSE_TOKEN:true}
-  datasource:
-    druid:
-      initial-size: ${CRM_DRUID_INITIAL_SIZE:2}
-      min-idle: ${CRM_DRUID_MIN_IDLE:2}
-      max-active: ${CRM_DRUID_MAX_ACTIVE:20}
-      max-wait: ${CRM_DRUID_MAX_WAIT:60000}
-      time-between-eviction-runs-millis: ${CRM_DRUID_EVICTION_INTERVAL:60000}
-      min-evictable-idle-time-millis: ${CRM_DRUID_MIN_EVICTABLE_IDLE_TIME:300000}
-      validation-query: ${CRM_DRUID_VALIDATION_QUERY:select 1}
-      test-while-idle: ${CRM_DRUID_TEST_WHILE_IDLE:true}
-      test-on-borrow: ${CRM_DRUID_TEST_ON_BORROW:false}
-      test-on-return: ${CRM_DRUID_TEST_ON_RETURN:false}
-      pool-prepared-statements: ${CRM_DRUID_POOL_PREPARED_STATEMENTS:true}
-      max-pool-prepared-statement-per-connection-size: ${CRM_DRUID_MAX_PS_PER_CONNECTION:20}
   redis:
     enabled: ${CRM_REDIS_ENABLED:true}
   channel:
@@ -83,6 +80,18 @@ crm:
       password: ${CRM_ES_PASSWORD:}
   agent:
     workspace: ${CRM_AGENT_WORKSPACE:./data/agent-runtime}
+    web-search:
+      enabled: ${CRM_AGENT_WEB_SEARCH_ENABLED:true}
+      provider: ${CRM_AGENT_WEB_SEARCH_PROVIDER:searxng}
+      endpoint: ${CRM_AGENT_WEB_SEARCH_ENDPOINT:http://180.76.225.232:8888}
+      api-key: ${CRM_AGENT_WEB_SEARCH_API_KEY:}
+      timeout-ms: ${CRM_AGENT_WEB_SEARCH_TIMEOUT_MS:8000}
+      max-results: ${CRM_AGENT_WEB_SEARCH_MAX_RESULTS:5}
+      fetch-detail: ${CRM_AGENT_WEB_SEARCH_FETCH_DETAIL:true}
+      detail-limit: ${CRM_AGENT_WEB_SEARCH_DETAIL_LIMIT:3}
+    token:
+      daily-limit: ${CRM_AGENT_TOKEN_DAILY_LIMIT:100000}
+      reserve-output-tokens: ${CRM_AGENT_TOKEN_RESERVE_OUTPUT_TOKENS:2048}
 
 management:
   endpoints:

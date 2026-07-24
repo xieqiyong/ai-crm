@@ -13,7 +13,7 @@ public class LeadResponse {
 
     private Long id;
 
-    private String tenantId;
+    private Long tenantId;
 
     private String name;
 

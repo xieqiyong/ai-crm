@@ -17,7 +17,7 @@ public class ModelConfigRequest {
 
     private String baseUrl;
 
-    private String apiKeyEnv;
+    private String apiKey;
 
     private String remark;
 

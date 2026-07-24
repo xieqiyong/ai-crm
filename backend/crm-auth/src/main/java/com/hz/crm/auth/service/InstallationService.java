@@ -5,6 +5,7 @@ import com.hz.crm.auth.domain.SysDepartmentEntity;
 import com.hz.crm.auth.domain.SysPermissionEntity;
 import com.hz.crm.auth.domain.SysRoleEntity;
 import com.hz.crm.auth.domain.SysRolePermissionEntity;
+import com.hz.crm.auth.domain.SysTenantEntity;
 import com.hz.crm.auth.domain.SysUserEntity;
 import com.hz.crm.auth.domain.SysUserRoleEntity;
 import com.hz.crm.auth.dto.InstallStatusResponse;
@@ -25,8 +26,6 @@ import org.springframework.transaction.annotation.Transactional;
 
 @Service
 public class InstallationService {
-
-    private static final String DEFAULT_TENANT = "default";
 
     private static final String SUPER_ADMIN_ROLE = "SUPER_ADMIN";
 
@@ -57,6 +56,9 @@ public class InstallationService {
     @Autowired
     private DepartmentSeedService departmentSeedService;
 
+    @Autowired
+    private TenantService tenantService;
+
     @Transactional(readOnly = true)
     public InstallStatusResponse status() {
         InstallStatusResponse response = new InstallStatusResponse();
@@ -75,8 +77,10 @@ public class InstallationService {
         if (request.getPassword() == null || request.getPassword().length() < 8) {
             throw new BusinessException("INSTALL_002", "超管密码长度不能少于8位");
         }
-        String tenantId = normalizeTenant(request.getTenantId());
-        SysDepartmentEntity rootDepartment = departmentSeedService.ensureTenantRootDepartment(tenantId);
+        SysTenantEntity tenant = tenantService.createInitialTenant(request.getTenantName());
+        Long tenantId = tenant.getId();
+        SysDepartmentEntity rootDepartment =
+                departmentSeedService.ensureTenantRootDepartment(tenantId, tenant.getName());
         List<SysPermissionEntity> permissions = permissionSeedService.seedBasePermissions(tenantId);
         SysRoleEntity role = new SysRoleEntity();
         role.setId(snowflakeIdGenerator.nextId());
@@ -131,10 +135,4 @@ public class InstallationService {
         return request.getDisplayName().trim();
     }
 
-    private String normalizeTenant(String tenantId) {
-        if (tenantId == null || tenantId.trim().length() == 0) {
-            return DEFAULT_TENANT;
-        }
-        return tenantId.trim();
-    }
 }

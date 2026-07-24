@@ -20,8 +20,8 @@ public class RequestLogEntity {
     @Id
     private Long id;
 
-    @Column(length = 64)
-    private String tenantId;
+    @Column(columnDefinition = "bigint")
+    private Long tenantId;
 
     private Long operatorId;
 

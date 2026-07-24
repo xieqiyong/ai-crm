@@ -7,7 +7,9 @@ import org.springframework.data.jpa.repository.JpaRepository;
 
 public interface AgentMcpRepository extends JpaRepository<AgentMcpEntity, Long> {
 
-    List<AgentMcpEntity> findByAgentIdAndTenantIdAndEnabledTrueAndDeletedFalse(Long agentId, String tenantId);
+    List<AgentMcpEntity> findByAgentIdAndTenantIdAndEnabledTrueAndDeletedFalse(Long agentId, Long tenantId);
 
-    Optional<AgentMcpEntity> findByIdAndTenantIdAndDeletedFalse(Long id, String tenantId);
+    List<AgentMcpEntity> findByAgentIdAndTenantIdAndDeletedFalseOrderByCreatedAtDesc(Long agentId, Long tenantId);
+
+    Optional<AgentMcpEntity> findByIdAndTenantIdAndDeletedFalse(Long id, Long tenantId);
 }

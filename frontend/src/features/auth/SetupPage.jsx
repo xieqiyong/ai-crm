@@ -3,7 +3,7 @@ import { BrandLogo, Button, Field } from '../../components'
 import { SetupSuperAdminRequest } from '../../models/requests'
 
 export function SetupPage({ onSetup, logo }) {
-  const [form, setForm] = useState({ tenantId: 'default', username: '', displayName: '', password: '', confirmPassword: '' })
+  const [form, setForm] = useState({ tenantName: '默认租户', username: '', displayName: '', password: '', confirmPassword: '' })
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
 
@@ -35,8 +35,8 @@ export function SetupPage({ onSetup, logo }) {
         <h1>创建超级管理员</h1>
         <p>系统未检测到超级管理员账号。完成初始化后，将自动进入系统并启用完整菜单权限与全部数据权限。</p>
         <form onSubmit={submit}>
-          <Field label="租户 / 顶级部门" hint="初始化后会作为组织架构的顶级部门">
-            <input value={form.tenantId} onChange={(event) => update('tenantId', event.target.value)} />
+          <Field label="租户名称 / 顶级部门" hint="系统会自动生成数字租户ID，并将该名称作为组织架构顶级部门">
+            <input value={form.tenantName} onChange={(event) => update('tenantName', event.target.value)} />
           </Field>
           <Field label="超管用户名" required>
             <input value={form.username} onChange={(event) => update('username', event.target.value)} />

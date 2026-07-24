@@ -9,13 +9,23 @@ import {
   Plus,
   RefreshCw,
   Search,
+  Sparkles,
   Trash2,
   UserPlus,
-  UserRound,
-  X,
 } from 'lucide-react'
 import { api } from '../../api'
-import { Badge, Button, Card, ConfirmDialog, Field, Modal, PageHeader, useConfirmDialog } from '../../components'
+import {
+  Badge,
+  Button,
+  Card,
+  ConfirmDialog,
+  Drawer,
+  Field,
+  MarkdownText,
+  Modal,
+  PageHeader,
+  useConfirmDialog,
+} from '../../components'
 import { customerOptionLabel, useCustomerOptions } from '../../hooks/useCustomerOptions'
 import { ownerName, ownerOptionLabel, useOwnerOptions } from '../../hooks/useOwnerOptions'
 import {
@@ -44,6 +54,27 @@ const emptyForm = {
   status: recommendedLeadStatus,
   ownerId: '',
   remark: '',
+}
+
+const aiStageText = {
+  NEW: '新线索',
+  FOLLOWING: '跟进中',
+  QUALIFIED: '已确认',
+  CONVERTED: '已转化',
+  CLOSED: '已关闭',
+  UNKNOWN: '未知阶段',
+}
+
+const aiPriorityText = {
+  HIGH: '高优先级',
+  MEDIUM: '中优先级',
+  LOW: '低优先级',
+}
+
+const aiPriorityTone = {
+  HIGH: 'danger',
+  MEDIUM: 'warning',
+  LOW: 'neutral',
 }
 
 function formatDateTime(value) {
@@ -79,8 +110,8 @@ function toForm(row) {
 function toPayload(form) {
   return {
     ...form,
-    name: form.name.trim(),
-    companyName: form.companyName || null,
+    name: (form.name || '').trim() || null,
+    companyName: (form.companyName || '').trim() || null,
     phone: form.phone || null,
     email: form.email || null,
     source: form.source || null,
@@ -125,12 +156,44 @@ function toConvertPayload(form) {
   }
 }
 
+function toConvertFormFromAi(lead, analysis) {
+  const sourceLead = lead || analysis?.lead || { id: analysis?.leadId }
+  const draft = analysis?.convertDraft || {}
+  const base = toConvertForm(sourceLead)
+  return {
+    ...base,
+    customerName: draft.customerName || base.customerName,
+    industry: draft.industry || base.industry,
+    contactName: draft.contactName || base.contactName,
+    contactPhone: draft.contactPhone || base.contactPhone,
+    contactEmail: draft.contactEmail || base.contactEmail,
+    level: draft.level || base.level,
+    status: draft.status || base.status,
+    ownerId: draft.ownerId || base.ownerId,
+    remark: draft.remark || base.remark,
+  }
+}
+
+function formatPercent(value) {
+  if (value === undefined || value === null || value === '') return '-'
+  const numberValue = Number(value)
+  if (!Number.isFinite(numberValue)) return '-'
+  return `${Math.round(numberValue * 100)}%`
+}
+
+function formatSeconds(value) {
+  const seconds = Number(value || 0)
+  if (seconds < 60) return `${seconds} 秒`
+  return `${Math.floor(seconds / 60)} 分 ${seconds % 60} 秒`
+}
+
 export function LeadPage({ can, notify, navigate }) {
   const canManage = can('crm:lead:manage')
   const canCreate = canManage || can('crm:lead:create')
   const canDelete = can('crm:lead:manage')
   const canConvert = canManage && (can('crm:customer:manage') || can('crm:customer:edit'))
   const canBindCustomer = canConvert && can('crm:customer:view')
+  const canAnalyze = can('crm:assistant:use') && (can('crm:lead:view') || canManage)
   const ownerOptions = useOwnerOptions(notify)
   const customerOptions = useCustomerOptions(notify, canBindCustomer)
   const { confirm, dialogProps } = useConfirmDialog()
@@ -140,6 +203,9 @@ export function LeadPage({ can, notify, navigate }) {
   const [selected, setSelected] = useState(null)
   const [editing, setEditing] = useState(null)
   const [converting, setConverting] = useState(null)
+  const [aiAnalysis, setAiAnalysis] = useState(null)
+  const [analyzingId, setAnalyzingId] = useState(null)
+  const [aiElapsed, setAiElapsed] = useState(0)
 
   const load = async (nextQuery = query) => {
     setLoading(true)
@@ -158,6 +224,15 @@ export function LeadPage({ can, notify, navigate }) {
     load()
   }, [])
 
+  useEffect(() => {
+    if (!analyzingId) {
+      setAiElapsed(0)
+      return undefined
+    }
+    const timer = window.setInterval(() => setAiElapsed((value) => value + 1), 1000)
+    return () => window.clearInterval(timer)
+  }, [analyzingId])
+
   const search = (event) => {
     event.preventDefault()
     load({ ...query, pageNo: 1 })
@@ -173,10 +248,6 @@ export function LeadPage({ can, notify, navigate }) {
   }
 
   const saveLead = async (form) => {
-    if (!form.name || !form.name.trim()) {
-      notify('线索名称不能为空', 'info')
-      return
-    }
     try {
       const saved = await api.lead.save(toPayload(form))
       notify('线索已保存', 'success')
@@ -235,6 +306,56 @@ export function LeadPage({ can, notify, navigate }) {
     }
   }
 
+  const analyzeLead = async (row) => {
+    if (!row?.id) {
+      notify('请选择要分析的线索', 'info')
+      return
+    }
+    setAiElapsed(0)
+    setAnalyzingId(row.id)
+    setAiAnalysis({
+      loading: true,
+      available: true,
+      success: false,
+      leadId: row.id,
+      leadName: row.name,
+      message: '正在调用线索分析智能体',
+    })
+    try {
+      const response = await api.assistant.analyzeLead({ leadId: row.id })
+      setAiAnalysis(response)
+      if (response.lead) {
+        setSelected(response.lead)
+      }
+      notify(response.success ? 'AI 分析完成' : response.message || 'AI 暂不可用', response.success ? 'success' : 'info')
+      if (response.lead) {
+        load(query)
+      }
+    } catch (err) {
+      setAiAnalysis({
+        loading: false,
+        available: false,
+        success: false,
+        leadId: row.id,
+        leadName: row.name,
+        message: err.message || 'AI 分析失败',
+      })
+      notify(err.message || 'AI 分析失败', 'info')
+    } finally {
+      setAnalyzingId(null)
+    }
+  }
+
+  const applyAiDraft = (analysis) => {
+    if (!analysis?.leadId) {
+      notify('AI 分析结果缺少线索编号', 'info')
+      return
+    }
+    const lead = analysis.lead || selected || records.find((item) => String(item.id) === String(analysis.leadId))
+    setConverting(toConvertFormFromAi(lead, analysis))
+    setAiAnalysis(null)
+  }
+
   const records = page.records || []
   const currentPage = page.pageNo || query.pageNo || 1
   const pageSize = page.pageSize || query.pageSize || 20
@@ -272,13 +393,13 @@ export function LeadPage({ can, notify, navigate }) {
         <Button type="submit" variant="secondary" icon={Search}>查询</Button>
       </form>
 
-      <div className="customer-list-layout">
+      <div className="lead-table-layout">
         <Card className="table-card customer-table-card">
           <div className="data-table-wrap">
             <table className="data-table customer-list-table">
               <thead>
                 <tr>
-                  <th>线索名称</th>
+                  <th>名称</th>
                   <th>公司</th>
                   <th>联系方式</th>
                   <th>来源</th>
@@ -305,6 +426,16 @@ export function LeadPage({ can, notify, navigate }) {
                     <td>
                       <div className="table-action-row" onClick={(event) => event.stopPropagation()}>
                         {canManage && <button className="icon-button" onClick={() => setEditing(toForm(row))}><Edit2 size={17} /></button>}
+                        {canAnalyze && (
+                          <button
+                            className="icon-button"
+                            title="AI 分析"
+                            disabled={String(analyzingId || '') === String(row.id)}
+                            onClick={() => analyzeLead(row)}
+                          >
+                            <Sparkles size={17} />
+                          </button>
+                        )}
                         {canConvert && row.status !== 'CONVERTED' && (
                           <button className="icon-button" title="转为客户" onClick={() => setConverting(toConvertForm(row))}>
                             <UserPlus size={17} />
@@ -340,25 +471,29 @@ export function LeadPage({ can, notify, navigate }) {
           <div className="table-footer">
             <span>共 {page.total || 0} 条，当前第 {currentPage} / {totalPages} 页</span>
             <div className="pagination">
-              <button disabled={currentPage <= 1} onClick={() => load({ ...query, pageNo: currentPage - 1 })}>‹</button>
-              <button className="active">{currentPage}</button>
-              <button disabled={currentPage >= totalPages} onClick={() => load({ ...query, pageNo: currentPage + 1 })}>›</button>
+              <button type="button" disabled={currentPage <= 1} onClick={() => load({ ...query, pageNo: currentPage - 1 })}>‹</button>
+              <button type="button" className="active">{currentPage}</button>
+              <button type="button" disabled={currentPage >= totalPages} onClick={() => load({ ...query, pageNo: currentPage + 1 })}>›</button>
             </div>
           </div>
         </Card>
-
-        <LeadDetailCard
-          data={selected}
-          canWrite={canManage}
-          canDelete={canDelete}
-          canConvert={canConvert}
-          onConvert={() => setConverting(toConvertForm(selected))}
-          onOpenCustomer={() => navigate(`customers/detail/${encodeURIComponent(selected.customerId)}`)}
-          onEdit={() => setEditing(toForm(selected))}
-          onDelete={() => deleteLead(selected)}
-          onClose={() => setSelected(null)}
-        />
       </div>
+
+      <LeadDetailDrawer
+        open={Boolean(selected)}
+        data={selected}
+        canWrite={canManage}
+        canDelete={canDelete}
+        canConvert={canConvert}
+        canAnalyze={canAnalyze}
+        analyzing={String(analyzingId || '') === String(selected?.id || '')}
+        onConvert={() => setConverting(toConvertForm(selected))}
+        onAnalyze={() => analyzeLead(selected)}
+        onOpenCustomer={() => navigate(`customers/detail/${encodeURIComponent(selected.customerId)}`)}
+        onEdit={() => setEditing(toForm(selected))}
+        onDelete={() => deleteLead(selected)}
+        onClose={() => setSelected(null)}
+      />
 
       <LeadFormModal
         open={Boolean(editing)}
@@ -378,60 +513,305 @@ export function LeadPage({ can, notify, navigate }) {
         onClose={() => setConverting(null)}
         onSave={convertLead}
       />
+      <LeadAiAnalysisModal
+        open={Boolean(aiAnalysis)}
+        analysis={aiAnalysis}
+        elapsed={aiElapsed}
+        canConvert={canConvert}
+        onApplyDraft={applyAiDraft}
+        onClose={() => setAiAnalysis(null)}
+      />
       <ConfirmDialog {...dialogProps} />
     </div>
   )
 }
 
-function LeadDetailCard({ data, canWrite, canDelete, canConvert, onConvert, onOpenCustomer, onEdit, onDelete, onClose }) {
-  if (!data) {
-    return (
-      <Card className="customer-detail-panel empty">
-        <span><UserRound size={24} /></span>
-        <h2>请选择线索</h2>
-        <p>先从左侧线索列表选择一条真实记录，再查看详情。</p>
-      </Card>
-    )
-  }
+function LeadDetailDrawer({
+  open,
+  data,
+  canWrite,
+  canDelete,
+  canConvert,
+  canAnalyze,
+  analyzing,
+  onConvert,
+  onAnalyze,
+  onOpenCustomer,
+  onEdit,
+  onDelete,
+  onClose,
+}) {
+  if (!data) return null
+  const footer = (
+    <div className="lead-detail-footer-actions">
+      {canAnalyze && <Button variant="secondary" icon={Sparkles} onClick={onAnalyze}>{analyzing ? '分析中' : 'AI 分析'}</Button>}
+      {canConvert && data.status !== 'CONVERTED' && <Button icon={UserPlus} onClick={onConvert}>转为客户</Button>}
+      {data.status === 'CONVERTED' && data.customerId && <Button icon={ArrowUpRight} onClick={onOpenCustomer}>查看客户</Button>}
+      {canWrite && <Button variant="secondary" icon={Edit2} onClick={onEdit}>编辑线索</Button>}
+      {canDelete && <Button variant="ghost" icon={Trash2} onClick={onDelete}>删除</Button>}
+    </div>
+  )
 
   return (
-    <Card className="customer-detail-panel">
-      <div className="customer-detail-head">
-        <span className="company-avatar large">{(data.name || '?').slice(0, 1)}</span>
-        <div>
-          <h2>{data.name}</h2>
-          <p>ID：{data.id}</p>
+    <Drawer open={open} title="线索详情" onClose={onClose} footer={footer}>
+      <div className="lead-detail-panel lead-detail-drawer-body">
+        <div className="customer-detail-head">
+          <span className="company-avatar large">{(data.name || '?').slice(0, 1)}</span>
+          <div>
+            <h2>{data.name}</h2>
+            <p>ID：{data.id}</p>
+          </div>
         </div>
-        <button className="icon-button" onClick={onClose}><X size={18} /></button>
+        <div className="channel-detail-grid customer-detail-grid lead-detail-grid">
+          <DetailItem icon={Building2} label="公司" value={data.companyName} />
+          <DetailItem icon={Phone} label="电话" value={data.phone} />
+          <DetailItem icon={Mail} label="邮箱" value={data.email} />
+          <DetailItem label="来源" value={data.source} />
+          <DetailItem label="状态" value={statusText[data.status] || data.status} />
+          <DetailItem label="已转客户" value={data.customerName || data.customerId} />
+          <DetailItem label="转化人" value={data.convertedByName} />
+          <DetailItem icon={CalendarDays} label="转化时间" value={formatDateTime(data.convertedAt)} />
+          <DetailItem label="负责人" value={ownerName(data)} />
+          <DetailItem icon={CalendarDays} label="创建时间" value={formatDateTime(data.createdAt)} />
+          <DetailItem icon={CalendarDays} label="更新时间" value={formatDateTime(data.updatedAt)} />
+        </div>
+        <div className="channel-text-block lead-detail-text-block">
+          <span>备注</span>
+          <p>{data.remark || '暂无备注'}</p>
+        </div>
+        <div className="channel-text-block lead-detail-text-block lead-ai-section">
+          <span>AI 分析</span>
+          {data.aiSummary ? (
+            <>
+              <MarkdownText value={data.aiSummary} empty="暂无 AI 分析结果" />
+              <div className="lead-ai-meta">
+                <Badge tone="info">置信度 {formatPercent(data.aiConfidence)}</Badge>
+                {data.aiSuggestedCustomerName && <Badge tone="success">建议客户：{data.aiSuggestedCustomerName}</Badge>}
+                {data.aiSuggestedContactName && <Badge>联系人：{data.aiSuggestedContactName}</Badge>}
+                {data.aiAnalyzedAt && <Badge>分析时间：{formatDateTime(data.aiAnalyzedAt)}</Badge>}
+              </div>
+            </>
+          ) : (
+            <p>暂无 AI 分析结果，可点击 AI 分析基于当前线索真实数据生成建议。</p>
+          )}
+        </div>
       </div>
-      <div className="customer-detail-actions">
-        {canConvert && data.status !== 'CONVERTED' && <Button icon={UserPlus} onClick={onConvert}>转为客户</Button>}
-        {data.status === 'CONVERTED' && data.customerId && <Button icon={ArrowUpRight} onClick={onOpenCustomer}>查看客户</Button>}
-        {canWrite && <Button variant="secondary" icon={Edit2} onClick={onEdit}>编辑线索</Button>}
-        {canDelete && <Button variant="ghost" icon={Trash2} onClick={onDelete}>删除</Button>}
+    </Drawer>
+  )
+}
+
+function LeadAiAnalysisModal({ open, analysis, elapsed, canConvert, onApplyDraft, onClose }) {
+  if (!analysis) return null
+  const draft = analysis.convertDraft || {}
+  const customerProfile = analysis.customerProfile || {}
+  const footer = (
+    <>
+      <Button variant="secondary" onClick={onClose}>关闭</Button>
+      {canConvert && analysis.success && (
+        <Button icon={UserPlus} onClick={() => onApplyDraft(analysis)}>带入转客户表单</Button>
+      )}
+    </>
+  )
+
+  return (
+    <Modal open={open} title="线索 AI 分析" onClose={onClose} size="lg" footer={footer}>
+      {analysis.loading ? (
+        <div className="lead-ai-progress">
+          <div className="lead-ai-progress-head">
+            <Sparkles size={26} />
+            <div>
+              <b>{analysis.message || '正在分析线索'}</b>
+              <span>{analysis.leadName || `线索 ${analysis.leadId || ''}`} · 已运行 {formatSeconds(elapsed)}</span>
+            </div>
+          </div>
+          <div className="lead-ai-progress-track">
+            <span />
+          </div>
+          <div className="lead-ai-progress-steps">
+            <div className={elapsed >= 0 ? 'active' : ''}>
+              <i>1</i>
+              <span>读取线索真实数据</span>
+            </div>
+            <div className={elapsed >= 1 ? 'active' : ''}>
+              <i>2</i>
+              <span>挂载场景 Agent、提示词、Skills 和 MCP</span>
+            </div>
+            <div className={elapsed >= 3 ? 'active' : ''}>
+              <i>3</i>
+              <span>调用大模型生成结构化建议</span>
+            </div>
+            <div className={elapsed >= 6 ? 'active' : ''}>
+              <i>4</i>
+              <span>保存运行事件并整理转客户草稿</span>
+            </div>
+          </div>
+          <p>当前不会构造假数据。模型无配置、密钥缺失或数据权限不足时，会直接返回失败原因。</p>
+        </div>
+      ) : !analysis.success ? (
+        <div className="lead-ai-unavailable">
+          <Sparkles size={24} />
+          <b>{analysis.message || 'AI 暂不可用'}</b>
+          <p>
+            请检查是否已配置默认大模型、模型密钥是否存在，以及当前账号是否有线索数据权限。
+            {analysis.runId && ` 运行编号：${analysis.runId}`}
+          </p>
+        </div>
+      ) : (
+        <div className="lead-ai-result">
+          <div className="lead-ai-run-meta">
+            <Badge tone="info">运行编号：{analysis.runId || '-'}</Badge>
+            <Badge>会话编号：{analysis.conversationId || '-'}</Badge>
+          </div>
+
+          <div className="lead-ai-conclusion-card">
+            <span><Sparkles size={22} /></span>
+            <div>
+              <div className="lead-ai-conclusion-head">
+                <h3>{analysis.conclusionTitle || (analysis.recommendConvert ? '建议推进转化' : '暂不建议转化')}</h3>
+                <Badge tone={aiPriorityTone[analysis.priority] || 'neutral'}>
+                  {aiPriorityText[analysis.priority] || '中优先级'}
+                </Badge>
+              </div>
+              <p>{analysis.salesConclusion || analysis.summary || '暂无销售结论'}</p>
+              <div className="lead-ai-conclusion-tags">
+                <Badge tone="info">{aiStageText[analysis.stage] || statusText[analysis.lead?.status] || '未知阶段'}</Badge>
+                <Badge tone={analysis.recommendConvert ? 'success' : 'warning'}>
+                  {analysis.recommendConvert ? '转化机会明确' : '先继续培育'}
+                </Badge>
+                <Badge>置信度 {formatPercent(analysis.confidence)}</Badge>
+              </div>
+            </div>
+          </div>
+
+          <div className="lead-ai-score-row">
+            <div>
+              <span>线索评分</span>
+              <strong>{analysis.score ?? 0}</strong>
+            </div>
+            <div>
+              <span>阶段判断</span>
+              <strong>{aiStageText[analysis.stage] || statusText[analysis.lead?.status] || '-'}</strong>
+            </div>
+            <div>
+              <span>建议动作</span>
+              <strong>{analysis.recommendConvert ? '推进成交' : '继续跟进'}</strong>
+            </div>
+          </div>
+
+          <div className="lead-ai-sales-grid">
+            <AiListCard title="关键证据" items={analysis.keyFindings} empty="暂无关键证据" />
+            <AiListCard title="下一步动作" items={analysis.nextActions?.length ? analysis.nextActions : [analysis.nextAction]} empty="暂无建议动作" active />
+            <AiListCard title="风险提醒" items={analysis.riskWarnings} empty="暂无明显风险" warning />
+          </div>
+
+          {analysis.reason && (
+            <div className="channel-text-block">
+              <span>详细依据</span>
+              <MarkdownText value={analysis.reason} empty="暂无详细依据" />
+            </div>
+          )}
+
+          {analysis.summary && !analysis.salesConclusion && (
+            <div className="channel-text-block">
+              <span>分析摘要</span>
+              <MarkdownText value={analysis.summary} empty="暂无摘要" />
+            </div>
+          )}
+
+          <div className="lead-ai-function-note">
+            <Badge tone="info">标准结果</Badge>
+            <span>本次结果按 lead_analysis_result 结构解析，优先展示销售可执行信息。</span>
+          </div>
+
+          <div className="lead-ai-draft">
+            <span>转客户草稿</span>
+            <div>
+              <DetailItem label="客户名称" value={draft.customerName} />
+              <DetailItem label="行业" value={draft.industry} />
+              <DetailItem label="联系人" value={draft.contactName} />
+              <DetailItem label="电话" value={draft.contactPhone} />
+              <DetailItem label="邮箱" value={draft.contactEmail} />
+              <DetailItem label="客户级别" value={customerLevelText[draft.level] || draft.level} />
+            </div>
+          </div>
+
+          <CustomerProfileCard profile={customerProfile} />
+        </div>
+      )}
+    </Modal>
+  )
+}
+
+function AiListCard({ title, items = [], empty, active = false, warning = false }) {
+  const values = (items || []).filter(Boolean)
+  return (
+    <div className={`lead-ai-list-card ${active ? 'active' : ''} ${warning ? 'warning' : ''}`}>
+      <span>{title}</span>
+      {values.length ? (
+        <ul>
+          {values.map((item, index) => (
+            <li key={index}>{item}</li>
+          ))}
+        </ul>
+      ) : (
+        <p>{empty}</p>
+      )}
+    </div>
+  )
+}
+
+function CustomerProfileCard({ profile }) {
+  const sourceUrls = (profile?.sourceUrls || []).filter(Boolean)
+  const hasProfile = profile && (
+    profile.available !== undefined
+    || profile.companyName
+    || profile.legalRepresentative
+    || profile.keyPerson
+    || profile.companyScale
+    || profile.industry
+    || profile.phone
+    || profile.email
+    || profile.website
+    || profile.address
+    || profile.registeredCapital
+    || profile.sourceSummary
+    || sourceUrls.length
+  )
+  if (!hasProfile) return null
+  return (
+    <div className="lead-ai-profile">
+      <div className="lead-ai-profile-head">
+        <span>AI搜索客户档案</span>
+        <Badge tone={profile.available ? 'success' : 'warning'}>
+          {profile.available ? '已检索公开信息' : '未检索到可靠公开信息'}
+        </Badge>
       </div>
-      <div className="channel-detail-grid customer-detail-grid">
-        <DetailItem icon={Building2} label="公司" value={data.companyName} />
-        <DetailItem icon={Phone} label="电话" value={data.phone} />
-        <DetailItem icon={Mail} label="邮箱" value={data.email} />
-        <DetailItem label="来源" value={data.source} />
-        <DetailItem label="状态" value={statusText[data.status] || data.status} />
-        <DetailItem label="已转客户" value={data.customerName || data.customerId} />
-        <DetailItem label="转化人" value={data.convertedByName} />
-        <DetailItem icon={CalendarDays} label="转化时间" value={formatDateTime(data.convertedAt)} />
-        <DetailItem label="负责人" value={ownerName(data)} />
-        <DetailItem icon={CalendarDays} label="创建时间" value={formatDateTime(data.createdAt)} />
-        <DetailItem icon={CalendarDays} label="更新时间" value={formatDateTime(data.updatedAt)} />
+      <div>
+        <DetailItem label="公司名称" value={profile.companyName} />
+        <DetailItem label="公司负责人" value={profile.legalRepresentative || profile.keyPerson} />
+        <DetailItem label="公司规模" value={profile.companyScale} />
+        <DetailItem label="公司行业" value={profile.industry} />
+        <DetailItem label="电话" value={profile.phone} />
+        <DetailItem label="邮箱" value={profile.email} />
+        <DetailItem label="官网" value={profile.website} />
+        <DetailItem label="地址" value={profile.address} />
+        <DetailItem label="注册资本" value={profile.registeredCapital} />
       </div>
-      <div className="channel-text-block">
-        <span>备注</span>
-        <p>{data.remark || '暂无备注'}</p>
-      </div>
-      <div className="channel-text-block">
-        <span>AI 分析</span>
-        <p>暂无 AI 分析结果，后续可基于线索来源、沟通记录和渠道分析结果生成。</p>
-      </div>
-    </Card>
+      {profile.sourceSummary && (
+        <div className="lead-ai-profile-summary">
+          <span>来源摘要</span>
+          <p>{profile.sourceSummary}</p>
+        </div>
+      )}
+      {sourceUrls.length > 0 && (
+        <div className="lead-ai-profile-sources">
+          <span>来源链接</span>
+          {sourceUrls.map((url, index) => (
+            <a href={url} target="_blank" rel="noreferrer" key={index}>{url}</a>
+          ))}
+        </div>
+      )}
+    </div>
   )
 }
 
@@ -543,7 +923,7 @@ function LeadFormModal({ open, form, ownerOptions, onChange, onClose, onSave }) 
       )}
     >
       <div className="customer-form-grid">
-        <Field label="线索名称" required>
+        <Field label="名称">
           <input value={form.name || ''} onChange={(event) => update({ name: event.target.value })} />
         </Field>
         <Field label="状态">

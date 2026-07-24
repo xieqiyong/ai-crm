@@ -85,7 +85,7 @@ public class OrganizationAdminService {
     private SecureRandom secureRandom = new SecureRandom();
 
     @Transactional
-    public AdminOverviewResponse overview(String tenantId) {
+    public AdminOverviewResponse overview(Long tenantId) {
         permissionSeedService.seedBasePermissions(tenantId);
         departmentSeedService.ensureTenantRootDepartment(tenantId);
         AdminOverviewResponse response = new AdminOverviewResponse();
@@ -103,7 +103,7 @@ public class OrganizationAdminService {
     }
 
     @Transactional
-    public DepartmentResponse saveDepartment(String tenantId, DepartmentSaveRequest request) {
+    public DepartmentResponse saveDepartment(Long tenantId, DepartmentSaveRequest request) {
         if (request == null || blank(request.getName())) {
             throw new BusinessException("ORG_DEPT_001", "部门名称不能为空");
         }
@@ -124,7 +124,7 @@ public class OrganizationAdminService {
     }
 
     @Transactional
-    public void deleteDepartment(String tenantId, AdminIdRequest request) {
+    public void deleteDepartment(Long tenantId, AdminIdRequest request) {
         SysDepartmentEntity department = findDepartment(tenantId, request == null ? null : request.getId());
         List<SysUserEntity> users = userRepository.findByTenantIdAndDeletedFalseOrderByCreatedAtDesc(tenantId);
         for (SysUserEntity user : users) {
@@ -137,7 +137,7 @@ public class OrganizationAdminService {
     }
 
     @Transactional
-    public PermissionResponse savePermission(String tenantId, PermissionSaveRequest request) {
+    public PermissionResponse savePermission(Long tenantId, PermissionSaveRequest request) {
         if (request == null || blank(request.getName()) || blank(request.getPermissionType())) {
             throw new BusinessException("ORG_PERMISSION_001", "权限名称和类型不能为空");
         }
@@ -161,14 +161,14 @@ public class OrganizationAdminService {
     }
 
     @Transactional
-    public PermissionResponse updatePermissionStatus(String tenantId, PermissionStatusRequest request) {
+    public PermissionResponse updatePermissionStatus(Long tenantId, PermissionStatusRequest request) {
         SysPermissionEntity permission = findPermission(tenantId, request == null ? null : request.getId());
         permission.setEnabled(request.getEnabled() == null || request.getEnabled());
         return toPermission(permissionRepository.save(permission));
     }
 
     @Transactional
-    public void deletePermission(String tenantId, AdminIdRequest request) {
+    public void deletePermission(Long tenantId, AdminIdRequest request) {
         SysPermissionEntity permission = findPermission(tenantId, request == null ? null : request.getId());
         if (rolePermissionRepository.countByPermissionIdAndTenantIdAndDeletedFalse(permission.getId(), tenantId) > 0) {
             throw new BusinessException("ORG_PERMISSION_003", "权限已被角色使用，不能删除");
@@ -178,7 +178,7 @@ public class OrganizationAdminService {
     }
 
     @Transactional
-    public RoleResponse saveRole(String tenantId, RoleSaveRequest request) {
+    public RoleResponse saveRole(Long tenantId, RoleSaveRequest request) {
         if (request == null || blank(request.getName())) {
             throw new BusinessException("ORG_ROLE_001", "角色名称不能为空");
         }
@@ -208,7 +208,7 @@ public class OrganizationAdminService {
     }
 
     @Transactional
-    public void deleteRole(String tenantId, AdminIdRequest request) {
+    public void deleteRole(Long tenantId, AdminIdRequest request) {
         SysRoleEntity role = findRole(tenantId, request == null ? null : request.getId());
         if (isSuperAdminRole(role)) {
             throw new BusinessException("ORG_ROLE_007", "超级管理员角色不能删除");
@@ -221,7 +221,7 @@ public class OrganizationAdminService {
     }
 
     @Transactional
-    public UserResponse saveUser(String tenantId, UserSaveRequest request) {
+    public UserResponse saveUser(Long tenantId, UserSaveRequest request) {
         if (request == null || blank(request.getUsername())) {
             throw new BusinessException("ORG_USER_001", "用户名不能为空");
         }
@@ -262,7 +262,7 @@ public class OrganizationAdminService {
     }
 
     @Transactional
-    public UserResponse updateUserStatus(String tenantId, UserStatusRequest request) {
+    public UserResponse updateUserStatus(Long tenantId, UserStatusRequest request) {
         if (request == null || request.getId() == null) {
             throw new BusinessException("ORG_USER_005", "用户编号不能为空");
         }
@@ -279,7 +279,7 @@ public class OrganizationAdminService {
     }
 
     @Transactional
-    public UserPasswordResetResponse resetUserPassword(String tenantId, AdminIdRequest request) {
+    public UserPasswordResetResponse resetUserPassword(Long tenantId, AdminIdRequest request) {
         if (request == null || request.getId() == null) {
             throw new BusinessException("ORG_USER_005", "用户编号不能为空");
         }
@@ -295,7 +295,7 @@ public class OrganizationAdminService {
         return response;
     }
 
-    private String resolveDepartmentCode(String tenantId, String requestCode, SysDepartmentEntity entity) {
+    private String resolveDepartmentCode(Long tenantId, String requestCode, SysDepartmentEntity entity) {
         if (!blank(requestCode)) {
             String code = requestCode.trim();
             checkDepartmentCodeUnique(tenantId, code, entity.getId());
@@ -307,14 +307,14 @@ public class OrganizationAdminService {
         return "DEPT_" + entity.getId();
     }
 
-    private void checkDepartmentCodeUnique(String tenantId, String code, Long id) {
+    private void checkDepartmentCodeUnique(Long tenantId, String code, Long id) {
         Optional<SysDepartmentEntity> existing = departmentRepository.findByCodeAndTenantIdAndDeletedFalse(code, tenantId);
         if (existing.isPresent() && !existing.get().getId().equals(id)) {
             throw new BusinessException("ORG_DEPT_002", "部门编码已存在");
         }
     }
 
-    private String resolveRoleCode(String tenantId, String requestCode, SysRoleEntity entity) {
+    private String resolveRoleCode(Long tenantId, String requestCode, SysRoleEntity entity) {
         if (!blank(requestCode)) {
             String code = requestCode.trim();
             checkRoleCodeUnique(tenantId, code, entity.getId());
@@ -326,7 +326,7 @@ public class OrganizationAdminService {
         return "ROLE_" + entity.getId();
     }
 
-    private void checkRoleCodeUnique(String tenantId, String code, Long id) {
+    private void checkRoleCodeUnique(Long tenantId, String code, Long id) {
         Optional<SysRoleEntity> existing = roleRepository.findByCodeAndTenantIdAndDeletedFalse(code, tenantId);
         if (existing.isPresent() && !existing.get().getId().equals(id)) {
             throw new BusinessException("ORG_ROLE_002", "角色编码已存在");
@@ -342,7 +342,7 @@ public class OrganizationAdminService {
     }
 
     private String resolvePermissionCode(
-            String tenantId,
+            Long tenantId,
             PermissionSaveRequest request,
             SysPermissionEntity entity,
             PermissionType permissionType) {
@@ -369,14 +369,14 @@ public class OrganizationAdminService {
         return "crm:custom:" + id;
     }
 
-    private void checkPermissionCodeUnique(String tenantId, String code, Long id) {
+    private void checkPermissionCodeUnique(Long tenantId, String code, Long id) {
         Optional<SysPermissionEntity> existing = permissionRepository.findByCodeAndTenantIdAndDeletedFalse(code, tenantId);
         if (existing.isPresent() && !existing.get().getId().equals(id)) {
             throw new BusinessException("ORG_PERMISSION_002", "权限编码已存在");
         }
     }
 
-    private String ensureGeneratedPermissionCodeUnique(String tenantId, String code, Long id) {
+    private String ensureGeneratedPermissionCodeUnique(Long tenantId, String code, Long id) {
         Optional<SysPermissionEntity> existing = permissionRepository.findByCodeAndTenantIdAndDeletedFalse(code, tenantId);
         if (!existing.isPresent() || existing.get().getId().equals(id)) {
             return code;
@@ -404,7 +404,7 @@ public class OrganizationAdminService {
         return value.substring(0, maxLength);
     }
 
-    private void saveRolePermissions(String tenantId, Long roleId, List<String> permissionCodes) {
+    private void saveRolePermissions(Long tenantId, Long roleId, List<String> permissionCodes) {
         List<SysRolePermissionEntity> existing =
                 rolePermissionRepository.findByRoleIdAndTenantIdAndDeletedFalse(roleId, tenantId);
         for (SysRolePermissionEntity item : existing) {
@@ -426,7 +426,7 @@ public class OrganizationAdminService {
         }
     }
 
-    private void saveUserRoles(String tenantId, Long userId, List<Long> roleIds) {
+    private void saveUserRoles(Long tenantId, Long userId, List<Long> roleIds) {
         List<SysUserRoleEntity> existing = userRoleRepository.findByUserIdAndTenantIdAndDeletedFalse(userId, tenantId);
         List<SysRoleEntity> roles = new ArrayList<SysRoleEntity>();
         if (roleIds != null && !roleIds.isEmpty()) {
@@ -472,7 +472,7 @@ public class OrganizationAdminService {
         return role != null && sameCode(SUPER_ADMIN_ROLE, role.getCode());
     }
 
-    private boolean isSuperAdminUser(String tenantId, Long userId) {
+    private boolean isSuperAdminUser(Long tenantId, Long userId) {
         if (userId == null) {
             return false;
         }
@@ -486,7 +486,7 @@ public class OrganizationAdminService {
     }
 
     private void validateSuperAdminUserRoleChange(
-            String tenantId,
+            Long tenantId,
             Long userId,
             List<SysUserRoleEntity> existing,
             List<SysRoleEntity> roles) {
@@ -535,7 +535,7 @@ public class OrganizationAdminService {
         return left != null && right != null && left.trim().equalsIgnoreCase(right.trim());
     }
 
-    private UserResponse findUserResponse(String tenantId, Long userId) {
+    private UserResponse findUserResponse(Long tenantId, Long userId) {
         List<SysDepartmentEntity> departments =
                 departmentRepository.findByTenantIdAndDeletedFalseOrderBySortNoAscCreatedAtAsc(tenantId);
         List<SysRoleEntity> roles = roleRepository.findByTenantIdAndDeletedFalseOrderByCreatedAtAsc(tenantId);
@@ -588,7 +588,7 @@ public class OrganizationAdminService {
         return response;
     }
 
-    private List<RoleResponse> toRoles(String tenantId, List<SysRoleEntity> roles, List<SysPermissionEntity> permissions) {
+    private List<RoleResponse> toRoles(Long tenantId, List<SysRoleEntity> roles, List<SysPermissionEntity> permissions) {
         Map<Long, SysPermissionEntity> permissionMap = buildPermissionMap(permissions);
         List<RoleResponse> responses = new ArrayList<RoleResponse>();
         for (SysRoleEntity role : roles) {
@@ -597,7 +597,7 @@ public class OrganizationAdminService {
         return responses;
     }
 
-    private RoleResponse toRole(String tenantId, SysRoleEntity role, Map<Long, SysPermissionEntity> permissionMap) {
+    private RoleResponse toRole(Long tenantId, SysRoleEntity role, Map<Long, SysPermissionEntity> permissionMap) {
         RoleResponse response = new RoleResponse();
         response.setId(role.getId());
         response.setCode(role.getCode());
@@ -624,7 +624,7 @@ public class OrganizationAdminService {
     }
 
     private List<UserResponse> toUsers(
-            String tenantId,
+            Long tenantId,
             List<SysUserEntity> users,
             List<SysDepartmentEntity> departments,
             List<SysRoleEntity> roles) {
@@ -698,7 +698,7 @@ public class OrganizationAdminService {
         return DataScope.SELF;
     }
 
-    private SysDepartmentEntity findDepartment(String tenantId, Long id) {
+    private SysDepartmentEntity findDepartment(Long tenantId, Long id) {
         if (id == null) {
             throw new BusinessException("ORG_DEPT_004", "部门编号不能为空");
         }
@@ -707,7 +707,7 @@ public class OrganizationAdminService {
                 .orElseThrow(() -> new BusinessException("ORG_DEPT_005", "部门不存在"));
     }
 
-    private SysRoleEntity findRole(String tenantId, Long id) {
+    private SysRoleEntity findRole(Long tenantId, Long id) {
         if (id == null) {
             throw new BusinessException("ORG_ROLE_004", "角色编号不能为空");
         }
@@ -716,7 +716,7 @@ public class OrganizationAdminService {
                 .orElseThrow(() -> new BusinessException("ORG_ROLE_005", "角色不存在"));
     }
 
-    private SysPermissionEntity findPermission(String tenantId, Long id) {
+    private SysPermissionEntity findPermission(Long tenantId, Long id) {
         if (id == null) {
             throw new BusinessException("ORG_PERMISSION_004", "权限编号不能为空");
         }

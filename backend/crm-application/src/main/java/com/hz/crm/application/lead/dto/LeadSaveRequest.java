@@ -1,7 +1,6 @@
 package com.hz.crm.application.lead.dto;
 
 import com.hz.crm.domain.lead.LeadStatus;
-import jakarta.validation.constraints.NotBlank;
 import lombok.Getter;
 import lombok.Setter;
 
@@ -11,7 +10,6 @@ public class LeadSaveRequest {
 
     private Long id;
 
-    @NotBlank(message = "线索名称不能为空")
     private String name;
 
     private String companyName;

@@ -7,13 +7,13 @@ import org.springframework.data.jpa.repository.JpaRepository;
 
 public interface SysDepartmentRepository extends JpaRepository<SysDepartmentEntity, Long> {
 
-    List<SysDepartmentEntity> findByTenantIdAndDeletedFalseOrderBySortNoAscCreatedAtAsc(String tenantId);
+    List<SysDepartmentEntity> findByTenantIdAndDeletedFalseOrderBySortNoAscCreatedAtAsc(Long tenantId);
 
-    Optional<SysDepartmentEntity> findByIdAndTenantIdAndDeletedFalse(Long id, String tenantId);
+    Optional<SysDepartmentEntity> findByIdAndTenantIdAndDeletedFalse(Long id, Long tenantId);
 
-    Optional<SysDepartmentEntity> findByCodeAndTenantIdAndDeletedFalse(String code, String tenantId);
+    Optional<SysDepartmentEntity> findByCodeAndTenantIdAndDeletedFalse(String code, Long tenantId);
 
-    Optional<SysDepartmentEntity> findFirstByTenantIdAndParentIdIsNullAndDeletedFalseOrderByCreatedAtAsc(String tenantId);
+    Optional<SysDepartmentEntity> findFirstByTenantIdAndParentIdIsNullAndDeletedFalseOrderByCreatedAtAsc(Long tenantId);
 
-    boolean existsByCodeAndTenantIdAndDeletedFalse(String code, String tenantId);
+    boolean existsByCodeAndTenantIdAndDeletedFalse(String code, Long tenantId);
 }

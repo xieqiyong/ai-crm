@@ -8,15 +8,15 @@ import org.springframework.data.jpa.repository.JpaRepository;
 
 public interface SysPermissionRepository extends JpaRepository<SysPermissionEntity, Long> {
 
-    List<SysPermissionEntity> findByIdInAndTenantIdAndDeletedFalse(Collection<Long> ids, String tenantId);
+    List<SysPermissionEntity> findByIdInAndTenantIdAndDeletedFalse(Collection<Long> ids, Long tenantId);
 
-    List<SysPermissionEntity> findByTenantIdAndDeletedFalseOrderBySortNoAscCreatedAtAsc(String tenantId);
+    List<SysPermissionEntity> findByTenantIdAndDeletedFalseOrderBySortNoAscCreatedAtAsc(Long tenantId);
 
-    List<SysPermissionEntity> findByTenantIdAndEnabledTrueAndDeletedFalse(String tenantId);
+    List<SysPermissionEntity> findByTenantIdAndEnabledTrueAndDeletedFalse(Long tenantId);
 
-    List<SysPermissionEntity> findByCodeInAndTenantIdAndDeletedFalse(Collection<String> codes, String tenantId);
+    List<SysPermissionEntity> findByCodeInAndTenantIdAndDeletedFalse(Collection<String> codes, Long tenantId);
 
-    Optional<SysPermissionEntity> findByCodeAndTenantIdAndDeletedFalse(String code, String tenantId);
+    Optional<SysPermissionEntity> findByCodeAndTenantIdAndDeletedFalse(String code, Long tenantId);
 
-    Optional<SysPermissionEntity> findByIdAndTenantIdAndDeletedFalse(Long id, String tenantId);
+    Optional<SysPermissionEntity> findByIdAndTenantIdAndDeletedFalse(Long id, Long tenantId);
 }

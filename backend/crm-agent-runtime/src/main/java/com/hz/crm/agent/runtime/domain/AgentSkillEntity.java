@@ -4,7 +4,6 @@ import com.hz.crm.common.time.DateTimes;
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
 import jakarta.persistence.Id;
-import jakarta.persistence.Lob;
 import jakarta.persistence.PrePersist;
 import jakarta.persistence.PreUpdate;
 import jakarta.persistence.Table;
@@ -21,8 +20,8 @@ public class AgentSkillEntity {
     @Id
     private Long id;
 
-    @Column(nullable = false, length = 64)
-    private String tenantId;
+    @Column(nullable = false, columnDefinition = "bigint")
+    private Long tenantId;
 
     @Column(nullable = false)
     private Long agentId;
@@ -33,7 +32,7 @@ public class AgentSkillEntity {
     @Column(nullable = false, length = 128)
     private String name;
 
-    @Lob
+    @Column(columnDefinition = "text")
     private String content;
 
     @Column(nullable = false)

@@ -13,7 +13,7 @@ public class LoginResponse {
 
     private Long userId;
 
-    private String tenantId;
+    private Long tenantId;
 
     private String username;
 

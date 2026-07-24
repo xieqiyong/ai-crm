@@ -18,7 +18,7 @@ public class AuditLogService {
 
     @Transactional
     public void record(
-            String tenantId, Long operatorId, String action, String targetType, Long targetId, String detailJson) {
+            Long tenantId, Long operatorId, String action, String targetType, Long targetId, String detailJson) {
         AuditLogEntity entity = new AuditLogEntity();
         entity.setId(snowflakeIdGenerator.nextId());
         entity.setTenantId(tenantId);

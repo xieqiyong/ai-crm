@@ -11,7 +11,7 @@ public class JwtPrincipal {
 
     private Long userId;
 
-    private String tenantId;
+    private Long tenantId;
 
     private String username;
 

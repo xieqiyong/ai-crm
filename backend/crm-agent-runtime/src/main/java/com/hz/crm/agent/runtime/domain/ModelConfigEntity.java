@@ -1,5 +1,6 @@
 package com.hz.crm.agent.runtime.domain;
 
+import com.fasterxml.jackson.annotation.JsonProperty;
 import com.hz.crm.common.time.DateTimes;
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
@@ -20,8 +21,8 @@ public class ModelConfigEntity {
     @Id
     private Long id;
 
-    @Column(nullable = false, length = 64)
-    private String tenantId;
+    @Column(nullable = false, columnDefinition = "bigint")
+    private Long tenantId;
 
     @Column(nullable = false, length = 64)
     private String provider;
@@ -35,8 +36,9 @@ public class ModelConfigEntity {
     @Column(length = 512)
     private String baseUrl;
 
-    @Column(nullable = false, length = 128)
-    private String apiKeyEnv;
+    @JsonProperty(access = JsonProperty.Access.WRITE_ONLY)
+    @Column(name = "api_key_env", nullable = false, columnDefinition = "text")
+    private String apiKey;
 
     @Column(length = 512)
     private String remark;

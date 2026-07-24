@@ -37,7 +37,7 @@ public class CustomerApplicationService {
     private UserNameResolver userNameResolver;
 
     @Transactional(readOnly = true)
-    public PageData<CustomerResponse> page(String tenantId, Long userId, String dataScope, CustomerQuery query) {
+    public PageData<CustomerResponse> page(Long tenantId, Long userId, String dataScope, CustomerQuery query) {
         CustomerQuery safeQuery = query == null ? new CustomerQuery() : query;
         PageRequest pageRequest = PageRequest.of(
                 safeQuery.safePageNo() - 1, safeQuery.safePageSize(), Sort.by(Sort.Direction.DESC, "createdAt"));
@@ -57,7 +57,7 @@ public class CustomerApplicationService {
     }
 
     @Transactional(readOnly = true)
-    public CustomerResponse detail(String tenantId, Long userId, String dataScope, Long id) {
+    public CustomerResponse detail(Long tenantId, Long userId, String dataScope, Long id) {
         CustomerEntity entity = findOne(tenantId, id);
         checkDataScope(userId, dataScope, entity.getOwnerId());
         CustomerResponse response = toResponse(entity);
@@ -66,7 +66,7 @@ public class CustomerApplicationService {
     }
 
     @Transactional
-    public CustomerResponse save(String tenantId, Long operatorId, String dataScope, CustomerSaveRequest request) {
+    public CustomerResponse save(Long tenantId, Long operatorId, String dataScope, CustomerSaveRequest request) {
         if (request == null || trimToNull(request.getName()) == null) {
             throw new BusinessException("CUSTOMER_003", "客户名称不能为空");
         }
@@ -96,14 +96,14 @@ public class CustomerApplicationService {
     }
 
     @Transactional
-    public void delete(String tenantId, Long userId, String dataScope, Long id) {
+    public void delete(Long tenantId, Long userId, String dataScope, Long id) {
         CustomerEntity entity = findOne(tenantId, id);
         checkDataScope(userId, dataScope, entity.getOwnerId());
         entity.setDeleted(true);
         customerRepository.save(entity);
     }
 
-    private CustomerEntity findOne(String tenantId, Long id) {
+    private CustomerEntity findOne(Long tenantId, Long id) {
         if (id == null) {
             throw new BusinessException("CUSTOMER_001", "客户编号不能为空");
         }
@@ -154,13 +154,13 @@ public class CustomerApplicationService {
         return response;
     }
 
-    private void fillOwnerName(String tenantId, CustomerResponse response) {
+    private void fillOwnerName(Long tenantId, CustomerResponse response) {
         List<CustomerResponse> records = new ArrayList<CustomerResponse>();
         records.add(response);
         fillOwnerNames(tenantId, records);
     }
 
-    private void fillOwnerNames(String tenantId, List<CustomerResponse> records) {
+    private void fillOwnerNames(Long tenantId, List<CustomerResponse> records) {
         if (userNameResolver == null || records == null || records.isEmpty()) {
             return;
         }

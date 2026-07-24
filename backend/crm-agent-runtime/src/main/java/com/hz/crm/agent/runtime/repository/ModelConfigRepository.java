@@ -7,9 +7,13 @@ import org.springframework.data.jpa.repository.JpaRepository;
 
 public interface ModelConfigRepository extends JpaRepository<ModelConfigEntity, Long> {
 
-    List<ModelConfigEntity> findByTenantIdAndDeletedFalseOrderByCreatedAtDesc(String tenantId);
+    List<ModelConfigEntity> findByTenantIdAndDeletedFalseOrderByCreatedAtDesc(Long tenantId);
 
-    List<ModelConfigEntity> findByTenantIdAndDefaultConfigTrueAndDeletedFalse(String tenantId);
+    List<ModelConfigEntity> findByTenantIdAndDefaultConfigTrueAndDeletedFalse(Long tenantId);
 
-    Optional<ModelConfigEntity> findByIdAndTenantIdAndDeletedFalse(Long id, String tenantId);
+    List<ModelConfigEntity> findByTenantIdAndDefaultConfigTrueAndEnabledTrueAndDeletedFalse(Long tenantId);
+
+    List<ModelConfigEntity> findByTenantIdAndEnabledTrueAndDeletedFalseOrderByCreatedAtDesc(Long tenantId);
+
+    Optional<ModelConfigEntity> findByIdAndTenantIdAndDeletedFalse(Long id, Long tenantId);
 }

@@ -21,7 +21,7 @@ public class PermissionSeedService {
     private SnowflakeIdGenerator snowflakeIdGenerator;
 
     @Transactional
-    public List<SysPermissionEntity> seedBasePermissions(String tenantId) {
+    public List<SysPermissionEntity> seedBasePermissions(Long tenantId) {
         List<SysPermissionEntity> existing =
                 permissionRepository.findByTenantIdAndDeletedFalseOrderBySortNoAscCreatedAtAsc(tenantId);
         Map<String, SysPermissionEntity> existsMap = new HashMap<String, SysPermissionEntity>();
@@ -58,6 +58,7 @@ public class PermissionSeedService {
             {"menu.followups", "跟进菜单", "MENU", "followups"},
             {"menu.tasks", "任务菜单", "MENU", "tasks"},
             {"menu.assistant", "AI助手菜单", "MENU", "assistant"},
+            {"menu.agent_config", "智能体配置菜单", "MENU", "agent-config"},
             {"menu.knowledge", "知识库菜单", "MENU", "knowledge"},
             {"menu.organization", "组织权限菜单", "MENU", "organization"},
             {"menu.model_configs", "大模型配置菜单", "MENU", "model-configs"},
@@ -78,7 +79,8 @@ public class PermissionSeedService {
             {"crm:opportunity:manage", "商机管理", "ACTION", ""},
             {"crm:opportunity:create", "商机创建", "ACTION", ""},
             {"crm:assistant:use", "AI助手使用", "ACTION", ""},
-            {"crm:agent:manage", "Agent管理", "ACTION", ""},
+            {"crm:agent:view", "智能体配置查看", "ACTION", ""},
+            {"crm:agent:manage", "智能体配置管理", "ACTION", ""},
             {"crm:model:view", "大模型配置查看", "ACTION", ""},
             {"crm:model:manage", "大模型配置管理", "ACTION", ""},
             {"crm:knowledge:manage", "知识库管理", "ACTION", ""},

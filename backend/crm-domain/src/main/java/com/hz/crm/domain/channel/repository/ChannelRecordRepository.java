@@ -26,20 +26,20 @@ public interface ChannelRecordRepository extends JpaRepository<ChannelRecordEnti
             + "or lower(coalesce(c.phone, '')) like :keyword "
             + "or lower(coalesce(c.email, '')) like :keyword)")
     Page<ChannelRecordEntity> search(
-            @Param("tenantId") String tenantId,
+            @Param("tenantId") Long tenantId,
             @Param("ownerId") Long ownerId,
             @Param("keyword") String keyword,
             @Param("status") ChannelStatus status,
             @Param("channelType") ChannelType channelType,
             Pageable pageable);
 
-    Optional<ChannelRecordEntity> findByIdAndTenantIdAndDeletedFalse(Long id, String tenantId);
+    Optional<ChannelRecordEntity> findByIdAndTenantIdAndDeletedFalse(Long id, Long tenantId);
 
-    long countByTenantIdAndDeletedFalse(String tenantId);
+    long countByTenantIdAndDeletedFalse(Long tenantId);
 
-    long countByTenantIdAndOwnerIdAndDeletedFalse(String tenantId, Long ownerId);
+    long countByTenantIdAndOwnerIdAndDeletedFalse(Long tenantId, Long ownerId);
 
-    long countByTenantIdAndStatusAndDeletedFalse(String tenantId, ChannelStatus status);
+    long countByTenantIdAndStatusAndDeletedFalse(Long tenantId, ChannelStatus status);
 
-    long countByTenantIdAndOwnerIdAndStatusAndDeletedFalse(String tenantId, Long ownerId, ChannelStatus status);
+    long countByTenantIdAndOwnerIdAndStatusAndDeletedFalse(Long tenantId, Long ownerId, ChannelStatus status);
 }

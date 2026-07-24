@@ -13,9 +13,9 @@ import org.springframework.data.repository.query.Param;
 
 public interface CustomerJpaRepository extends JpaRepository<CustomerEntity, Long> {
 
-    Page<CustomerEntity> findByTenantIdAndDeletedFalse(String tenantId, Pageable pageable);
+    Page<CustomerEntity> findByTenantIdAndDeletedFalse(Long tenantId, Pageable pageable);
 
-    Page<CustomerEntity> findByTenantIdAndOwnerIdAndDeletedFalse(String tenantId, Long ownerId, Pageable pageable);
+    Page<CustomerEntity> findByTenantIdAndOwnerIdAndDeletedFalse(Long tenantId, Long ownerId, Pageable pageable);
 
     @Query("select c from CustomerEntity c where c.tenantId = :tenantId and c.deleted = false "
             + "and (:status is null or c.status = :status) "
@@ -26,7 +26,7 @@ public interface CustomerJpaRepository extends JpaRepository<CustomerEntity, Lon
             + "or lower(coalesce(c.contactPhone, '')) like :keyword "
             + "or lower(coalesce(c.contactEmail, '')) like :keyword)")
     Page<CustomerEntity> searchByTenantId(
-            @Param("tenantId") String tenantId,
+            @Param("tenantId") Long tenantId,
             @Param("keyword") String keyword,
             @Param("status") CustomerStatus status,
             Pageable pageable);
@@ -41,21 +41,21 @@ public interface CustomerJpaRepository extends JpaRepository<CustomerEntity, Lon
             + "or lower(coalesce(c.contactPhone, '')) like :keyword "
             + "or lower(coalesce(c.contactEmail, '')) like :keyword)")
     Page<CustomerEntity> searchByTenantIdAndOwnerId(
-            @Param("tenantId") String tenantId,
+            @Param("tenantId") Long tenantId,
             @Param("ownerId") Long ownerId,
             @Param("keyword") String keyword,
             @Param("status") CustomerStatus status,
             Pageable pageable);
 
-    Optional<CustomerEntity> findByIdAndTenantIdAndDeletedFalse(Long id, String tenantId);
+    Optional<CustomerEntity> findByIdAndTenantIdAndDeletedFalse(Long id, Long tenantId);
 
-    List<CustomerEntity> findByTenantIdAndIdInAndDeletedFalse(String tenantId, Collection<Long> ids);
+    List<CustomerEntity> findByTenantIdAndIdInAndDeletedFalse(Long tenantId, Collection<Long> ids);
 
-    long countByTenantIdAndDeletedFalse(String tenantId);
+    long countByTenantIdAndDeletedFalse(Long tenantId);
 
-    long countByTenantIdAndOwnerIdAndDeletedFalse(String tenantId, Long ownerId);
+    long countByTenantIdAndOwnerIdAndDeletedFalse(Long tenantId, Long ownerId);
 
-    long countByTenantIdAndStatusAndDeletedFalse(String tenantId, CustomerStatus status);
+    long countByTenantIdAndStatusAndDeletedFalse(Long tenantId, CustomerStatus status);
 
-    long countByTenantIdAndOwnerIdAndStatusAndDeletedFalse(String tenantId, Long ownerId, CustomerStatus status);
+    long countByTenantIdAndOwnerIdAndStatusAndDeletedFalse(Long tenantId, Long ownerId, CustomerStatus status);
 }

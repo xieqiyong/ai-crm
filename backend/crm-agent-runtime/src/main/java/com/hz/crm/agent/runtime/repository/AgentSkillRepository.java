@@ -7,7 +7,9 @@ import org.springframework.data.jpa.repository.JpaRepository;
 
 public interface AgentSkillRepository extends JpaRepository<AgentSkillEntity, Long> {
 
-    List<AgentSkillEntity> findByAgentIdAndTenantIdAndEnabledTrueAndDeletedFalse(Long agentId, String tenantId);
+    List<AgentSkillEntity> findByAgentIdAndTenantIdAndEnabledTrueAndDeletedFalse(Long agentId, Long tenantId);
 
-    Optional<AgentSkillEntity> findByIdAndTenantIdAndDeletedFalse(Long id, String tenantId);
+    List<AgentSkillEntity> findByAgentIdAndTenantIdAndDeletedFalseOrderByCreatedAtDesc(Long agentId, Long tenantId);
+
+    Optional<AgentSkillEntity> findByIdAndTenantIdAndDeletedFalse(Long id, Long tenantId);
 }

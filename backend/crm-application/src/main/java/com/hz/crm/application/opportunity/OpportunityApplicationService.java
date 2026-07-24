@@ -36,7 +36,7 @@ public class OpportunityApplicationService {
     private UserNameResolver userNameResolver;
 
     @Transactional(readOnly = true)
-    public PageData<OpportunityResponse> page(String tenantId, Long userId, String dataScope, OpportunityQuery query) {
+    public PageData<OpportunityResponse> page(Long tenantId, Long userId, String dataScope, OpportunityQuery query) {
         OpportunityQuery safeQuery = query == null ? new OpportunityQuery() : query;
         PageRequest pageRequest = PageRequest.of(
                 safeQuery.safePageNo() - 1, safeQuery.safePageSize(), Sort.by(Sort.Direction.DESC, "createdAt"));
@@ -52,7 +52,7 @@ public class OpportunityApplicationService {
     }
 
     @Transactional(readOnly = true)
-    public OpportunityResponse detail(String tenantId, Long userId, String dataScope, Long id) {
+    public OpportunityResponse detail(Long tenantId, Long userId, String dataScope, Long id) {
         OpportunityEntity entity = findOne(tenantId, id);
         checkDataScope(userId, dataScope, entity.getOwnerId());
         OpportunityResponse response = toResponse(entity);
@@ -61,7 +61,7 @@ public class OpportunityApplicationService {
     }
 
     @Transactional
-    public OpportunityResponse save(String tenantId, Long operatorId, String dataScope, OpportunitySaveRequest request) {
+    public OpportunityResponse save(Long tenantId, Long operatorId, String dataScope, OpportunitySaveRequest request) {
         if (request == null || trimToNull(request.getName()) == null) {
             throw new BusinessException("OPPORTUNITY_003", "商机名称不能为空");
         }
@@ -90,14 +90,14 @@ public class OpportunityApplicationService {
     }
 
     @Transactional
-    public void delete(String tenantId, Long userId, String dataScope, Long id) {
+    public void delete(Long tenantId, Long userId, String dataScope, Long id) {
         OpportunityEntity entity = findOne(tenantId, id);
         checkDataScope(userId, dataScope, entity.getOwnerId());
         entity.setDeleted(true);
         opportunityRepository.save(entity);
     }
 
-    private OpportunityEntity findOne(String tenantId, Long id) {
+    private OpportunityEntity findOne(Long tenantId, Long id) {
         if (id == null) {
             throw new BusinessException("OPPORTUNITY_001", "商机编号不能为空");
         }
@@ -147,13 +147,13 @@ public class OpportunityApplicationService {
         return response;
     }
 
-    private void fillOwnerName(String tenantId, OpportunityResponse response) {
+    private void fillOwnerName(Long tenantId, OpportunityResponse response) {
         List<OpportunityResponse> records = new ArrayList<OpportunityResponse>();
         records.add(response);
         fillOwnerNames(tenantId, records);
     }
 
-    private void fillOwnerNames(String tenantId, List<OpportunityResponse> records) {
+    private void fillOwnerNames(Long tenantId, List<OpportunityResponse> records) {
         if (userNameResolver == null || records == null || records.isEmpty()) {
             return;
         }

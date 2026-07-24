@@ -7,7 +7,7 @@ import lombok.Setter;
 @Setter
 public class RequestLogRecord {
 
-    private String tenantId;
+    private Long tenantId;
 
     private Long operatorId;
 

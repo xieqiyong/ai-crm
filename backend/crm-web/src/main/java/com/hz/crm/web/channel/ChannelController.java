@@ -143,7 +143,7 @@ public class ChannelController {
         return StringUtils.cleanPath(fileName);
     }
 
-    private String saveMediaFile(String tenantId, MultipartFile file) {
+    private String saveMediaFile(Long tenantId, MultipartFile file) {
         String fileName = resolveFileName(file);
         String storageKey = tenantId + "/" + System.currentTimeMillis() + "-" + fileName;
         Path rootPath = Paths.get(uploadDir).toAbsolutePath().normalize();

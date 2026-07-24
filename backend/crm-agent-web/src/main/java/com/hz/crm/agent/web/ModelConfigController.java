@@ -25,7 +25,9 @@ public class ModelConfigController {
     private ModelConfigService modelConfigService;
 
     @PostMapping("/list")
-    @PreAuthorize("hasAuthority('*') or hasAuthority('crm:model:view') or hasAuthority('crm:model:manage')")
+    @PreAuthorize("hasAuthority('*') or hasAuthority('crm:model:view') "
+            + "or hasAuthority('crm:model:manage') or hasAuthority('crm:agent:view') "
+            + "or hasAuthority('crm:agent:manage')")
     public ApiResult<List<ModelConfigResponse>> listPost(JwtPrincipal principal) {
         return ApiResult.ok(modelConfigService.list(principal.getTenantId()));
     }

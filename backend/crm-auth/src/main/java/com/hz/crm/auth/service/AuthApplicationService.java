@@ -148,7 +148,7 @@ public class AuthApplicationService {
         }
         String[] parts = value.split(":", 2);
         SysUserEntity user = userRepository
-                .findByIdAndTenantIdAndDeletedFalse(Long.valueOf(parts[1]), parts[0])
+                .findByIdAndTenantIdAndDeletedFalse(Long.valueOf(parts[1]), Long.valueOf(parts[0]))
                 .orElseThrow(() -> new BusinessException("AUTH_RESET_003", "重置码无效或已过期"));
         user.setPasswordHash(passwordEncoder.encode(request.getNewPassword()));
         userRepository.save(user);
@@ -205,7 +205,7 @@ public class AuthApplicationService {
     }
 
     private SysUserEntity resolveLoginUser(LoginRequest request, String username) {
-        String tenantId = normalizeTenant(request.getTenantId());
+        Long tenantId = request.getTenantId();
         if (tenantId != null) {
             return userRepository
                     .findByUsernameAndTenantIdAndDeletedFalse(username, tenantId)
@@ -235,13 +235,6 @@ public class AuthApplicationService {
             return DataScope.DEPARTMENT;
         }
         return DataScope.SELF;
-    }
-
-    private String normalizeTenant(String tenantId) {
-        if (tenantId == null || tenantId.trim().length() == 0) {
-            return null;
-        }
-        return tenantId.trim();
     }
 
     private String normalizeUsername(String username) {

@@ -24,7 +24,7 @@ public class RequestLogService {
     private SnowflakeIdGenerator snowflakeIdGenerator;
 
     @Transactional(readOnly = true)
-    public PageData<RequestLogEntity> page(String tenantId, PageQuery query) {
+    public PageData<RequestLogEntity> page(Long tenantId, PageQuery query) {
         PageQuery safeQuery = query == null ? new PageQuery() : query;
         PageRequest pageRequest = PageRequest.of(
                 safeQuery.safePageNo() - 1, safeQuery.safePageSize(), Sort.by(Sort.Direction.DESC, "createdAt"));

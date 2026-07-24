@@ -1,6 +1,5 @@
 package com.hz.crm.agent.runtime.dto;
 
-import jakarta.validation.constraints.NotBlank;
 import lombok.Getter;
 import lombok.Setter;
 
@@ -10,10 +9,12 @@ public class AgentSaveRequest {
 
     private Long id;
 
-    @NotBlank(message = "Agent编码不能为空")
     private String code;
 
-    @NotBlank(message = "Agent名称不能为空")
+    private String sceneCode;
+
+    private String sceneName;
+
     private String name;
 
     private String description;
@@ -28,9 +29,13 @@ public class AgentSaveRequest {
 
     private String baseUrl;
 
-    private String apiKeyEnv;
+    private String apiKey;
 
     private Integer maxIters;
+
+    private String extraConfigJson;
+
+    private String remark;
 
     private Boolean enabled;
 }

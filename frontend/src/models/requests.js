@@ -1,16 +1,13 @@
 export class LoginRequest {
-  constructor({ tenantId = '', username = '', password = '' }) {
-    if (tenantId && tenantId.trim()) {
-      this.tenantId = tenantId.trim()
-    }
+  constructor({ username = '', password = '' }) {
     this.username = username.trim()
     this.password = password
   }
 }
 
 export class SetupSuperAdminRequest {
-  constructor({ tenantId = 'default', username = '', displayName = '', password = '' }) {
-    this.tenantId = tenantId || 'default'
+  constructor({ tenantName = '默认租户', username = '', displayName = '', password = '' }) {
+    this.tenantName = tenantName.trim() || '默认租户'
     this.username = username.trim()
     this.displayName = displayName.trim()
     this.password = password

@@ -33,7 +33,7 @@ public class DashboardApplicationService {
     private ChannelRecordRepository channelRecordRepository;
 
     @Transactional(readOnly = true)
-    public DashboardOverviewResponse overview(String tenantId, Long userId, String dataScope) {
+    public DashboardOverviewResponse overview(Long tenantId, Long userId, String dataScope) {
         DashboardOverviewResponse response = new DashboardOverviewResponse();
         Long ownerId = "SELF".equals(dataScope) ? userId : null;
         response.setLeadCount(countLead(tenantId, ownerId));
@@ -49,35 +49,35 @@ public class DashboardApplicationService {
         return response;
     }
 
-    private long countLead(String tenantId, Long ownerId) {
+    private long countLead(Long tenantId, Long ownerId) {
         if (ownerId == null) {
             return leadRepository.countByTenantIdAndDeletedFalse(tenantId);
         }
         return leadRepository.countByTenantIdAndOwnerIdAndDeletedFalse(tenantId, ownerId);
     }
 
-    private long countCustomer(String tenantId, Long ownerId) {
+    private long countCustomer(Long tenantId, Long ownerId) {
         if (ownerId == null) {
             return customerRepository.countByTenantIdAndDeletedFalse(tenantId);
         }
         return customerRepository.countByTenantIdAndOwnerIdAndDeletedFalse(tenantId, ownerId);
     }
 
-    private long countOpportunity(String tenantId, Long ownerId) {
+    private long countOpportunity(Long tenantId, Long ownerId) {
         if (ownerId == null) {
             return opportunityRepository.countByTenantIdAndDeletedFalse(tenantId);
         }
         return opportunityRepository.countByTenantIdAndOwnerIdAndDeletedFalse(tenantId, ownerId);
     }
 
-    private long countChannel(String tenantId, Long ownerId) {
+    private long countChannel(Long tenantId, Long ownerId) {
         if (ownerId == null) {
             return channelRecordRepository.countByTenantIdAndDeletedFalse(tenantId);
         }
         return channelRecordRepository.countByTenantIdAndOwnerIdAndDeletedFalse(tenantId, ownerId);
     }
 
-    private List<DashboardCountItem> buildLeadStatusCounts(String tenantId, Long ownerId) {
+    private List<DashboardCountItem> buildLeadStatusCounts(Long tenantId, Long ownerId) {
         List<DashboardCountItem> items = new ArrayList<DashboardCountItem>();
         for (LeadStatus status : LeadStatus.values()) {
             long count = ownerId == null
@@ -88,7 +88,7 @@ public class DashboardApplicationService {
         return items;
     }
 
-    private List<DashboardCountItem> buildCustomerStatusCounts(String tenantId, Long ownerId) {
+    private List<DashboardCountItem> buildCustomerStatusCounts(Long tenantId, Long ownerId) {
         List<DashboardCountItem> items = new ArrayList<DashboardCountItem>();
         for (CustomerStatus status : CustomerStatus.values()) {
             long count = ownerId == null
@@ -99,7 +99,7 @@ public class DashboardApplicationService {
         return items;
     }
 
-    private List<DashboardCountItem> buildOpportunityStageCounts(String tenantId, Long ownerId) {
+    private List<DashboardCountItem> buildOpportunityStageCounts(Long tenantId, Long ownerId) {
         List<DashboardCountItem> items = new ArrayList<DashboardCountItem>();
         for (OpportunityStage stage : OpportunityStage.values()) {
             long count = ownerId == null
@@ -111,7 +111,7 @@ public class DashboardApplicationService {
         return items;
     }
 
-    private List<DashboardCountItem> buildChannelStatusCounts(String tenantId, Long ownerId) {
+    private List<DashboardCountItem> buildChannelStatusCounts(Long tenantId, Long ownerId) {
         List<DashboardCountItem> items = new ArrayList<DashboardCountItem>();
         for (ChannelStatus status : ChannelStatus.values()) {
             long count = ownerId == null

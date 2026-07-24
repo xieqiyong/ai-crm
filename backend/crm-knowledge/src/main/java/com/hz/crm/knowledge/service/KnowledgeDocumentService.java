@@ -26,7 +26,7 @@ public class KnowledgeDocumentService {
     private SnowflakeIdGenerator snowflakeIdGenerator;
 
     @Transactional(readOnly = true)
-    public PageData<KnowledgeDocumentEntity> page(String tenantId, PageQuery query) {
+    public PageData<KnowledgeDocumentEntity> page(Long tenantId, PageQuery query) {
         PageQuery safeQuery = query == null ? new PageQuery() : query;
         PageRequest pageRequest = PageRequest.of(
                 safeQuery.safePageNo() - 1, safeQuery.safePageSize(), Sort.by(Sort.Direction.DESC, "createdAt"));
@@ -36,7 +36,7 @@ public class KnowledgeDocumentService {
     }
 
     @Transactional
-    public KnowledgeDocumentEntity save(String tenantId, KnowledgeDocumentRequest request) {
+    public KnowledgeDocumentEntity save(Long tenantId, KnowledgeDocumentRequest request) {
         KnowledgeDocumentEntity entity;
         if (request.getId() == null) {
             entity = new KnowledgeDocumentEntity();

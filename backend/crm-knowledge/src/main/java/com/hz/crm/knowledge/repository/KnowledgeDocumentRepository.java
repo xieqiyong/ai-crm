@@ -8,7 +8,7 @@ import org.springframework.data.jpa.repository.JpaRepository;
 
 public interface KnowledgeDocumentRepository extends JpaRepository<KnowledgeDocumentEntity, Long> {
 
-    Page<KnowledgeDocumentEntity> findByTenantIdAndDeletedFalse(String tenantId, Pageable pageable);
+    Page<KnowledgeDocumentEntity> findByTenantIdAndDeletedFalse(Long tenantId, Pageable pageable);
 
-    Optional<KnowledgeDocumentEntity> findByIdAndTenantIdAndDeletedFalse(Long id, String tenantId);
+    Optional<KnowledgeDocumentEntity> findByIdAndTenantIdAndDeletedFalse(Long id, Long tenantId);
 }

@@ -18,6 +18,8 @@ public final class PermissionCodes {
 
     public static final String DASHBOARD_VIEW = "crm:dashboard:view";
 
+    public static final String AGENT_VIEW = "crm:agent:view";
+
     public static final String AGENT_MANAGE = "crm:agent:manage";
 
     public static final String KNOWLEDGE_MANAGE = "crm:knowledge:manage";

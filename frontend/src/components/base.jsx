@@ -2,9 +2,9 @@ import { forwardRef, useState } from 'react'
 import { Eye, EyeOff, LockKeyhole, X } from 'lucide-react'
 import { APP_NAME } from '../config/appConfig'
 
-export const Button = forwardRef(function Button({ children, variant = 'primary', icon: Icon, className = '', ...props }, ref) {
+export const Button = forwardRef(function Button({ children, variant = 'primary', icon: Icon, className = '', type = 'button', ...props }, ref) {
   return (
-    <button ref={ref} className={`button ${variant} ${className}`} {...props}>
+    <button ref={ref} type={type} className={`button ${variant} ${className}`} {...props}>
       {Icon && <Icon size={17} />}
       <span>{children}</span>
     </button>

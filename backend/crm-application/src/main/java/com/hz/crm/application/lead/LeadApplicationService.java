@@ -21,6 +21,7 @@ import com.hz.crm.domain.lead.LeadEntity;
 import com.hz.crm.domain.lead.LeadConvertType;
 import com.hz.crm.domain.lead.LeadStatus;
 import com.hz.crm.domain.lead.repository.LeadJpaRepository;
+import java.math.BigDecimal;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.HashSet;
@@ -54,7 +55,7 @@ public class LeadApplicationService {
     private UserNameResolver userNameResolver;
 
     @Transactional(readOnly = true)
-    public PageData<LeadResponse> page(String tenantId, Long userId, String dataScope, LeadQuery query) {
+    public PageData<LeadResponse> page(Long tenantId, Long userId, String dataScope, LeadQuery query) {
         LeadQuery safeQuery = query == null ? new LeadQuery() : query;
         PageRequest pageRequest = PageRequest.of(
                 safeQuery.safePageNo() - 1, safeQuery.safePageSize(), Sort.by(Sort.Direction.DESC, "createdAt"));
@@ -71,7 +72,7 @@ public class LeadApplicationService {
     }
 
     @Transactional(readOnly = true)
-    public LeadResponse detail(String tenantId, Long userId, String dataScope, Long id) {
+    public LeadResponse detail(Long tenantId, Long userId, String dataScope, Long id) {
         LeadEntity entity = findOne(tenantId, id);
         checkDataScope(userId, dataScope, entity.getOwnerId());
         LeadResponse response = toResponse(entity);
@@ -81,9 +82,14 @@ public class LeadApplicationService {
     }
 
     @Transactional
-    public LeadResponse save(String tenantId, Long operatorId, String dataScope, LeadSaveRequest request) {
-        if (request == null || trimToNull(request.getName()) == null) {
-            throw new BusinessException("LEAD_003", "线索名称不能为空");
+    public LeadResponse save(Long tenantId, Long operatorId, String dataScope, LeadSaveRequest request) {
+        if (request == null) {
+            throw new BusinessException("LEAD_003", "名称和公司名称至少填写一个");
+        }
+        String leadName = trimToNull(request.getName());
+        String companyName = trimToNull(request.getCompanyName());
+        if (leadName == null && companyName == null) {
+            throw new BusinessException("LEAD_003", "名称和公司名称至少填写一个");
         }
         LeadEntity entity;
         if (request.getId() == null) {
@@ -94,8 +100,8 @@ public class LeadApplicationService {
             entity = findOne(tenantId, request.getId());
             checkDataScope(operatorId, dataScope, entity.getOwnerId());
         }
-        entity.setName(trimToNull(request.getName()));
-        entity.setCompanyName(trimToNull(request.getCompanyName()));
+        entity.setName(leadName == null ? companyName : leadName);
+        entity.setCompanyName(companyName);
         entity.setPhone(trimToNull(request.getPhone()));
         entity.setEmail(trimToNull(request.getEmail()));
         entity.setSource(trimToNull(request.getSource()));
@@ -111,7 +117,7 @@ public class LeadApplicationService {
     }
 
     @Transactional
-    public void delete(String tenantId, Long userId, String dataScope, Long id) {
+    public void delete(Long tenantId, Long userId, String dataScope, Long id) {
         LeadEntity entity = findOne(tenantId, id);
         checkDataScope(userId, dataScope, entity.getOwnerId());
         entity.setDeleted(true);
@@ -119,8 +125,31 @@ public class LeadApplicationService {
     }
 
     @Transactional
+    public LeadResponse saveAiAnalysis(
+            Long tenantId,
+            Long userId,
+            String dataScope,
+            Long leadId,
+            String summary,
+            String suggestedCustomerName,
+            String suggestedContactName,
+            BigDecimal confidence) {
+        LeadEntity entity = findOne(tenantId, leadId);
+        checkDataScope(userId, dataScope, entity.getOwnerId());
+        entity.setAiSummary(trimToNull(summary));
+        entity.setAiSuggestedCustomerName(trimToNull(suggestedCustomerName));
+        entity.setAiSuggestedContactName(trimToNull(suggestedContactName));
+        entity.setAiConfidence(confidence);
+        entity.setAiAnalyzedAt(DateTimes.now());
+        LeadResponse response = toResponse(leadRepository.save(entity));
+        fillOwnerName(tenantId, response);
+        fillCustomerNames(tenantId, response);
+        return response;
+    }
+
+    @Transactional
     public LeadConvertResponse convertToCustomer(
-            String tenantId, Long operatorId, String dataScope, LeadConvertRequest request) {
+            Long tenantId, Long operatorId, String dataScope, LeadConvertRequest request) {
         if (request == null || request.getLeadId() == null) {
             throw new BusinessException("LEAD_CONVERT_001", "线索编号不能为空");
         }
@@ -153,7 +182,7 @@ public class LeadApplicationService {
     }
 
     private CustomerResponse bindCustomer(
-            String tenantId, Long operatorId, String dataScope, LeadConvertRequest request) {
+            Long tenantId, Long operatorId, String dataScope, LeadConvertRequest request) {
         if (request.getCustomerId() == null) {
             throw new BusinessException("LEAD_CONVERT_003", "请选择要绑定的客户");
         }
@@ -161,7 +190,7 @@ public class LeadApplicationService {
     }
 
     private CustomerResponse createCustomer(
-            String tenantId, Long operatorId, String dataScope, LeadEntity entity, LeadConvertRequest request) {
+            Long tenantId, Long operatorId, String dataScope, LeadEntity entity, LeadConvertRequest request) {
         CustomerSaveRequest customerRequest = new CustomerSaveRequest();
         customerRequest.setName(resolveCustomerName(entity, request));
         customerRequest.setIndustry(trimToNull(request.getIndustry()));
@@ -211,7 +240,7 @@ public class LeadApplicationService {
         return trimToNull(entity.getRemark());
     }
 
-    private LeadEntity findOne(String tenantId, Long id) {
+    private LeadEntity findOne(Long tenantId, Long id) {
         if (id == null) {
             throw new BusinessException("LEAD_001", "线索编号不能为空");
         }
@@ -270,19 +299,19 @@ public class LeadApplicationService {
         return response;
     }
 
-    private void fillOwnerName(String tenantId, LeadResponse response) {
+    private void fillOwnerName(Long tenantId, LeadResponse response) {
         List<LeadResponse> records = new ArrayList<LeadResponse>();
         records.add(response);
         fillOwnerNames(tenantId, records);
     }
 
-    private void fillCustomerNames(String tenantId, LeadResponse response) {
+    private void fillCustomerNames(Long tenantId, LeadResponse response) {
         List<LeadResponse> records = new ArrayList<LeadResponse>();
         records.add(response);
         fillCustomerNames(tenantId, records);
     }
 
-    private void fillOwnerNames(String tenantId, List<LeadResponse> records) {
+    private void fillOwnerNames(Long tenantId, List<LeadResponse> records) {
         if (userNameResolver == null || records == null || records.isEmpty()) {
             return;
         }
@@ -309,7 +338,7 @@ public class LeadApplicationService {
         }
     }
 
-    private void fillCustomerNames(String tenantId, List<LeadResponse> records) {
+    private void fillCustomerNames(Long tenantId, List<LeadResponse> records) {
         if (records == null || records.isEmpty()) {
             return;
         }

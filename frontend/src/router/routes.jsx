@@ -2,6 +2,7 @@ import {
   BarChart3, BookOpen, Bot, BriefcaseBusiness, ClipboardCheck,
   LayoutDashboard, MessageSquareText, Network, Settings, UserRoundCog, Users,
 } from 'lucide-react'
+import { AgentConfigPage } from '../features/agent/AgentConfigPage'
 import { ModelConfigPage } from '../features/admin/ModelConfigPage'
 import { OrganizationAdminPage } from '../features/admin/OrganizationAdminPage'
 import { ChannelPage } from '../features/channel/ChannelPage'
@@ -82,6 +83,13 @@ export const routeGroups = [
         permission: 'menu.assistant',
         component: SimpleModulePage,
         pageType: 'assistant',
+      },
+      {
+        key: 'agent-config',
+        label: '智能体配置',
+        icon: Bot,
+        permission: 'menu.agent_config',
+        component: AgentConfigPage,
       },
       {
         key: 'knowledge',

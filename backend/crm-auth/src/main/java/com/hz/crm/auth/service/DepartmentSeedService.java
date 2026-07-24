@@ -19,7 +19,12 @@ public class DepartmentSeedService {
     private SnowflakeIdGenerator snowflakeIdGenerator;
 
     @Transactional
-    public SysDepartmentEntity ensureTenantRootDepartment(String tenantId) {
+    public SysDepartmentEntity ensureTenantRootDepartment(Long tenantId) {
+        return ensureTenantRootDepartment(tenantId, null);
+    }
+
+    @Transactional
+    public SysDepartmentEntity ensureTenantRootDepartment(Long tenantId, String rootName) {
         SysDepartmentEntity rootDepartment = departmentRepository
                 .findFirstByTenantIdAndParentIdIsNullAndDeletedFalseOrderByCreatedAtAsc(tenantId)
                 .orElse(null);
@@ -28,18 +33,25 @@ public class DepartmentSeedService {
         }
         return departmentRepository
                 .findByCodeAndTenantIdAndDeletedFalse(ROOT_DEPARTMENT_CODE, tenantId)
-                .orElseGet(() -> createRootDepartment(tenantId));
+                .orElseGet(() -> createRootDepartment(tenantId, rootName));
     }
 
-    private SysDepartmentEntity createRootDepartment(String tenantId) {
+    private SysDepartmentEntity createRootDepartment(Long tenantId, String rootName) {
         SysDepartmentEntity department = new SysDepartmentEntity();
         department.setId(snowflakeIdGenerator.nextId());
         department.setTenantId(tenantId);
         department.setParentId(null);
         department.setCode(ROOT_DEPARTMENT_CODE);
-        department.setName(tenantId);
+        department.setName(resolveRootName(rootName));
         department.setSortNo(0);
         department.setEnabled(true);
         return departmentRepository.save(department);
+    }
+
+    private String resolveRootName(String rootName) {
+        if (rootName == null || rootName.trim().length() == 0) {
+            return "默认租户";
+        }
+        return rootName.trim();
     }
 }

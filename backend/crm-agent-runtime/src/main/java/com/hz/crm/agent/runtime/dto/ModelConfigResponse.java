@@ -18,8 +18,6 @@ public class ModelConfigResponse {
 
     private String baseUrl;
 
-    private String apiKeyEnv;
-
     private String remark;
 
     private boolean defaultConfig;

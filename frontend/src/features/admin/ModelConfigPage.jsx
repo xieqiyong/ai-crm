@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { Bot, CheckCircle2, Edit2, Eye, EyeOff, MessageSquareText, Plus, RefreshCw, ShieldCheck, Star, Trash2 } from 'lucide-react'
+import { Bot, CheckCircle2, Edit2, MessageSquareText, Plus, RefreshCw, ShieldCheck, Star, Trash2 } from 'lucide-react'
 import { api } from '../../api'
 import { Badge, Button, Card, ConfirmDialog, Field, Modal, PageHeader, SecretInput, useConfirmDialog } from '../../components'
 
@@ -8,30 +8,16 @@ const emptyForm = {
   name: '',
   modelName: '',
   baseUrl: '',
-  apiKeyEnv: '',
+  apiKey: '',
   remark: '',
   defaultConfig: false,
   enabled: true,
 }
 
-function MaskedSecret({ value, configured }) {
-  const [visible, setVisible] = useState(false)
-  const hasValue = Boolean(value)
-  const text = value || '未配置'
-
+function MaskedSecret({ configured }) {
   return (
     <span className="secret-inline">
-      <Badge tone={configured ? 'success' : 'warning'}>{hasValue && !visible ? '••••••••' : text}</Badge>
-      {hasValue && (
-        <button
-          type="button"
-          className="secret-eye-button"
-          aria-label={visible ? '隐藏密钥变量' : '显示密钥变量'}
-          onClick={() => setVisible(!visible)}
-        >
-          {visible ? <EyeOff size={15} /> : <Eye size={15} />}
-        </button>
-      )}
+      <Badge tone={configured ? 'success' : 'warning'}>{configured ? '已配置' : '未配置'}</Badge>
     </span>
   )
 }
@@ -115,20 +101,20 @@ export function ModelConfigPage({ can, notify }) {
     <div className="page model-config-page">
       <PageHeader
         title="大模型配置"
-        description="配置 Agent 和智能营销能力使用的大模型，不保存明文 API Key，只保存密钥环境变量名"
+        description="配置 Agent 和智能营销能力使用的大模型密钥，接口响应不会回显明文 API Key"
         actions={<><Button variant="secondary" icon={RefreshCw} onClick={load}>刷新</Button>{canManage && <Button icon={Plus} onClick={() => setEditing(emptyForm)}>新增模型</Button>}</>}
       />
       <Card className="table-card">
         <div className="data-table-wrap">
           <table className="data-table">
-            <thead><tr><th>配置名称</th><th>供应商</th><th>模型</th><th>地址</th><th>密钥变量</th><th>状态</th><th>默认</th><th>操作</th></tr></thead>
+            <thead><tr><th>配置名称</th><th>供应商</th><th>模型</th><th>地址</th><th>密钥</th><th>状态</th><th>默认</th><th>操作</th></tr></thead>
             <tbody>{rows.map((row) => (
               <tr key={row.id}>
                 <td><strong><Bot size={15} /> {row.name}</strong><small>{row.remark || '无备注'}</small></td>
                 <td>{row.provider}</td>
                 <td>{row.modelName}</td>
                 <td>{row.baseUrl || '默认地址'}</td>
-                <td><MaskedSecret value={row.apiKeyEnv} configured={row.apiKeyConfigured} /></td>
+                <td><MaskedSecret configured={row.apiKeyConfigured} /></td>
                 <td><Badge dot tone={row.enabled ? 'success' : 'danger'}>{row.enabled ? '启用' : '停用'}</Badge></td>
                 <td>{row.defaultConfig ? <Badge tone="info"><Star size={12} />默认</Badge> : '-'}</td>
                 <td>
@@ -170,7 +156,7 @@ function ModelConfigModal({ open, data, onClose, reload }) {
   const [form, setForm] = useState(emptyForm)
 
   useEffect(() => {
-    setForm(data || emptyForm)
+    setForm(data ? { ...emptyForm, ...data, apiKey: '' } : emptyForm)
   }, [data, open])
 
   const save = async () => {
@@ -198,8 +184,8 @@ function ModelConfigModal({ open, data, onClose, reload }) {
       <Field label="Base URL">
         <input value={form.baseUrl || ''} onChange={(event) => setForm({ ...form, baseUrl: event.target.value })} placeholder="OpenAI 兼容接口地址，可为空" />
       </Field>
-      <Field label="密钥环境变量" required hint="不保存明文 API Key，只填写后端进程可读取的环境变量名">
-        <SecretInput value={form.apiKeyEnv} onChange={(event) => setForm({ ...form, apiKeyEnv: event.target.value })} placeholder="例如 OPENAI_API_KEY" />
+      <Field label="API Key" required={!form.id} hint={form.id ? '留空表示不修改原密钥' : '用于后端直接调用模型，保存后不会在接口中回显明文'}>
+        <SecretInput value={form.apiKey} onChange={(event) => setForm({ ...form, apiKey: event.target.value })} placeholder="请输入模型 API Key" />
       </Field>
       <Field label="备注">
         <textarea rows="3" value={form.remark || ''} onChange={(event) => setForm({ ...form, remark: event.target.value })} />

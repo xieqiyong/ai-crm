@@ -8,13 +8,13 @@ import org.springframework.data.jpa.repository.JpaRepository;
 
 public interface SysRoleRepository extends JpaRepository<SysRoleEntity, Long> {
 
-    List<SysRoleEntity> findByIdInAndTenantIdAndEnabledTrueAndDeletedFalse(Collection<Long> ids, String tenantId);
+    List<SysRoleEntity> findByIdInAndTenantIdAndEnabledTrueAndDeletedFalse(Collection<Long> ids, Long tenantId);
 
-    List<SysRoleEntity> findByTenantIdAndDeletedFalseOrderByCreatedAtAsc(String tenantId);
+    List<SysRoleEntity> findByTenantIdAndDeletedFalseOrderByCreatedAtAsc(Long tenantId);
 
     List<SysRoleEntity> findByCodeAndDeletedFalse(String code);
 
-    Optional<SysRoleEntity> findByCodeAndTenantIdAndDeletedFalse(String code, String tenantId);
+    Optional<SysRoleEntity> findByCodeAndTenantIdAndDeletedFalse(String code, Long tenantId);
 
-    Optional<SysRoleEntity> findByIdAndTenantIdAndDeletedFalse(Long id, String tenantId);
+    Optional<SysRoleEntity> findByIdAndTenantIdAndDeletedFalse(Long id, Long tenantId);
 }

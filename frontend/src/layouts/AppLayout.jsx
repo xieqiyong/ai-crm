@@ -1,12 +1,22 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import {
   Bell, Bot, ChevronDown, HelpCircle, LogOut, Menu, Search, ShieldCheck,
   Sparkles, X, Zap,
 } from 'lucide-react'
 import { Badge, BrandLogo, Card } from '../components'
+import { api } from '../api'
 import { backendAddressLabel } from '../config/env'
 
-function formatUsage(user) {
+function formatUsage(user, tokenUsage) {
+  if (tokenUsage?.dailyTokenLimit > 0) {
+    const used = Number(tokenUsage.totalTokenCount || 0) + Number(tokenUsage.reservedTokenCount || 0)
+    const limit = Number(tokenUsage.dailyTokenLimit)
+    if (Number.isFinite(used) && Number.isFinite(limit) && limit > 0) {
+      const percent = Math.max(0, Math.min((used / limit) * 100, 999))
+      return `${percent.toFixed(percent % 1 === 0 ? 0 : 1)}%`
+    }
+  }
+  if (tokenUsage && Number(tokenUsage.dailyTokenLimit || 0) <= 0) return '不限额'
   const raw = user?.usagePercent
     ?? user?.aiUsagePercent
     ?? user?.quotaUsagePercent
@@ -44,13 +54,34 @@ export function AppLayout({
   const [mobileOpen, setMobileOpen] = useState(false)
   const [profileOpen, setProfileOpen] = useState(false)
   const [assistantOpen, setAssistantOpen] = useState(false)
+  const [tokenUsage, setTokenUsage] = useState(null)
+
+  useEffect(() => {
+    let canceled = false
+    if (!currentUser) {
+      setTokenUsage(null)
+      return () => {
+        canceled = true
+      }
+    }
+    api.agent.tokenToday()
+      .then((data) => {
+        if (!canceled) setTokenUsage(data)
+      })
+      .catch(() => {
+        if (!canceled) setTokenUsage(null)
+      })
+    return () => {
+      canceled = true
+    }
+  }, [currentUser?.id, currentUser?.userId, currentUser?.username])
 
   const go = (next) => {
     onNavigate(next)
     setMobileOpen(false)
   }
   const activeRouteKey = String(routeKey || '').startsWith('customers/detail/') ? 'customers' : routeKey
-  const usageText = formatUsage(currentUser)
+  const usageText = formatUsage(currentUser, tokenUsage)
   const unreadCount = resolveUnreadCount(currentUser)
   const unreadBadge = unreadCount > 99 ? '99+' : String(unreadCount)
 
@@ -85,7 +116,11 @@ export function AppLayout({
                 <strong>{currentRole.name}</strong>
                 <small>{currentRole.label}</small>
               </span>
-              <span className="usage-pill"><Zap size={12} />AI用量 {usageText}</span>
+              <span className="usage-pill" title={`AI用量 ${usageText}`}>
+                <Zap size={12} />
+                <span className="usage-pill-label">AI用量</span>
+                <span className="usage-pill-value">{usageText}</span>
+              </span>
               <ChevronDown size={14} />
             </button>
             {profileOpen && (

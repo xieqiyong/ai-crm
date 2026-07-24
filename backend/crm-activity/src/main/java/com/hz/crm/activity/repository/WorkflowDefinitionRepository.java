@@ -6,5 +6,5 @@ import org.springframework.data.jpa.repository.JpaRepository;
 
 public interface WorkflowDefinitionRepository extends JpaRepository<WorkflowDefinitionEntity, Long> {
 
-    Optional<WorkflowDefinitionEntity> findByCodeAndTenantIdAndEnabledTrueAndDeletedFalse(String code, String tenantId);
+    Optional<WorkflowDefinitionEntity> findByCodeAndTenantIdAndEnabledTrueAndDeletedFalse(String code, Long tenantId);
 }

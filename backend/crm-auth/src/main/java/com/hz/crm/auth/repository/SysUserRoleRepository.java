@@ -6,13 +6,13 @@ import org.springframework.data.jpa.repository.JpaRepository;
 
 public interface SysUserRoleRepository extends JpaRepository<SysUserRoleEntity, Long> {
 
-    List<SysUserRoleEntity> findByUserIdAndTenantIdAndDeletedFalse(Long userId, String tenantId);
+    List<SysUserRoleEntity> findByUserIdAndTenantIdAndDeletedFalse(Long userId, Long tenantId);
 
-    List<SysUserRoleEntity> findByTenantIdAndDeletedFalse(String tenantId);
+    List<SysUserRoleEntity> findByTenantIdAndDeletedFalse(Long tenantId);
 
-    List<SysUserRoleEntity> findByRoleIdAndTenantIdAndDeletedFalse(Long roleId, String tenantId);
+    List<SysUserRoleEntity> findByRoleIdAndTenantIdAndDeletedFalse(Long roleId, Long tenantId);
 
-    boolean existsByRoleIdAndTenantIdAndDeletedFalse(Long roleId, String tenantId);
+    boolean existsByRoleIdAndTenantIdAndDeletedFalse(Long roleId, Long tenantId);
 
-    long countByRoleIdAndTenantIdAndDeletedFalse(Long roleId, String tenantId);
+    long countByRoleIdAndTenantIdAndDeletedFalse(Long roleId, Long tenantId);
 }

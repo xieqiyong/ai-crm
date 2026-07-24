@@ -1,7 +1,18 @@
 import { request } from '../httpClient'
 
+const pageRequests = new Map()
+
 function page(path, payload) {
-  return request(`${path}/page`, { method: 'POST', body: JSON.stringify(payload || {}) })
+  const body = JSON.stringify(payload || {})
+  const key = `${path}/page:${body}`
+  if (pageRequests.has(key)) {
+    return pageRequests.get(key)
+  }
+  const promise = request(`${path}/page`, { method: 'POST', body }).finally(() => {
+    pageRequests.delete(key)
+  })
+  pageRequests.set(key, promise)
+  return promise
 }
 
 function detail(path, id) {

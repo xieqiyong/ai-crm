@@ -1,10 +1,10 @@
 package com.hz.crm.agent.runtime.domain;
 
+import com.fasterxml.jackson.annotation.JsonProperty;
 import com.hz.crm.common.time.DateTimes;
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
 import jakarta.persistence.Id;
-import jakarta.persistence.Lob;
 import jakarta.persistence.PrePersist;
 import jakarta.persistence.PreUpdate;
 import jakarta.persistence.Table;
@@ -15,17 +15,23 @@ import lombok.Setter;
 @Getter
 @Setter
 @Entity
-@Table(name = "agent_definition")
+@Table(name = "agents")
 public class AgentEntity {
 
     @Id
     private Long id;
 
-    @Column(nullable = false, length = 64)
-    private String tenantId;
+    @Column(nullable = false, columnDefinition = "bigint")
+    private Long tenantId;
 
     @Column(nullable = false, length = 64)
     private String code;
+
+    @Column(length = 64)
+    private String sceneCode;
+
+    @Column(length = 128)
+    private String sceneName;
 
     @Column(nullable = false, length = 128)
     private String name;
@@ -33,7 +39,7 @@ public class AgentEntity {
     @Column(length = 512)
     private String description;
 
-    @Lob
+    @Column(columnDefinition = "text")
     private String systemPrompt;
 
     private Long modelConfigId;
@@ -47,11 +53,18 @@ public class AgentEntity {
     @Column(length = 512)
     private String baseUrl;
 
-    @Column(nullable = false, length = 128)
-    private String apiKeyEnv;
+    @JsonProperty(access = JsonProperty.Access.WRITE_ONLY)
+    @Column(name = "api_key_env", nullable = false, columnDefinition = "text")
+    private String apiKey;
 
     @Column(nullable = false)
     private Integer maxIters = 8;
+
+    @Column(columnDefinition = "text")
+    private String extraConfigJson;
+
+    @Column(length = 512)
+    private String remark;
 
     @Column(nullable = false)
     private boolean enabled = true;

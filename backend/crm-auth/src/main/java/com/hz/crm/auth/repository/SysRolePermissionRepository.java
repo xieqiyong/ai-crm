@@ -7,11 +7,11 @@ import org.springframework.data.jpa.repository.JpaRepository;
 
 public interface SysRolePermissionRepository extends JpaRepository<SysRolePermissionEntity, Long> {
 
-    List<SysRolePermissionEntity> findByRoleIdInAndTenantIdAndDeletedFalse(Collection<Long> roleIds, String tenantId);
+    List<SysRolePermissionEntity> findByRoleIdInAndTenantIdAndDeletedFalse(Collection<Long> roleIds, Long tenantId);
 
-    List<SysRolePermissionEntity> findByRoleIdAndTenantIdAndDeletedFalse(Long roleId, String tenantId);
+    List<SysRolePermissionEntity> findByRoleIdAndTenantIdAndDeletedFalse(Long roleId, Long tenantId);
 
-    long countByRoleIdAndTenantIdAndDeletedFalse(Long roleId, String tenantId);
+    long countByRoleIdAndTenantIdAndDeletedFalse(Long roleId, Long tenantId);
 
-    long countByPermissionIdAndTenantIdAndDeletedFalse(Long permissionId, String tenantId);
+    long countByPermissionIdAndTenantIdAndDeletedFalse(Long permissionId, Long tenantId);
 }

@@ -142,13 +142,15 @@ export function DashboardPage({ navigate, currentRole, notify }) {
                 </div>
                 <Badge tone="info">共 {formatNumber(overview.leadCount)} 条</Badge>
               </div>
-              <div className="bar-chart dashboard-count-chart">
-                {(overview.leadStatusCounts || []).map((item) => (
-                  <div className="bar-group" key={item.code}>
-                    <i className="actual" style={{ height: `${Math.max(5, Number(item.count || 0) / leadMax * 100)}%` }} />
-                    <span>{item.name}</span>
-                  </div>
-                ))}
+              <div className="dashboard-count-scroll">
+                <div className="bar-chart dashboard-count-chart">
+                  {(overview.leadStatusCounts || []).map((item) => (
+                    <div className="bar-group" key={item.code}>
+                      <i className="actual" style={{ height: `${Math.max(5, Number(item.count || 0) / leadMax * 100)}%` }} />
+                      <span>{item.name}</span>
+                    </div>
+                  ))}
+                </div>
               </div>
               <div className="trend-summary">
                 <div><span>客户</span><b>{formatNumber(overview.customerCount)}</b></div>

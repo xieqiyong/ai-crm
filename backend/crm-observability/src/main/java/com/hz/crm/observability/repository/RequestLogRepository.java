@@ -7,5 +7,5 @@ import org.springframework.data.jpa.repository.JpaRepository;
 
 public interface RequestLogRepository extends JpaRepository<RequestLogEntity, Long> {
 
-    Page<RequestLogEntity> findByTenantId(String tenantId, Pageable pageable);
+    Page<RequestLogEntity> findByTenantId(Long tenantId, Pageable pageable);
 }

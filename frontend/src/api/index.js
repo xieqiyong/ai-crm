@@ -2,6 +2,7 @@ import { authApi } from './modules/authApi'
 import { installApi } from './modules/installApi'
 import { agentApi } from './modules/agentApi'
 import { adminApi, modelConfigApi } from './modules/adminApi'
+import { assistantApi } from './modules/assistantApi'
 import { customerApi, leadApi, opportunityApi } from './modules/crmApi'
 import { channelApi } from './modules/channelApi'
 import { dashboardApi } from './modules/dashboardApi'
@@ -18,6 +19,7 @@ export const api = {
   customer: customerApi,
   opportunity: opportunityApi,
   agent: agentApi,
+  assistant: assistantApi,
   admin: adminApi,
   modelConfig: modelConfigApi,
   knowledge: knowledgeApi,

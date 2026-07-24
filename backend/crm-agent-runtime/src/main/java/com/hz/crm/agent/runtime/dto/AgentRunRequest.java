@@ -21,5 +21,11 @@ public class AgentRunRequest {
 
     private String injectedPrompt;
 
+    private String sceneCode;
+
+    private String businessType;
+
+    private String businessId;
+
     private Map<String, Object> context = new HashMap<String, Object>();
 }

@@ -12,7 +12,7 @@ public class ChannelResponse {
 
     private Long id;
 
-    private String tenantId;
+    private Long tenantId;
 
     private String title;
 

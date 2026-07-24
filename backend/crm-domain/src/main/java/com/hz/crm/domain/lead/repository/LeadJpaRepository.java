@@ -11,9 +11,9 @@ import org.springframework.data.repository.query.Param;
 
 public interface LeadJpaRepository extends JpaRepository<LeadEntity, Long> {
 
-    Page<LeadEntity> findByTenantIdAndDeletedFalse(String tenantId, Pageable pageable);
+    Page<LeadEntity> findByTenantIdAndDeletedFalse(Long tenantId, Pageable pageable);
 
-    Page<LeadEntity> findByTenantIdAndOwnerIdAndDeletedFalse(String tenantId, Long ownerId, Pageable pageable);
+    Page<LeadEntity> findByTenantIdAndOwnerIdAndDeletedFalse(Long tenantId, Long ownerId, Pageable pageable);
 
     @Query("select l from LeadEntity l where l.tenantId = :tenantId and l.deleted = false "
             + "and (:ownerId is null or l.ownerId = :ownerId) "
@@ -25,19 +25,19 @@ public interface LeadJpaRepository extends JpaRepository<LeadEntity, Long> {
             + "or lower(coalesce(l.email, '')) like :keyword "
             + "or lower(coalesce(l.source, '')) like :keyword)")
     Page<LeadEntity> search(
-            @Param("tenantId") String tenantId,
+            @Param("tenantId") Long tenantId,
             @Param("ownerId") Long ownerId,
             @Param("keyword") String keyword,
             @Param("status") LeadStatus status,
             Pageable pageable);
 
-    Optional<LeadEntity> findByIdAndTenantIdAndDeletedFalse(Long id, String tenantId);
+    Optional<LeadEntity> findByIdAndTenantIdAndDeletedFalse(Long id, Long tenantId);
 
-    long countByTenantIdAndDeletedFalse(String tenantId);
+    long countByTenantIdAndDeletedFalse(Long tenantId);
 
-    long countByTenantIdAndOwnerIdAndDeletedFalse(String tenantId, Long ownerId);
+    long countByTenantIdAndOwnerIdAndDeletedFalse(Long tenantId, Long ownerId);
 
-    long countByTenantIdAndStatusAndDeletedFalse(String tenantId, LeadStatus status);
+    long countByTenantIdAndStatusAndDeletedFalse(Long tenantId, LeadStatus status);
 
-    long countByTenantIdAndOwnerIdAndStatusAndDeletedFalse(String tenantId, Long ownerId, LeadStatus status);
+    long countByTenantIdAndOwnerIdAndStatusAndDeletedFalse(Long tenantId, Long ownerId, LeadStatus status);
 }

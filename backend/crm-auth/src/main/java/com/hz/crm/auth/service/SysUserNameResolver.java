@@ -20,7 +20,7 @@ public class SysUserNameResolver implements UserNameResolver {
     private SysUserRepository userRepository;
 
     @Override
-    public Map<Long, String> resolve(String tenantId, Collection<Long> userIds) {
+    public Map<Long, String> resolve(Long tenantId, Collection<Long> userIds) {
         Map<Long, String> result = new HashMap<Long, String>();
         if (tenantId == null || userIds == null || userIds.isEmpty()) {
             return result;

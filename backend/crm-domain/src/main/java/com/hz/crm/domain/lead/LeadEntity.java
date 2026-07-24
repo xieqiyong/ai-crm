@@ -48,7 +48,7 @@ public class LeadEntity extends BaseEntity {
     @Column(length = 32)
     private LeadConvertType convertedType;
 
-    @Column(length = 1024)
+    @Column(columnDefinition = "text")
     private String aiSummary;
 
     @Column(length = 128)

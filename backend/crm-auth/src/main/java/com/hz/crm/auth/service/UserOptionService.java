@@ -17,7 +17,7 @@ public class UserOptionService {
     private SysUserRepository userRepository;
 
     @Transactional(readOnly = true)
-    public List<UserOptionResponse> list(String tenantId, Long userId, String dataScope) {
+    public List<UserOptionResponse> list(Long tenantId, Long userId, String dataScope) {
         if ("SELF".equals(dataScope)) {
             return listSelf(tenantId, userId);
         }
@@ -32,7 +32,7 @@ public class UserOptionService {
         return records;
     }
 
-    private List<UserOptionResponse> listSelf(String tenantId, Long userId) {
+    private List<UserOptionResponse> listSelf(Long tenantId, Long userId) {
         List<UserOptionResponse> records = new ArrayList<UserOptionResponse>();
         Optional<SysUserEntity> user = userRepository.findByIdAndTenantIdAndDeletedFalse(userId, tenantId);
         if (user.isPresent() && user.get().isEnabled()) {

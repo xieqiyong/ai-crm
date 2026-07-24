@@ -8,7 +8,7 @@ import lombok.Setter;
 @Setter
 public class SetupSuperAdminRequest {
 
-    private String tenantId;
+    private String tenantName;
 
     @NotBlank(message = "超管用户名不能为空")
     private String username;

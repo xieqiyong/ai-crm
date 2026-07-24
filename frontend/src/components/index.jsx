@@ -1,4 +1,5 @@
 export { BrandLogo } from './brand'
+export { MarkdownText } from './markdown'
 export {
   Badge,
   Button,

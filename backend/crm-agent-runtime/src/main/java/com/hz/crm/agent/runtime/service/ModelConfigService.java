@@ -38,7 +38,7 @@ public class ModelConfigService {
     private SnowflakeIdGenerator snowflakeIdGenerator;
 
     @Transactional(readOnly = true)
-    public List<ModelConfigResponse> list(String tenantId) {
+    public List<ModelConfigResponse> list(Long tenantId) {
         List<ModelConfigEntity> entities = modelConfigRepository.findByTenantIdAndDeletedFalseOrderByCreatedAtDesc(tenantId);
         List<ModelConfigResponse> responses = new ArrayList<ModelConfigResponse>();
         for (ModelConfigEntity entity : entities) {
@@ -48,23 +48,31 @@ public class ModelConfigService {
     }
 
     @Transactional
-    public ModelConfigResponse save(String tenantId, ModelConfigRequest request) {
-        if (request == null || blank(request.getName()) || blank(request.getModelName()) || blank(request.getApiKeyEnv())) {
-            throw new BusinessException("MODEL_001", "模型名称、模型标识和密钥环境变量不能为空");
+    public ModelConfigResponse save(Long tenantId, ModelConfigRequest request) {
+        if (request == null || blank(request.getName()) || blank(request.getModelName())) {
+            throw new BusinessException("MODEL_001", "模型名称和模型标识不能为空");
         }
         ModelConfigEntity entity;
         if (request.getId() == null) {
+            if (blank(request.getApiKey())) {
+                throw new BusinessException("MODEL_005", "模型密钥不能为空");
+            }
             entity = new ModelConfigEntity();
             entity.setId(snowflakeIdGenerator.nextId());
             entity.setTenantId(tenantId);
         } else {
             entity = findConfig(tenantId, request.getId());
+            if (blank(request.getApiKey()) && blank(entity.getApiKey())) {
+                throw new BusinessException("MODEL_005", "模型密钥不能为空");
+            }
         }
         entity.setProvider(blank(request.getProvider()) ? "OPENAI" : request.getProvider().trim());
         entity.setName(request.getName().trim());
         entity.setModelName(request.getModelName().trim());
         entity.setBaseUrl(trimToNull(request.getBaseUrl()));
-        entity.setApiKeyEnv(request.getApiKeyEnv().trim());
+        if (!blank(request.getApiKey())) {
+            entity.setApiKey(request.getApiKey().trim());
+        }
         entity.setRemark(trimToNull(request.getRemark()));
         entity.setEnabled(request.getEnabled() == null || request.getEnabled());
         entity.setDefaultConfig(request.getDefaultConfig() != null && request.getDefaultConfig());
@@ -75,7 +83,7 @@ public class ModelConfigService {
     }
 
     @Transactional
-    public void delete(String tenantId, ModelConfigIdRequest request) {
+    public void delete(Long tenantId, ModelConfigIdRequest request) {
         ModelConfigEntity entity = findConfig(tenantId, request == null ? null : request.getId());
         entity.setDeleted(true);
         entity.setDefaultConfig(false);
@@ -83,7 +91,7 @@ public class ModelConfigService {
     }
 
     @Transactional
-    public ModelConfigResponse setDefault(String tenantId, ModelConfigIdRequest request) {
+    public ModelConfigResponse setDefault(Long tenantId, ModelConfigIdRequest request) {
         ModelConfigEntity entity = findConfig(tenantId, request == null ? null : request.getId());
         clearDefault(tenantId, entity.getId());
         entity.setDefaultConfig(true);
@@ -92,19 +100,18 @@ public class ModelConfigService {
     }
 
     @Transactional(readOnly = true)
-    public ModelConfigStatusResponse status(String tenantId, ModelConfigIdRequest request) {
+    public ModelConfigStatusResponse status(Long tenantId, ModelConfigIdRequest request) {
         ModelConfigEntity entity = findConfig(tenantId, request == null ? null : request.getId());
         ModelConfigStatusResponse response = new ModelConfigStatusResponse();
         response.setId(idToString(entity.getId()));
-        boolean available = System.getenv(entity.getApiKeyEnv()) != null
-                && System.getenv(entity.getApiKeyEnv()).trim().length() > 0;
+        boolean available = !blank(entity.getApiKey());
         response.setAvailable(available);
-        response.setMessage(available ? "密钥环境变量已配置" : "密钥环境变量未配置");
+        response.setMessage(available ? "模型密钥已配置" : "模型密钥未配置");
         return response;
     }
 
     @Transactional(readOnly = true)
-    public ModelConfigDebugResponse debug(String tenantId, ModelConfigDebugRequest request) {
+    public ModelConfigDebugResponse debug(Long tenantId, ModelConfigDebugRequest request) {
         ModelConfigEntity entity = findConfig(tenantId, request == null ? null : request.getId());
         ModelConfigDebugResponse response = new ModelConfigDebugResponse();
         response.setId(idToString(entity.getId()));
@@ -113,10 +120,10 @@ public class ModelConfigService {
             response.setMessage("模型配置已停用");
             return response;
         }
-        String apiKey = entity.getApiKeyEnv();
+        String apiKey = trimToNull(entity.getApiKey());
         if (blank(apiKey)) {
             response.setSuccess(false);
-            response.setMessage("密钥环境变量未配置");
+            response.setMessage("模型密钥未配置");
             return response;
         }
         long startedAt = System.currentTimeMillis();
@@ -133,7 +140,7 @@ public class ModelConfigService {
         return response;
     }
 
-    private void clearDefault(String tenantId, Long keepId) {
+    private void clearDefault(Long tenantId, Long keepId) {
         List<ModelConfigEntity> defaults =
                 modelConfigRepository.findByTenantIdAndDefaultConfigTrueAndDeletedFalse(tenantId);
         for (ModelConfigEntity item : defaults) {
@@ -144,7 +151,7 @@ public class ModelConfigService {
         }
     }
 
-    private ModelConfigEntity findConfig(String tenantId, Long id) {
+    private ModelConfigEntity findConfig(Long tenantId, Long id) {
         if (id == null) {
             throw new BusinessException("MODEL_002", "模型配置编号不能为空");
         }
@@ -292,12 +299,10 @@ public class ModelConfigService {
         response.setName(entity.getName());
         response.setModelName(entity.getModelName());
         response.setBaseUrl(entity.getBaseUrl());
-        response.setApiKeyEnv(entity.getApiKeyEnv());
         response.setRemark(entity.getRemark());
         response.setDefaultConfig(entity.isDefaultConfig());
         response.setEnabled(entity.isEnabled());
-        response.setApiKeyConfigured(System.getenv(entity.getApiKeyEnv()) != null
-                && System.getenv(entity.getApiKeyEnv()).trim().length() > 0);
+        response.setApiKeyConfigured(!blank(entity.getApiKey()));
         response.setCreatedAt(entity.getCreatedAt());
         response.setUpdatedAt(entity.getUpdatedAt());
         return response;

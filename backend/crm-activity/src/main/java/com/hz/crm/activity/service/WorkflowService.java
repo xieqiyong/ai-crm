@@ -23,7 +23,7 @@ public class WorkflowService {
     private SnowflakeIdGenerator snowflakeIdGenerator;
 
     @Transactional
-    public Long start(String tenantId, String definitionCode, String businessType, Long businessId) {
+    public Long start(Long tenantId, String definitionCode, String businessType, Long businessId) {
         WorkflowDefinitionEntity definition = definitionRepository
                 .findByCodeAndTenantIdAndEnabledTrueAndDeletedFalse(definitionCode, tenantId)
                 .orElseThrow(() -> new BusinessException("WF_001", "流程定义不存在"));

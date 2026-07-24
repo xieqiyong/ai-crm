@@ -7,17 +7,17 @@ import org.springframework.data.jpa.repository.JpaRepository;
 
 public interface SysUserRepository extends JpaRepository<SysUserEntity, Long> {
 
-    Optional<SysUserEntity> findByUsernameAndTenantIdAndDeletedFalse(String username, String tenantId);
+    Optional<SysUserEntity> findByUsernameAndTenantIdAndDeletedFalse(String username, Long tenantId);
 
     List<SysUserEntity> findByUsernameAndDeletedFalse(String username);
 
-    List<SysUserEntity> findByTenantIdAndDeletedFalseOrderByCreatedAtDesc(String tenantId);
+    List<SysUserEntity> findByTenantIdAndDeletedFalseOrderByCreatedAtDesc(Long tenantId);
 
-    List<SysUserEntity> findByTenantIdAndIdInAndDeletedFalse(String tenantId, List<Long> ids);
+    List<SysUserEntity> findByTenantIdAndIdInAndDeletedFalse(Long tenantId, List<Long> ids);
 
-    Optional<SysUserEntity> findByIdAndTenantIdAndDeletedFalse(Long id, String tenantId);
+    Optional<SysUserEntity> findByIdAndTenantIdAndDeletedFalse(Long id, Long tenantId);
 
-    boolean existsByUsernameAndTenantIdAndDeletedFalse(String username, String tenantId);
+    boolean existsByUsernameAndTenantIdAndDeletedFalse(String username, Long tenantId);
 
     long countByDeletedFalse();
 }
