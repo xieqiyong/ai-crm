@@ -13,6 +13,7 @@ import com.hz.crm.common.exception.BusinessException;
 import com.hz.crm.common.id.SnowflakeIdGenerator;
 import com.hz.crm.common.user.UserNameResolver;
 import com.hz.crm.domain.channel.ChannelRecordEntity;
+import com.hz.crm.domain.channel.ChannelSource;
 import com.hz.crm.domain.channel.ChannelStatus;
 import com.hz.crm.domain.channel.ChannelType;
 import com.hz.crm.domain.channel.repository.ChannelRecordRepository;
@@ -94,7 +95,7 @@ public class ChannelApplicationService {
         }
         entity.setTitle(trimToNull(request.getTitle()));
         entity.setChannelType(request.getChannelType() == null ? ChannelType.MANUAL : request.getChannelType());
-        entity.setSource(trimToNull(request.getSource()));
+        entity.setSource(normalizeSource(request.getSource()));
         entity.setContactName(trimToNull(request.getContactName()));
         entity.setCompanyName(trimToNull(request.getCompanyName()));
         entity.setPhone(trimToNull(request.getPhone()));
@@ -125,7 +126,7 @@ public class ChannelApplicationService {
         entity.setTitle(resolveMediaTitle(request));
         entity.setChannelType(resolveMediaType(request));
         entity.setStatus(ChannelStatus.WAITING_TRANSCRIPTION);
-        entity.setSource(trimToNull(request.getSource()));
+        entity.setSource(normalizeSource(request.getSource()));
         entity.setContactName(trimToNull(request.getContactName()));
         entity.setCompanyName(trimToNull(request.getCompanyName()));
         entity.setPhone(trimToNull(request.getPhone()));
@@ -274,6 +275,10 @@ public class ChannelApplicationService {
             return null;
         }
         return value.trim();
+    }
+
+    private String normalizeSource(String value) {
+        return ChannelSource.from(value).name();
     }
 
     private String likeKeyword(String value) {

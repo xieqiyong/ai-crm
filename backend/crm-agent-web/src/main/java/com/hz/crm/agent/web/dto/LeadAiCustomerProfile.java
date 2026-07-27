@@ -13,6 +13,8 @@ public class LeadAiCustomerProfile {
 
     private String companyName;
 
+    private String creditCode;
+
     private String legalRepresentative;
 
     private String keyPerson;
@@ -30,6 +32,10 @@ public class LeadAiCustomerProfile {
     private String address;
 
     private String registeredCapital;
+
+    private String establishDate;
+
+    private String description;
 
     private String sourceSummary;
 

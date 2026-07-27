@@ -4,6 +4,7 @@ import com.hz.crm.agent.runtime.core.AgentRuntimeEngine;
 import com.hz.crm.agent.runtime.core.AgentRuntimeRequest;
 import com.hz.crm.agent.runtime.domain.AgentEntity;
 import com.hz.crm.agent.runtime.dto.AgentRuntimeEvent;
+import com.hz.crm.agent.runtime.workflow.AgentWorkflowEngine;
 import io.agentscope.core.agent.RuntimeContext;
 import io.agentscope.core.message.UserMessage;
 import io.agentscope.core.tool.AgentTool;
@@ -45,11 +46,18 @@ public class AgentScopeRuntime implements AgentRuntimeEngine {
     @Autowired
     private AgentRuntimeSceneService agentRuntimeSceneService;
 
+    @Autowired
+    private AgentWorkflowEngine agentWorkflowEngine;
+
     @Autowired(required = false)
     private List<AgentRuntimeToolProvider> agentRuntimeToolProviders = new ArrayList<AgentRuntimeToolProvider>();
 
     @Override
     public Flux<AgentRuntimeEvent> run(AgentRuntimeRequest request) {
+        return agentWorkflowEngine.run(request, this::runAgentScope);
+    }
+
+    private Flux<AgentRuntimeEvent> runAgentScope(AgentRuntimeRequest request) {
         return Flux.defer(() -> {
             try {
                 RuntimeHolder holder = buildRuntime(request);

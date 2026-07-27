@@ -81,9 +81,16 @@ cp "$DEPLOY_DIR/docker/frontend/Dockerfile" "$BUILD_DIR/frontend/Dockerfile"
 cp "$DEPLOY_DIR/docker/frontend/nginx.conf" "$BUILD_DIR/frontend/nginx.conf"
 cp "$DEPLOY_DIR/docker/frontend/write-runtime-config.sh" "$BUILD_DIR/frontend/write-runtime-config.sh"
 
+echo "准备 Python AI Runtime"
+mkdir -p "$BUILD_DIR/ai-runtime"
+cp "$ROOT_DIR/crm-ai-runtime/requirements.txt" "$BUILD_DIR/ai-runtime/requirements.txt"
+cp "$ROOT_DIR/crm-ai-runtime/Dockerfile" "$BUILD_DIR/ai-runtime/Dockerfile"
+cp -R "$ROOT_DIR/crm-ai-runtime/app" "$BUILD_DIR/ai-runtime/app"
+
 echo "构建 Docker 镜像"
 docker build -t "crm-backend:$CRM_VERSION" "$BUILD_DIR/backend"
 docker build -t "crm-frontend:$CRM_VERSION" "$BUILD_DIR/frontend"
+docker build -t "crm-ai-runtime:$CRM_VERSION" "$BUILD_DIR/ai-runtime"
 
 echo "准备中间件镜像"
 docker image inspect postgres:16-alpine >/dev/null 2>&1 || docker pull postgres:16-alpine
@@ -93,6 +100,7 @@ echo "保存离线镜像"
 docker save -o "$IMAGE_ARCHIVE" \
   "crm-backend:$CRM_VERSION" \
   "crm-frontend:$CRM_VERSION" \
+  "crm-ai-runtime:$CRM_VERSION" \
   postgres:16-alpine \
   redis:7-alpine
 
@@ -138,6 +146,27 @@ CRM_AGENT_WEB_SEARCH_TIMEOUT_MS=${CRM_AGENT_WEB_SEARCH_TIMEOUT_MS:-8000}
 CRM_AGENT_WEB_SEARCH_MAX_RESULTS=${CRM_AGENT_WEB_SEARCH_MAX_RESULTS:-5}
 CRM_AGENT_WEB_SEARCH_FETCH_DETAIL=${CRM_AGENT_WEB_SEARCH_FETCH_DETAIL:-true}
 CRM_AGENT_WEB_SEARCH_DETAIL_LIMIT=${CRM_AGENT_WEB_SEARCH_DETAIL_LIMIT:-3}
+CRM_AI_INTERNAL_TOKEN=${CRM_AI_INTERNAL_TOKEN:-$(random_text)}
+CRM_AI_RUNTIME_TIMEOUT_MS=${CRM_AI_RUNTIME_TIMEOUT_MS:-90000}
+CRM_AI_LOG_LEVEL=${CRM_AI_LOG_LEVEL:-INFO}
+CRM_AI_WEB_SEARCH_ENABLED=${CRM_AI_WEB_SEARCH_ENABLED:-false}
+CRM_AI_WEB_SEARCH_PROVIDER=${CRM_AI_WEB_SEARCH_PROVIDER:-searxng}
+CRM_AI_WEB_SEARCH_ENDPOINT=${CRM_AI_WEB_SEARCH_ENDPOINT:-}
+CRM_AI_WEB_SEARCH_API_KEY=${CRM_AI_WEB_SEARCH_API_KEY:-}
+CRM_AI_WEB_SEARCH_TIMEOUT_SECONDS=${CRM_AI_WEB_SEARCH_TIMEOUT_SECONDS:-8}
+CRM_AI_WEB_SEARCH_MAX_RESULTS=${CRM_AI_WEB_SEARCH_MAX_RESULTS:-5}
+CRM_AI_CHECKPOINT_ENABLED=${CRM_AI_CHECKPOINT_ENABLED:-false}
+CRM_AI_CHECKPOINT_BACKEND=${CRM_AI_CHECKPOINT_BACKEND:-memory}
+CRM_AI_CHECKPOINT_POSTGRES_URI=${CRM_AI_CHECKPOINT_POSTGRES_URI:-}
+CRM_AI_CHECKPOINT_AUTO_SETUP=${CRM_AI_CHECKPOINT_AUTO_SETUP:-true}
+CRM_AI_TRACE_CAPTURE_PAYLOAD=${CRM_AI_TRACE_CAPTURE_PAYLOAD:-false}
+LANGSMITH_TRACING=${LANGSMITH_TRACING:-false}
+LANGSMITH_API_KEY=${LANGSMITH_API_KEY:-}
+LANGSMITH_PROJECT=${LANGSMITH_PROJECT:-crm-ai-runtime}
+LANGSMITH_ENDPOINT=${LANGSMITH_ENDPOINT:-https://api.smith.langchain.com}
+LANGSMITH_HIDE_INPUTS=${LANGSMITH_HIDE_INPUTS:-false}
+LANGSMITH_HIDE_OUTPUTS=${LANGSMITH_HIDE_OUTPUTS:-false}
+LANGGRAPH_STRICT_MSGPACK=${LANGGRAPH_STRICT_MSGPACK:-true}
 
 CRM_NACOS_ENABLED=${CRM_NACOS_ENABLED:-false}
 CRM_MINIO_ENABLED=${CRM_MINIO_ENABLED:-false}

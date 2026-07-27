@@ -4,7 +4,11 @@ import {
   Bot,
   CheckCircle2,
   CloudUpload,
+  Copy,
+  ExternalLink,
   FileText,
+  Link2,
+  MessageSquareText,
   MoreHorizontal,
   Plus,
   RefreshCw,
@@ -20,9 +24,29 @@ import { ownerName } from '../../hooks/useOwnerOptions'
 const typeOptions = [
   { value: '', label: '全部类型' },
   { value: 'MANUAL', label: '手动渠道' },
+  { value: 'FORM', label: '获客表单' },
   { value: 'AUDIO', label: '录音导入' },
   { value: 'VIDEO', label: '视频导入' },
 ]
+
+const sourceOptions = [
+  { value: 'WEBSITE', label: '官网' },
+  { value: 'LANDING_PAGE', label: '落地页' },
+  { value: 'SMS', label: '短信' },
+  { value: 'WECHAT', label: '微信' },
+  { value: 'WECHAT_GROUP', label: '微信群' },
+  { value: 'PHONE', label: '电话' },
+  { value: 'OFFLINE_EVENT', label: '线下活动' },
+  { value: 'LIVE', label: '直播' },
+  { value: 'REFERRAL', label: '转介绍' },
+  { value: 'AD', label: '广告投放' },
+  { value: 'OTHER', label: '其他' },
+]
+
+const sourceText = sourceOptions.reduce((map, item) => {
+  map[item.value] = item.label
+  return map
+}, {})
 
 const statusOptions = [
   { value: '', label: '全部状态' },
@@ -54,6 +78,7 @@ const statusTone = {
 
 const typeText = {
   MANUAL: '手动渠道',
+  FORM: '获客表单',
   AUDIO: '录音导入',
   VIDEO: '视频导入',
 }
@@ -61,7 +86,7 @@ const typeText = {
 const emptyForm = {
   title: '',
   channelType: 'MANUAL',
-  source: '',
+  source: 'OTHER',
   contactName: '',
   companyName: '',
   phone: '',
@@ -72,12 +97,40 @@ const emptyForm = {
 const emptyImportForm = {
   title: '',
   channelType: 'AUDIO',
-  source: '',
+  source: 'PHONE',
   contactName: '',
   companyName: '',
   phone: '',
   email: '',
   remark: '',
+}
+
+const emptyMarketingForm = {
+  title: '',
+  description: '',
+  source: 'LANDING_PAGE',
+  submitMessage: '提交成功，我们会尽快联系您。',
+  status: 'PUBLISHED',
+  autoCreateLead: true,
+  fields: [
+    { fieldKey: 'name', label: '姓名', fieldType: 'TEXT', requiredField: false, placeholder: '请填写姓名', systemMapping: 'name', sortOrder: 0 },
+    { fieldKey: 'companyName', label: '公司名称', fieldType: 'TEXT', requiredField: true, placeholder: '请填写公司名称', systemMapping: 'companyName', sortOrder: 1 },
+    { fieldKey: 'phone', label: '手机号', fieldType: 'PHONE', requiredField: true, placeholder: '请填写手机号', systemMapping: 'phone', sortOrder: 2 },
+    { fieldKey: 'email', label: '邮箱', fieldType: 'EMAIL', requiredField: false, placeholder: '请填写邮箱', systemMapping: 'email', sortOrder: 3 },
+    { fieldKey: 'remark', label: '需求描述', fieldType: 'TEXTAREA', requiredField: false, placeholder: '请简单描述您的需求', systemMapping: 'remark', sortOrder: 4 },
+  ],
+}
+
+const formStatusText = {
+  DRAFT: '草稿',
+  PUBLISHED: '已发布',
+  CLOSED: '已关闭',
+}
+
+const formStatusTone = {
+  DRAFT: 'neutral',
+  PUBLISHED: 'success',
+  CLOSED: 'warning',
 }
 
 function formatDateTime(value) {
@@ -116,6 +169,23 @@ function toEditForm(row) {
   }
 }
 
+function marketingFormUrl(row) {
+  const path = row?.publicPath || `/public/forms/${row?.formCode || ''}`
+  return `${window.location.origin}${window.location.pathname}#${path}`
+}
+
+function marketingSmsText(row) {
+  return `您好，欢迎填写${row.title || '获客表单'}，我们会尽快联系您：${marketingFormUrl(row)}`
+}
+
+function SourceSelect({ value, onChange }) {
+  return (
+    <select value={value || 'OTHER'} onChange={(event) => onChange(event.target.value)}>
+      {sourceOptions.map((item) => <option value={item.value} key={item.value}>{item.label}</option>)}
+    </select>
+  )
+}
+
 export function ChannelPage({ can, notify }) {
   const canManage = can('crm:channel:manage')
   const canMedia = can('crm:channel:media') || canManage
@@ -139,6 +209,9 @@ export function ChannelPage({ can, notify }) {
   const [editing, setEditing] = useState(null)
   const [importing, setImporting] = useState(false)
   const [selected, setSelected] = useState(null)
+  const [marketingForms, setMarketingForms] = useState([])
+  const [marketingFormsLoading, setMarketingFormsLoading] = useState(true)
+  const [marketingFormEditing, setMarketingFormEditing] = useState(null)
 
   const load = async (nextQuery = query) => {
     setLoading(true)
@@ -153,11 +226,29 @@ export function ChannelPage({ can, notify }) {
     }
   }
 
+  const loadMarketingForms = async () => {
+    setMarketingFormsLoading(true)
+    try {
+      const data = await api.channel.formPage({ pageNo: 1, pageSize: 5 })
+      setMarketingForms(data?.records || [])
+    } catch (err) {
+      notify(err.message || '加载获客表单失败', 'info')
+    } finally {
+      setMarketingFormsLoading(false)
+    }
+  }
+
   useEffect(() => {
     load()
+    loadMarketingForms()
   }, [])
 
   const refreshFirstPage = () => load({ ...query, pageNo: 1 })
+
+  const refreshAll = () => {
+    refreshFirstPage()
+    loadMarketingForms()
+  }
 
   const openDetail = async (row) => {
     setSelected(row)
@@ -221,6 +312,40 @@ export function ChannelPage({ can, notify }) {
     }
   }
 
+  const openMarketingForm = async (row) => {
+    try {
+      setMarketingFormEditing(await api.channel.formDetail(row.id))
+    } catch (err) {
+      notify(err.message || '获客表单详情加载失败', 'info')
+    }
+  }
+
+  const deleteMarketingForm = async (row) => {
+    const confirmed = await confirm({
+      title: '删除获客表单',
+      description: '删除后公开链接会失效，已经提交的数据仍保留在渠道池和线索中。',
+      target: row.title,
+      confirmText: '确认删除',
+    })
+    if (!confirmed) return
+    try {
+      await api.channel.formDelete(row.id)
+      notify('获客表单已删除', 'success')
+      loadMarketingForms()
+    } catch (err) {
+      notify(err.message || '获客表单删除失败', 'info')
+    }
+  }
+
+  const copyMarketingText = async (text, message) => {
+    try {
+      await navigator.clipboard.writeText(text)
+      notify(message, 'success')
+    } catch {
+      notify('复制失败，请手动复制', 'info')
+    }
+  }
+
   const headerActions = (
     <>
       <Button variant="secondary" icon={RefreshCw} onClick={refreshFirstPage}>
@@ -229,6 +354,11 @@ export function ChannelPage({ can, notify }) {
       {canMedia && (
         <Button variant="secondary" icon={Upload} onClick={() => setImporting(true)}>
           导入音视频
+        </Button>
+      )}
+      {canManage && (
+        <Button variant="secondary" icon={Link2} onClick={() => setMarketingFormEditing(emptyMarketingForm)}>
+          新建获客表单
         </Button>
       )}
       {canManage && (
@@ -260,6 +390,17 @@ export function ChannelPage({ can, notify }) {
         <ChannelStat icon={CloudUpload} label="当前页音视频" value={importedCount} />
         <ChannelStat icon={CheckCircle2} label="当前页已晋升" value={promotedCount} />
       </div>
+
+      <MarketingFormPanel
+        forms={marketingForms}
+        loading={marketingFormsLoading}
+        canManage={canManage}
+        onCreate={() => setMarketingFormEditing(emptyMarketingForm)}
+        onEdit={openMarketingForm}
+        onDelete={deleteMarketingForm}
+        onCopyLink={(row) => copyMarketingText(marketingFormUrl(row), '表单链接已复制')}
+        onCopySms={(row) => copyMarketingText(marketingSmsText(row), '短信文案已复制')}
+      />
 
       <ChannelFilter
         query={query}
@@ -302,6 +443,13 @@ export function ChannelPage({ can, notify }) {
         onClose={() => setImporting(false)}
         notify={notify}
         reload={refreshFirstPage}
+      />
+      <MarketingFormModal
+        open={Boolean(marketingFormEditing)}
+        data={marketingFormEditing}
+        onClose={() => setMarketingFormEditing(null)}
+        notify={notify}
+        reload={refreshAll}
       />
       <ChannelDetailModal
         open={Boolean(selected)}
@@ -482,7 +630,7 @@ function ChannelTableRow({
         <div className="channel-title-cell">
           <strong>{row.title}</strong>
           <small>
-            {row.source || '未填写来源'}
+            {sourceText[row.source] || row.source || '未填写来源'}
             {row.leadId ? ` · 线索ID：${row.leadId}` : ''}
           </small>
         </div>
@@ -587,6 +735,204 @@ function ChannelReserveCard() {
   )
 }
 
+function MarketingFormPanel({
+  forms,
+  loading,
+  canManage,
+  onCreate,
+  onEdit,
+  onDelete,
+  onCopyLink,
+  onCopySms,
+}) {
+  return (
+    <Card className="marketing-form-panel">
+      <div className="marketing-form-head">
+        <div>
+          <h2>获客表单</h2>
+          <p>生成公开链接或短信文案，客户填写后自动进入渠道池。</p>
+        </div>
+        {canManage && <Button icon={Link2} onClick={onCreate}>创建表单</Button>}
+      </div>
+
+      {loading ? (
+        <div className="marketing-form-empty">正在加载获客表单…</div>
+      ) : forms.length === 0 ? (
+        <div className="marketing-form-empty">
+          <b>还没有获客表单</b>
+          <span>先创建一个表单，复制链接后就可以投放出去。</span>
+        </div>
+      ) : (
+        <div className="marketing-form-list">
+          {forms.map((row) => (
+            <div className="marketing-form-item" key={row.id}>
+              <div>
+                <b>{row.title}</b>
+                <small>{marketingFormUrl(row)}</small>
+              </div>
+              <div className="marketing-form-meta">
+                <Badge tone={formStatusTone[row.status] || 'neutral'}>{formStatusText[row.status] || row.status}</Badge>
+                <span>访问 {row.viewCount || 0}</span>
+                <span>提交 {row.submitCount || 0}</span>
+                {row.autoCreateLead && <Badge tone="success">自动转线索</Badge>}
+              </div>
+              <div className="marketing-form-actions">
+                <button className="text-action" onClick={() => onCopyLink(row)}><Copy size={13} />复制链接</button>
+                <button className="text-action" onClick={() => onCopySms(row)}><MessageSquareText size={13} />复制短信</button>
+                <a className="text-action" href={marketingFormUrl(row)} target="_blank" rel="noreferrer"><ExternalLink size={13} />打开</a>
+                {canManage && <button className="text-action strong" onClick={() => onEdit(row)}>编辑</button>}
+                {canManage && <button className="text-action danger" onClick={() => onDelete(row)}>删除</button>}
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+    </Card>
+  )
+}
+
+function MarketingFormModal({ open, data, onClose, notify, reload }) {
+  const [form, setForm] = useState(emptyMarketingForm)
+
+  useEffect(() => {
+    setForm(data ? {
+      ...emptyMarketingForm,
+      ...data,
+      fields: data.fields?.length ? data.fields : emptyMarketingForm.fields,
+    } : emptyMarketingForm)
+  }, [data, open])
+
+  const updateField = (index, patch) => {
+    const fields = [...(form.fields || [])]
+    fields[index] = { ...fields[index], ...patch }
+    setForm({ ...form, fields })
+  }
+
+  const addField = () => {
+    const fields = form.fields || []
+    setForm({
+      ...form,
+      fields: [
+        ...fields,
+        {
+          fieldKey: `custom_${Date.now()}`,
+          label: '自定义字段',
+          fieldType: 'TEXT',
+          requiredField: false,
+          placeholder: '',
+          systemMapping: 'custom',
+          sortOrder: fields.length,
+        },
+      ],
+    })
+  }
+
+  const removeField = (index) => {
+    setForm({ ...form, fields: (form.fields || []).filter((_, itemIndex) => itemIndex !== index) })
+  }
+
+  const save = async () => {
+    if (!form.title) {
+      notify('表单标题不能为空', 'info')
+      return
+    }
+    try {
+      await api.channel.formSave({
+        ...form,
+        fields: (form.fields || []).map((field, index) => ({ ...field, sortOrder: index })),
+      })
+      notify('获客表单已保存', 'success')
+      onClose()
+      reload()
+    } catch (err) {
+      notify(err.message || '获客表单保存失败', 'info')
+    }
+  }
+
+  const footer = (
+    <>
+      <Button variant="secondary" onClick={onClose}>取消</Button>
+      <Button onClick={save}>保存并生成链接</Button>
+    </>
+  )
+
+  return (
+    <Modal open={open} title={form.id ? '编辑获客表单' : '新建获客表单'} onClose={onClose} size="lg" footer={footer}>
+      <div className="marketing-form-editor">
+        <div className="form-grid">
+          <Field label="表单标题" required>
+            <input value={form.title || ''} onChange={(event) => setForm({ ...form, title: event.target.value })} placeholder="例如：产品演示预约" />
+          </Field>
+          <Field label="渠道来源">
+            <SourceSelect value={form.source} onChange={(value) => setForm({ ...form, source: value })} />
+          </Field>
+          <Field label="发布状态">
+            <select value={form.status || 'PUBLISHED'} onChange={(event) => setForm({ ...form, status: event.target.value })}>
+              <option value="PUBLISHED">发布</option>
+              <option value="DRAFT">草稿</option>
+              <option value="CLOSED">关闭</option>
+            </select>
+          </Field>
+          <Field label="提交后提示语">
+            <input value={form.submitMessage || ''} onChange={(event) => setForm({ ...form, submitMessage: event.target.value })} />
+          </Field>
+          <Field label="表单说明">
+            <textarea rows="3" value={form.description || ''} onChange={(event) => setForm({ ...form, description: event.target.value })} placeholder="展示给外部客户看的说明文案" />
+          </Field>
+        </div>
+
+        <label className="marketing-form-switch">
+          <input
+            type="checkbox"
+            checked={Boolean(form.autoCreateLead)}
+            onChange={(event) => setForm({ ...form, autoCreateLead: event.target.checked })}
+          />
+          <span>
+            <b>提交后自动创建线索</b>
+            <small>客户提交后先进入渠道池；满足姓名或公司名称时，同步创建线索。</small>
+          </span>
+        </label>
+
+        <div className="marketing-field-editor">
+          <div className="marketing-field-head">
+            <b>表单字段</b>
+            <button type="button" className="text-action strong" onClick={addField}>添加字段</button>
+          </div>
+          {(form.fields || []).map((field, index) => (
+            <div className="marketing-field-row" key={`${field.fieldKey}-${index}`}>
+              <input value={field.label || ''} onChange={(event) => updateField(index, { label: event.target.value })} placeholder="字段名称" />
+              <select value={field.fieldType || 'TEXT'} onChange={(event) => updateField(index, { fieldType: event.target.value })}>
+                <option value="TEXT">单行文本</option>
+                <option value="TEXTAREA">多行文本</option>
+                <option value="PHONE">手机号</option>
+                <option value="EMAIL">邮箱</option>
+                <option value="SELECT">下拉选择</option>
+              </select>
+              <select value={field.systemMapping || 'custom'} onChange={(event) => updateField(index, { systemMapping: event.target.value })}>
+                <option value="name">姓名</option>
+                <option value="companyName">公司名称</option>
+                <option value="phone">电话</option>
+                <option value="email">邮箱</option>
+                <option value="remark">备注</option>
+                <option value="custom">自定义</option>
+              </select>
+              <label>
+                <input type="checkbox" checked={Boolean(field.requiredField)} onChange={(event) => updateField(index, { requiredField: event.target.checked })} />
+                必填
+              </label>
+              <button type="button" className="text-action danger" onClick={() => removeField(index)}>删除</button>
+              <input className="marketing-field-placeholder" value={field.placeholder || ''} onChange={(event) => updateField(index, { placeholder: event.target.value })} placeholder="占位提示" />
+              {field.fieldType === 'SELECT' && (
+                <input className="marketing-field-options" value={field.optionsText || ''} onChange={(event) => updateField(index, { optionsText: event.target.value })} placeholder="选项，用逗号或换行分隔" />
+              )}
+            </div>
+          ))}
+        </div>
+      </div>
+    </Modal>
+  )
+}
+
 function ChannelEditModal({ open, data, onClose, notify, reload }) {
   const [form, setForm] = useState(emptyForm)
 
@@ -628,16 +974,13 @@ function ChannelEditModal({ open, data, onClose, notify, reload }) {
             onChange={(event) => setForm({ ...form, channelType: event.target.value })}
           >
             <option value="MANUAL">手动渠道</option>
+            <option value="FORM">获客表单</option>
             <option value="AUDIO">录音渠道</option>
             <option value="VIDEO">视频渠道</option>
           </select>
         </Field>
         <Field label="渠道来源">
-          <input
-            value={form.source || ''}
-            onChange={(event) => setForm({ ...form, source: event.target.value })}
-            placeholder="官网、活动、电话、转介绍等"
-          />
+          <SourceSelect value={form.source} onChange={(value) => setForm({ ...form, source: value })} />
         </Field>
         <Field label="联系人">
           <input
@@ -752,11 +1095,7 @@ function ChannelImportModal({ open, onClose, notify, reload }) {
           </select>
         </Field>
         <Field label="渠道来源">
-          <input
-            value={form.source}
-            onChange={(event) => setForm({ ...form, source: event.target.value })}
-            placeholder="例如：电话录音、会销视频、直播回放"
-          />
+          <SourceSelect value={form.source} onChange={(value) => setForm({ ...form, source: value })} />
         </Field>
         <Field label="联系人">
           <input value={form.contactName} onChange={(event) => setForm({ ...form, contactName: event.target.value })} />
@@ -826,7 +1165,7 @@ function ChannelDetailModal({
     <Modal open={open} title="渠道详情" onClose={onClose} size="lg" footer={footer}>
       <div className="channel-detail-grid">
         <DetailItem label="渠道标题" value={data.title} />
-        <DetailItem label="渠道来源" value={data.source} />
+        <DetailItem label="渠道来源" value={sourceText[data.source] || data.source} />
         <DetailItem label="渠道类型" value={typeText[data.channelType] || data.channelType} />
         <DetailItem label="状态" value={statusText[data.status] || data.status} />
         <DetailItem label="联系人" value={data.contactName} />

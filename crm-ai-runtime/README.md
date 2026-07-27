@@ -27,4 +27,46 @@ Java 后端只通过内部接口访问：
 POST /internal/ai/runtime/run
 ```
 
+## 持久化
+
+默认不启用 checkpoint。需要调试本地流程时可以先用内存：
+
+```env
+CRM_AI_CHECKPOINT_ENABLED=true
+CRM_AI_CHECKPOINT_BACKEND=memory
+```
+
+生产环境建议使用 PostgreSQL：
+
+```env
+CRM_AI_CHECKPOINT_ENABLED=true
+CRM_AI_CHECKPOINT_BACKEND=postgres
+CRM_AI_CHECKPOINT_POSTGRES_URI=postgresql://app_user:please-change-db-password@crm-postgres:5432/crm
+CRM_AI_CHECKPOINT_AUTO_SETUP=true
+LANGGRAPH_STRICT_MSGPACK=true
+```
+
+`conversationId` 存在时会作为可续跑会话依据；没有 `conversationId` 时每次运行会生成独立 `runId`，避免同一条线索重复分析时混入上一次状态。
+
+## Trace
+
+Trace 使用 LangSmith。默认关闭：
+
+```env
+LANGSMITH_TRACING=false
+LANGSMITH_API_KEY=
+LANGSMITH_PROJECT=crm-ai-runtime-dev
+LANGSMITH_ENDPOINT=https://api.smith.langchain.com
+```
+
+开启后：
+
+```env
+LANGSMITH_TRACING=true
+LANGSMITH_API_KEY=你的 LangSmith Key
+LANGSMITH_PROJECT=crm-ai-runtime-dev
+```
+
+默认只上报租户、用户、场景、业务编号、模型名称、token 和步骤摘要，不上报模型密钥。只有显式设置 `CRM_AI_TRACE_CAPTURE_PAYLOAD=true` 时，才会上报 prompt、线索内容和模型输出摘要。
+
 外部前端不直接访问本服务。

@@ -92,6 +92,11 @@ crm:
     token:
       daily-limit: ${CRM_AGENT_TOKEN_DAILY_LIMIT:100000}
       reserve-output-tokens: ${CRM_AGENT_TOKEN_RESERVE_OUTPUT_TOKENS:2048}
+  ai:
+    runtime:
+      url: ${CRM_AI_RUNTIME_URL:http://localhost:8001}
+      internal-token: ${CRM_AI_INTERNAL_TOKEN:}
+      timeout-ms: ${CRM_AI_RUNTIME_TIMEOUT_MS:90000}
 
 management:
   endpoints:

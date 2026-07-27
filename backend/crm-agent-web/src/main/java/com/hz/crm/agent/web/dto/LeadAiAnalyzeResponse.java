@@ -1,5 +1,6 @@
 package com.hz.crm.agent.web.dto;
 
+import com.hz.crm.agent.runtime.dto.AgentRuntimeEvent;
 import com.hz.crm.application.lead.dto.LeadResponse;
 import java.math.BigDecimal;
 import java.util.ArrayList;
@@ -56,6 +57,8 @@ public class LeadAiAnalyzeResponse {
     private LeadAiCustomerProfile customerProfile;
 
     private String rawOutput;
+
+    private List<AgentRuntimeEvent> runtimeEvents = new ArrayList<AgentRuntimeEvent>();
 
     private LeadResponse lead;
 }

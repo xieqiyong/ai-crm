@@ -5,6 +5,7 @@ from typing import Any
 import httpx
 
 from app.core.config import settings
+from app.core.trace_utils import trace_llm_inputs, trace_llm_outputs, traceable
 from app.schemas.runtime import RuntimeAgent
 
 
@@ -17,6 +18,12 @@ class LlmResult:
 
 
 class OpenAICompatibleClient:
+    @traceable(
+        run_type="llm",
+        name="大模型调用",
+        process_inputs=trace_llm_inputs,
+        process_outputs=trace_llm_outputs,
+    )
     async def chat(self, agent: RuntimeAgent, system_prompt: str, user_prompt: str) -> LlmResult:
         if agent is None:
             raise RuntimeError("智能体配置不能为空")

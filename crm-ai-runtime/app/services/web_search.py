@@ -3,9 +3,16 @@ from typing import Any
 import httpx
 
 from app.core.config import settings
+from app.core.trace_utils import trace_search_inputs, trace_search_outputs, traceable
 
 
 class CompanyWebSearchService:
+    @traceable(
+        run_type="tool",
+        name="客户公开信息检索",
+        process_inputs=trace_search_inputs,
+        process_outputs=trace_search_outputs,
+    )
     async def search(self, company_name: str) -> dict[str, Any]:
         company = text(company_name)
         profile = empty_profile(company)

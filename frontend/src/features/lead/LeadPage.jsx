@@ -187,6 +187,95 @@ function formatSeconds(value) {
   return `${Math.floor(seconds / 60)} 分 ${seconds % 60} 秒`
 }
 
+function matchRuntimeEvent(event, options = {}) {
+  if (!event) return false
+  const node = event?.metadata?.node || ''
+  const nodeName = event?.metadata?.nodeName || ''
+  const type = event?.type || ''
+  const toolName = event?.toolName || ''
+  const nodes = options.nodes || []
+  const nodeNames = options.nodeNames || []
+  const types = options.types || []
+  const tools = options.tools || []
+  return nodes.includes(node)
+    || nodeNames.some((item) => nodeName.includes(item))
+    || types.includes(type)
+    || tools.includes(toolName)
+}
+
+function buildBusinessRuntimeSteps(events = []) {
+  const values = (events || []).filter(Boolean)
+  if (!values.length) return []
+  return [
+    {
+      title: '读取线索资料',
+      status: '完成',
+      matched: values.some((event) => matchRuntimeEvent(event, {
+        nodes: ['PREPARE_CONTEXT', 'prepare_context'],
+        nodeNames: ['读取线索'],
+      })),
+    },
+    {
+      title: '检索客户公开信息',
+      status: '完成',
+      matched: values.some((event) => matchRuntimeEvent(event, {
+        nodes: ['company_web_search'],
+        nodeNames: ['客户公开信息检索'],
+        tools: ['customer_web_search'],
+      })),
+    },
+    {
+      title: '生成销售分析',
+      status: '完成',
+      matched: values.some((event) => matchRuntimeEvent(event, {
+        nodes: ['RUN_AGENT', 'lead_analyze'],
+        nodeNames: ['执行智能体分析', '线索结论整理'],
+        types: ['AGENT_RESULT'],
+        tools: ['lead_analysis_result'],
+      })),
+    },
+    {
+      title: '整理分析结果',
+      status: '完成',
+      matched: values.some((event) => matchRuntimeEvent(event, {
+        nodes: ['FINALIZE_RESULT', 'validate_output', 'finalize'],
+        nodeNames: ['整理分析结果', '整理分析结论', '生成行动建议'],
+      })),
+    },
+  ].filter((step) => step.matched)
+}
+
+function resolveConvertAdvice(analysis) {
+  const score = Number(analysis?.score || 0)
+  const confidence = Number(analysis?.confidence || 0)
+  if (confidence >= 0.7 && score >= 70) {
+    return {
+      tone: 'success',
+      title: '建议转客户',
+      text: '当前评分和置信度都达标，可以推进转客户。',
+    }
+  }
+  if (confidence >= 0.5 && score >= 75) {
+    return {
+      tone: 'warning',
+      title: '建议人工确认',
+      text: '线索评分较高，但 AI 置信度还不够稳，建议销售确认后再转客户。',
+    }
+  }
+  if (confidence < 0.5) {
+    return {
+      tone: 'warning',
+      title: '信息不足',
+      text: '当前置信度偏低，暂不建议直接转客户，建议先补充沟通记录、需求、预算或联系人信息。',
+    }
+  }
+  return {
+    tone: 'neutral',
+    title: '继续跟进',
+    text: '当前条件未达到转客户阈值，建议继续跟进并补充线索信息。',
+  }
+}
+
 export function LeadPage({ can, notify, navigate }) {
   const canManage = can('crm:lead:manage')
   const canCreate = canManage || can('crm:lead:create')
@@ -323,7 +412,13 @@ export function LeadPage({ can, notify, navigate }) {
     })
     try {
       const response = await api.assistant.analyzeLead({ leadId: row.id })
-      setAiAnalysis(response)
+      const normalizedResponse = {
+        ...response,
+        leadId: response.leadId || row.id,
+        leadName: response.leadName || row.name,
+        lead: response.lead || row,
+      }
+      setAiAnalysis(normalizedResponse)
       if (response.lead) {
         setSelected(response.lead)
       }
@@ -604,6 +699,8 @@ function LeadAiAnalysisModal({ open, analysis, elapsed, canConvert, onApplyDraft
   if (!analysis) return null
   const draft = analysis.convertDraft || {}
   const customerProfile = analysis.customerProfile || {}
+  const runtimeSteps = buildBusinessRuntimeSteps(analysis.runtimeEvents)
+  const convertAdvice = resolveConvertAdvice(analysis)
   const footer = (
     <>
       <Button variant="secondary" onClick={onClose}>关闭</Button>
@@ -630,19 +727,19 @@ function LeadAiAnalysisModal({ open, analysis, elapsed, canConvert, onApplyDraft
           <div className="lead-ai-progress-steps">
             <div className={elapsed >= 0 ? 'active' : ''}>
               <i>1</i>
-              <span>读取线索真实数据</span>
+              <span>读取线索资料</span>
             </div>
             <div className={elapsed >= 1 ? 'active' : ''}>
               <i>2</i>
-              <span>挂载场景 Agent、提示词、Skills 和 MCP</span>
+              <span>检索客户公开信息</span>
             </div>
             <div className={elapsed >= 3 ? 'active' : ''}>
               <i>3</i>
-              <span>调用大模型生成结构化建议</span>
+              <span>生成销售分析</span>
             </div>
             <div className={elapsed >= 6 ? 'active' : ''}>
               <i>4</i>
-              <span>保存运行事件并整理转客户草稿</span>
+              <span>整理分析结果</span>
             </div>
           </div>
           <p>当前不会构造假数据。模型无配置、密钥缺失或数据权限不足时，会直接返回失败原因。</p>
@@ -661,7 +758,10 @@ function LeadAiAnalysisModal({ open, analysis, elapsed, canConvert, onApplyDraft
           <div className="lead-ai-run-meta">
             <Badge tone="info">运行编号：{analysis.runId || '-'}</Badge>
             <Badge>会话编号：{analysis.conversationId || '-'}</Badge>
+            {runtimeSteps.length > 0 && <Badge tone="success">流程步骤：{runtimeSteps.length}</Badge>}
           </div>
+
+          <RuntimeFlowCard steps={runtimeSteps} />
 
           <div className="lead-ai-conclusion-card">
             <span><Sparkles size={22} /></span>
@@ -679,6 +779,10 @@ function LeadAiAnalysisModal({ open, analysis, elapsed, canConvert, onApplyDraft
                   {analysis.recommendConvert ? '转化机会明确' : '先继续培育'}
                 </Badge>
                 <Badge>置信度 {formatPercent(analysis.confidence)}</Badge>
+              </div>
+              <div className={`lead-ai-convert-advice ${convertAdvice.tone}`}>
+                <b>{convertAdvice.title}</b>
+                <span>{convertAdvice.text}</span>
               </div>
             </div>
           </div>
@@ -719,8 +823,8 @@ function LeadAiAnalysisModal({ open, analysis, elapsed, canConvert, onApplyDraft
           )}
 
           <div className="lead-ai-function-note">
-            <Badge tone="info">标准结果</Badge>
-            <span>本次结果按 lead_analysis_result 结构解析，优先展示销售可执行信息。</span>
+            <Badge tone="info">标准分析</Badge>
+            <span>本次结果按标准结构展示，优先呈现销售可直接执行的信息。</span>
           </div>
 
           <div className="lead-ai-draft">
@@ -739,6 +843,30 @@ function LeadAiAnalysisModal({ open, analysis, elapsed, canConvert, onApplyDraft
         </div>
       )}
     </Modal>
+  )
+}
+
+function RuntimeFlowCard({ steps = [] }) {
+  const values = (steps || []).filter(Boolean)
+  if (!values.length) return null
+  return (
+    <div className="lead-runtime-flow">
+      <div className="lead-runtime-flow-head">
+        <span>AI 分析流程</span>
+        <small>仅展示销售可感知的业务进度</small>
+      </div>
+      <div className="lead-runtime-flow-list">
+        {values.map((step, index) => (
+          <div className="lead-runtime-flow-item" key={step.title || index}>
+            <i>{index + 1}</i>
+            <div>
+              <b>{step.title}</b>
+              <small>{step.status || '完成'}</small>
+            </div>
+          </div>
+        ))}
+      </div>
+    </div>
   )
 }
 
@@ -765,6 +893,7 @@ function CustomerProfileCard({ profile }) {
   const hasProfile = profile && (
     profile.available !== undefined
     || profile.companyName
+    || profile.creditCode
     || profile.legalRepresentative
     || profile.keyPerson
     || profile.companyScale
@@ -774,6 +903,8 @@ function CustomerProfileCard({ profile }) {
     || profile.website
     || profile.address
     || profile.registeredCapital
+    || profile.establishDate
+    || profile.description
     || profile.sourceSummary
     || sourceUrls.length
   )
@@ -788,6 +919,7 @@ function CustomerProfileCard({ profile }) {
       </div>
       <div>
         <DetailItem label="公司名称" value={profile.companyName} />
+        <DetailItem label="统一社会信用代码" value={profile.creditCode} />
         <DetailItem label="公司负责人" value={profile.legalRepresentative || profile.keyPerson} />
         <DetailItem label="公司规模" value={profile.companyScale} />
         <DetailItem label="公司行业" value={profile.industry} />
@@ -796,6 +928,8 @@ function CustomerProfileCard({ profile }) {
         <DetailItem label="官网" value={profile.website} />
         <DetailItem label="地址" value={profile.address} />
         <DetailItem label="注册资本" value={profile.registeredCapital} />
+        <DetailItem label="注册时间" value={profile.establishDate} />
+        <DetailItem label="简介" value={profile.description} />
       </div>
       {profile.sourceSummary && (
         <div className="lead-ai-profile-summary">

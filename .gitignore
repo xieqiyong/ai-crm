@@ -51,6 +51,15 @@ yarn-debug.log*
 yarn-error.log*
 pnpm-debug.log*
 
+# Python 运行环境与缓存
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+
 # 测试与临时目录
 tmp/
 temp/

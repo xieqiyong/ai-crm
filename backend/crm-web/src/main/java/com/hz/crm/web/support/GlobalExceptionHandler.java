@@ -3,11 +3,13 @@ package com.hz.crm.web.support;
 import com.hz.crm.common.api.ApiResult;
 import com.hz.crm.common.exception.BusinessException;
 import jakarta.servlet.http.HttpServletRequest;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.validation.BindException;
 import org.springframework.web.bind.MethodArgumentNotValidException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
 
+@Slf4j
 @RestControllerAdvice
 public class GlobalExceptionHandler {
 
@@ -43,6 +45,7 @@ public class GlobalExceptionHandler {
     public ApiResult<Void> handleException(Exception exception, HttpServletRequest request) {
         request.setAttribute("crm.error.code", "SYS_001");
         request.setAttribute("crm.error.message", exception.getMessage());
+        log.error("系统处理异常，路径：{}，方法：{}", request.getRequestURI(), request.getMethod(), exception);
         return ApiResult.fail("SYS_001", "系统处理异常");
     }
 }

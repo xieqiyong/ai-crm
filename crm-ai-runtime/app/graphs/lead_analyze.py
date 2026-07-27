@@ -12,19 +12,19 @@ from app.tools.customer_web_search import customer_web_search
 
 
 class LeadAnalyzeState(TypedDict, total=False):
-    request: RuntimeRunRequest
+    request: dict[str, Any]
     lead: dict[str, Any]
     customer_profile: dict[str, Any]
     raw_output: str
     output: str
     usage: dict[str, int]
-    events: Annotated[list, operator.add]
+    events: Annotated[list[dict[str, Any]], operator.add]
 
 
 llm_client = OpenAICompatibleClient()
 
 
-def build_graph():
+def build_graph(checkpointer=None):
     builder = StateGraph(LeadAnalyzeState)
     builder.add_node("prepare_context", prepare_context)
     builder.add_node("company_web_search", company_web_search_node)
@@ -44,11 +44,11 @@ def build_graph():
     builder.add_edge("lead_analyze", "validate_output")
     builder.add_edge("validate_output", "finalize")
     builder.add_edge("finalize", END)
-    return builder.compile()
+    return builder.compile(checkpointer=checkpointer)
 
 
 async def prepare_context(state: LeadAnalyzeState) -> dict[str, Any]:
-    request = state["request"]
+    request = runtime_request(state)
     lead = resolve_lead(request)
     profile = empty_profile(resolve_company_name(lead))
     return {
@@ -85,7 +85,7 @@ async def company_web_search_node(state: LeadAnalyzeState) -> dict[str, Any]:
 
 
 async def lead_analyze_node(state: LeadAnalyzeState) -> dict[str, Any]:
-    request = state["request"]
+    request = runtime_request(state)
     system_prompt = build_system_prompt(request)
     user_prompt = build_user_prompt(request, state.get("lead") or {}, state.get("customer_profile") or {})
     llm_result = await llm_client.chat(request.agent, system_prompt, user_prompt)
@@ -119,6 +119,10 @@ async def finalize_node(state: LeadAnalyzeState) -> dict[str, Any]:
             runtime_event("FINAL_RESULT", content=state.get("output") or "", metadata=metadata),
         ],
     }
+
+
+def runtime_request(state: LeadAnalyzeState) -> RuntimeRunRequest:
+    return RuntimeRunRequest.model_validate(state.get("request") or {})
 
 
 def resolve_lead(request: RuntimeRunRequest) -> dict[str, Any]:

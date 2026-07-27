@@ -8,6 +8,7 @@ import { useHashRoute } from './hooks/useHashRoute'
 import { useThemePreferences } from './hooks/useThemePreferences'
 import { useToast } from './hooks/useToast'
 import { AppLayout } from './layouts'
+import { PublicMarketingFormPage } from './features/public/PublicMarketingFormPage'
 import { canAccessRoute, DEFAULT_ROUTE, renderRoute, routeGroups } from './router/routes'
 import { clearAuth, getStoredAuth, saveAuth } from './store/authStorage'
 
@@ -19,6 +20,7 @@ export default function App() {
   const [routeKey, navigate] = useHashRoute(DEFAULT_ROUTE)
   const [preferences, updatePreferences] = useThemePreferences()
   const { toast, notify, closeToast } = useToast()
+  const publicFormRoute = String(routeKey || '').startsWith('public/forms/')
 
   const currentRole = useMemo(() => ({
     name: currentUser?.displayName || currentUser?.username || '用户',
@@ -70,10 +72,11 @@ export default function App() {
   }, [])
 
   useEffect(() => {
+    if (publicFormRoute) return
     if (currentUser && !canAccessRoute(routeKey, can)) {
       navigate(DEFAULT_ROUTE)
     }
-  }, [routeKey, currentUser, can, navigate])
+  }, [routeKey, currentUser, can, navigate, publicFormRoute])
 
   const login = async (payload) => {
     const response = await api.auth.login(payload)
@@ -107,6 +110,15 @@ export default function App() {
 
   if (!installed) {
     return <SetupPage onSetup={setup} logo={preferences.logo} />
+  }
+
+  if (publicFormRoute) {
+    return (
+      <>
+        <PublicMarketingFormPage routeKey={routeKey} logo={preferences.logo} />
+        {toast && <Toast key={toast.id} {...toast} onClose={closeToast} />}
+      </>
+    )
   }
 
   if (!currentUser) {

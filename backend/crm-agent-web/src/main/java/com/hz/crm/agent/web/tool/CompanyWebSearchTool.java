@@ -26,7 +26,7 @@ public class CompanyWebSearchTool implements AgentTool {
 
     @Override
     public String getDescription() {
-        return "根据公司名称搜索互联网公开信息，返回搜索结果片段和来源链接，用于补充客户档案。没有搜索结果时必须如实返回空结果。";
+        return "根据公司名称搜索互联网公开信息，优先从爱企查等企业详情页提取profileDraft客户档案，用于补充负责人、规模、行业、电话、官网、地址等信息。没有搜索结果时必须如实返回空结果。";
     }
 
     @Override

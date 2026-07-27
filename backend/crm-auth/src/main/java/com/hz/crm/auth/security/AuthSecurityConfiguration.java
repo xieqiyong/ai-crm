@@ -45,6 +45,7 @@ public class AuthSecurityConfiguration {
                                 "/api/auth/forgot-password",
                                 "/api/auth/reset-password",
                                 "/api/install/**",
+                                "/api/public/marketing-form/**",
                                 "/actuator/health")
                         .permitAll()
                         .anyRequest()

@@ -1,0 +1,9 @@
+package com.hz.crm.domain.channel.mapper;
+
+import com.baomidou.mybatisplus.core.mapper.BaseMapper;
+import com.hz.crm.domain.channel.ChannelRecordEntity;
+import org.apache.ibatis.annotations.Mapper;
+
+@Mapper
+public interface ChannelRecordMapper extends BaseMapper<ChannelRecordEntity> {
+}

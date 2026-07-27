@@ -9,4 +9,10 @@ export const channelApi = {
   prepareTranscription: (id) => request('/api/channel/transcription/prepare', { method: 'POST', body: JSON.stringify({ id }) }),
   prepareAnalysis: (id) => request('/api/channel/analysis/prepare', { method: 'POST', body: JSON.stringify({ id }) }),
   promote: (payload) => request('/api/channel/promote', { method: 'POST', body: JSON.stringify(payload) }),
+  formPage: (payload) => request('/api/channel/marketing-form/page', { method: 'POST', body: JSON.stringify(payload || {}) }),
+  formDetail: (id) => request('/api/channel/marketing-form/detail', { method: 'POST', body: JSON.stringify({ id }) }),
+  formSave: (payload) => request('/api/channel/marketing-form/save', { method: 'POST', body: JSON.stringify(payload || {}) }),
+  formDelete: (id) => request('/api/channel/marketing-form/delete', { method: 'POST', body: JSON.stringify({ id }) }),
+  publicFormDetail: (formCode) => request('/api/public/marketing-form/detail', { method: 'POST', body: JSON.stringify({ formCode }) }),
+  publicFormSubmit: (payload) => request('/api/public/marketing-form/submit', { method: 'POST', body: JSON.stringify(payload || {}) }),
 }

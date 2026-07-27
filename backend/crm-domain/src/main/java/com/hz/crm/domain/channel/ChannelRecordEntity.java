@@ -21,7 +21,7 @@ public class ChannelRecordEntity extends BaseEntity {
     private String title;
 
     @Enumerated(EnumType.STRING)
-    @Column(nullable = false, length = 32)
+    @Column(nullable = false, length = 32, columnDefinition = "varchar(32)")
     private ChannelType channelType = ChannelType.MANUAL;
 
     @Enumerated(EnumType.STRING)

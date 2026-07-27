@@ -64,8 +64,9 @@ GIT_CREDENTIALS_ID=liusu
 2. 构建前端 Vite 静态文件。
 3. 构建 `crm-backend` Docker 镜像。
 4. 构建 `crm-frontend` Docker 镜像。
-5. 拉取并打包 PostgreSQL、Redis 镜像。
-6. 生成可离线部署的压缩包。
+5. 构建 `crm-ai-runtime` Python AI Runtime 镜像。
+6. 拉取并打包 PostgreSQL、Redis 镜像。
+7. 生成可离线部署的压缩包。
 
 离线包输出位置：
 
@@ -127,7 +128,8 @@ bash scripts/deploy-offline.sh
 3. 启动 PostgreSQL。
 4. 启动 Redis。
 5. 启动后端服务。
-6. 启动前端 Nginx 服务。
+6. 启动 Python AI Runtime 服务。
+7. 启动前端 Nginx 服务。
 
 默认访问地址：
 
@@ -165,7 +167,44 @@ CRM_REDIS_PASSWORD=Redis密码
 CRM_JWT_SECRET=至少32位JWT密钥
 CRM_JAVA_OPTS=-Xms512m -Xmx1024m -Dfile.encoding=UTF-8
 CRM_LOG_LEVEL=INFO
+CRM_AI_INTERNAL_TOKEN=Java后端访问AI服务的内部令牌
+CRM_AI_RUNTIME_TIMEOUT_MS=90000
+CRM_AI_CHECKPOINT_ENABLED=false
+CRM_AI_CHECKPOINT_BACKEND=memory
+CRM_AI_CHECKPOINT_POSTGRES_URI=
+LANGSMITH_TRACING=false
+LANGSMITH_API_KEY=
+LANGSMITH_PROJECT=crm-ai-runtime
 ```
+
+`crm-ai-runtime` 是内网服务，不直接暴露给前端和公网。当前 Java AgentScope 运行时仍然保留，Python AI Runtime 用于后续逐步迁移 AI 能力。
+Java 侧可以通过 `crm-agent-web` 代理到 FastAPI，当前预留接口为：
+
+```text
+POST /api/assistant/langgraph/run
+POST /api/assistant/langgraph/lead/analyze
+```
+
+如需打开 AI Runtime 持久化，生产建议使用 PostgreSQL checkpoint：
+
+```text
+CRM_AI_CHECKPOINT_ENABLED=true
+CRM_AI_CHECKPOINT_BACKEND=postgres
+CRM_AI_CHECKPOINT_POSTGRES_URI=postgresql://app_user:数据库密码@crm-postgres:5432/crm
+CRM_AI_CHECKPOINT_AUTO_SETUP=true
+LANGGRAPH_STRICT_MSGPACK=true
+```
+
+如需打开 LangSmith Trace：
+
+```text
+LANGSMITH_TRACING=true
+LANGSMITH_API_KEY=你的LangSmithKey
+LANGSMITH_PROJECT=crm-ai-runtime
+CRM_AI_TRACE_CAPTURE_PAYLOAD=false
+```
+
+默认只记录场景、业务编号、模型、token 和步骤信息；不记录模型密钥。只有设置 `CRM_AI_TRACE_CAPTURE_PAYLOAD=true` 时才会记录 prompt 和模型输出摘要。
 
 ### 数据目录
 
@@ -205,8 +244,10 @@ bash scripts/deploy-offline.sh --no-load
 ```bash
 docker compose ps
 docker compose logs -f crm-backend
+docker compose logs -f crm-ai-runtime
 docker compose logs -f crm-frontend
 docker compose restart crm-backend
+docker compose restart crm-ai-runtime
 docker compose down
 ```
 
@@ -215,7 +256,9 @@ docker compose down
 ```bash
 docker-compose ps
 docker-compose logs -f crm-backend
+docker-compose logs -f crm-ai-runtime
 docker-compose restart crm-backend
+docker-compose restart crm-ai-runtime
 docker-compose down
 ```
 

@@ -3,6 +3,7 @@ import {
   LayoutDashboard, MessageSquareText, Network, Settings, UserRoundCog, Users,
 } from 'lucide-react'
 import { AgentConfigPage } from '../features/agent/AgentConfigPage'
+import { MarketingAssistantPage } from '../features/assistant/MarketingAssistantPage'
 import { ModelConfigPage } from '../features/admin/ModelConfigPage'
 import { OrganizationAdminPage } from '../features/admin/OrganizationAdminPage'
 import { ChannelPage } from '../features/channel/ChannelPage'
@@ -81,8 +82,7 @@ export const routeGroups = [
         label: 'AI 营销助手',
         icon: Bot,
         permission: 'menu.assistant',
-        component: SimpleModulePage,
-        pageType: 'assistant',
+        component: MarketingAssistantPage,
       },
       {
         key: 'agent-config',

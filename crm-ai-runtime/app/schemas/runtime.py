@@ -4,7 +4,7 @@ from pydantic import BaseModel, ConfigDict, Field
 
 
 class CamelModel(BaseModel):
-    model_config = ConfigDict(populate_by_name=True, extra="ignore")
+    model_config = ConfigDict(populate_by_name=True, extra="allow")
 
 
 class RuntimeAgent(CamelModel):
@@ -62,3 +62,9 @@ class RuntimeRunResponse(CamelModel):
     success: bool = True
     output: str = ""
     events: list[RuntimeEvent] = Field(default_factory=list)
+    run_id: str | None = Field(default=None, alias="runId")
+    conversation_id: str | None = Field(default=None, alias="conversationId")
+    thread_id: str | None = Field(default=None, alias="threadId")
+    checkpoint_enabled: bool = Field(default=False, alias="checkpointEnabled")
+    trace_enabled: bool = Field(default=False, alias="traceEnabled")
+    trace_id: str | None = Field(default=None, alias="traceId")

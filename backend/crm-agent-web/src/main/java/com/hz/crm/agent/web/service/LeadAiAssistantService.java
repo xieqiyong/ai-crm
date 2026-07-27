@@ -57,10 +57,12 @@ public class LeadAiAssistantService {
         AgentRuntimeRequest runtimeRequest = null;
         try {
             runtimeRequest = buildRuntimeRequest(tenantId, userId, lead, agent, request);
-            String output = runAgent(runtimeRequest);
+            List<AgentRuntimeEvent> events = runAgent(runtimeRequest);
+            String output = resolveOutput(events);
             LeadAiAnalyzeResponse parsed = parseOutput(output, lead);
             parsed.setRunId(runtimeRequest.getRunId());
             parsed.setConversationId(runtimeRequest.getConversationId());
+            parsed.setRuntimeEvents(resolveRuntimeEvents(events));
             parsed.setAvailable(true);
             parsed.setSuccess(true);
             parsed.setMessage("线索 AI 分析完成");
@@ -121,12 +123,11 @@ public class LeadAiAssistantService {
         return runtimeRequest;
     }
 
-    private String runAgent(AgentRuntimeRequest runtimeRequest) {
-        List<AgentRuntimeEvent> events = agentRuntimeFacade
+    private List<AgentRuntimeEvent> runAgent(AgentRuntimeRequest runtimeRequest) {
+        return agentRuntimeFacade
                 .run(runtimeRequest)
                 .collectList()
                 .block(Duration.ofSeconds(90));
-        return resolveOutput(events);
     }
 
     private void fillRuntimeIds(LeadAiAnalyzeResponse response, AgentRuntimeRequest runtimeRequest) {
@@ -190,6 +191,36 @@ public class LeadAiAssistantService {
             return finalContent;
         }
         return streamContent.toString();
+    }
+
+    private List<AgentRuntimeEvent> resolveRuntimeEvents(List<AgentRuntimeEvent> events) {
+        List<AgentRuntimeEvent> values = new ArrayList<AgentRuntimeEvent>();
+        if (events == null || events.isEmpty()) {
+            return values;
+        }
+        for (AgentRuntimeEvent event : events) {
+            if (event == null) {
+                continue;
+            }
+            if (isWorkflowEvent(event) || isToolEvent(event) || isFinalEvent(event)) {
+                values.add(event);
+            }
+        }
+        return values;
+    }
+
+    private boolean isWorkflowEvent(AgentRuntimeEvent event) {
+        Object value = event.getMetadata() == null ? null : event.getMetadata().get("workflow");
+        return Boolean.TRUE.equals(value) || "true".equals(String.valueOf(value));
+    }
+
+    private boolean isToolEvent(AgentRuntimeEvent event) {
+        return !blank(event.getToolName());
+    }
+
+    private boolean isFinalEvent(AgentRuntimeEvent event) {
+        String type = event.getType() == null ? "" : event.getType().toLowerCase();
+        return type.contains("result") || type.contains("final");
     }
 
     private LeadAiAnalyzeResponse parseOutput(String output, LeadResponse lead) {
@@ -400,6 +431,7 @@ public class LeadAiAssistantService {
         }
         profile.setAvailable(jsonObject.getBoolean("available"));
         profile.setCompanyName(resolveText(jsonObject.getString("companyName"), profile.getCompanyName()));
+        profile.setCreditCode(trimToEmpty(jsonObject.getString("creditCode")));
         profile.setLegalRepresentative(trimToEmpty(jsonObject.getString("legalRepresentative")));
         profile.setKeyPerson(trimToEmpty(jsonObject.getString("keyPerson")));
         profile.setCompanyScale(trimToEmpty(jsonObject.getString("companyScale")));
@@ -409,6 +441,8 @@ public class LeadAiAssistantService {
         profile.setWebsite(trimToEmpty(jsonObject.getString("website")));
         profile.setAddress(trimToEmpty(jsonObject.getString("address")));
         profile.setRegisteredCapital(trimToEmpty(jsonObject.getString("registeredCapital")));
+        profile.setEstablishDate(trimToEmpty(jsonObject.getString("establishDate")));
+        profile.setDescription(trimToEmpty(jsonObject.getString("description")));
         profile.setSourceSummary(trimToEmpty(jsonObject.getString("sourceSummary")));
         profile.setSearchedAt(trimToEmpty(jsonObject.getString("searchedAt")));
         profile.setSourceUrls(resolveStringList(jsonObject.getJSONArray("sourceUrls"), 6, 300));
@@ -419,6 +453,7 @@ public class LeadAiAssistantService {
         LeadAiCustomerProfile profile = new LeadAiCustomerProfile();
         profile.setAvailable(false);
         profile.setCompanyName(resolveText(lead.getCompanyName(), lead.getName()));
+        profile.setCreditCode("");
         profile.setLegalRepresentative("");
         profile.setKeyPerson("");
         profile.setCompanyScale("");
@@ -428,6 +463,8 @@ public class LeadAiAssistantService {
         profile.setWebsite("");
         profile.setAddress("");
         profile.setRegisteredCapital("");
+        profile.setEstablishDate("");
+        profile.setDescription("");
         profile.setSourceSummary("");
         profile.setSearchedAt("");
         profile.setSourceUrls(new ArrayList<String>());
@@ -475,6 +512,7 @@ public class LeadAiAssistantService {
         appendLine(builder, "");
         appendLine(builder, "#### AI搜索客户档案");
         appendLine(builder, "- 公司名称：" + resolveText(profile.getCompanyName(), "未确认"));
+        appendLine(builder, "- 统一社会信用代码：" + resolveText(profile.getCreditCode(), "未确认"));
         appendLine(builder, "- 公司负责人：" + resolveText(
                 profile.getLegalRepresentative(),
                 resolveText(profile.getKeyPerson(), "未确认")));
@@ -485,6 +523,8 @@ public class LeadAiAssistantService {
         appendLine(builder, "- 官网：" + resolveText(profile.getWebsite(), "未确认"));
         appendLine(builder, "- 地址：" + resolveText(profile.getAddress(), "未确认"));
         appendLine(builder, "- 注册资本：" + resolveText(profile.getRegisteredCapital(), "未确认"));
+        appendLine(builder, "- 注册时间：" + resolveText(profile.getEstablishDate(), "未确认"));
+        appendLine(builder, "- 简介：" + resolveText(profile.getDescription(), "未确认"));
         if (!blank(profile.getSourceSummary())) {
             appendLine(builder, "- 来源摘要：" + profile.getSourceSummary());
         }
