@@ -24,13 +24,12 @@ export function MarketingAssistantPage({
         <div className="assistant-panel-head">
           <span><Sparkles size={18} /></span>
           <div>
-            <strong>营销工作助手</strong>
-            <small>当前版本只读分析，不直接修改业务数据</small>
+            <strong>营销客服助手</strong>
+            <small>接入业务数据和知识库，只读分析，不直接修改业务数据</small>
           </div>
         </div>
         <MarketingAssistantChatBox
           routeKey={routeKey}
-          routeGroups={routeGroups}
           currentRole={currentRole}
           onNavigate={navigate}
           onNotify={notify}

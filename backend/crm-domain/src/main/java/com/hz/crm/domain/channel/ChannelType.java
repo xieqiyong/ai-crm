@@ -4,5 +4,6 @@ public enum ChannelType {
     MANUAL,
     FORM,
     AUDIO,
-    VIDEO
+    VIDEO,
+    DOCUMENT
 }

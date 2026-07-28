@@ -34,6 +34,10 @@ public class CustomerResponse {
 
     private String remark;
 
+    private String aiSummary;
+
+    private LocalDateTime aiAnalyzedAt;
+
     private LocalDateTime createdAt;
 
     private LocalDateTime updatedAt;

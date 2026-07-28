@@ -65,6 +65,10 @@
             <artifactId>mybatis-plus-spring-boot4-starter</artifactId>
         </dependency>
         <dependency>
+            <groupId>io.minio</groupId>
+            <artifactId>minio</artifactId>
+        </dependency>
+        <dependency>
             <groupId>com.alibaba.nacos</groupId>
             <artifactId>nacos-client</artifactId>
         </dependency>

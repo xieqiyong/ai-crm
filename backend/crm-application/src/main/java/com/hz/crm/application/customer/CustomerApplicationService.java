@@ -149,6 +149,8 @@ public class CustomerApplicationService {
         response.setStatus(entity.getStatus());
         response.setOwnerId(entity.getOwnerId());
         response.setRemark(entity.getRemark());
+        response.setAiSummary(entity.getAiSummary());
+        response.setAiAnalyzedAt(entity.getAiAnalyzedAt());
         response.setCreatedAt(entity.getCreatedAt());
         response.setUpdatedAt(entity.getUpdatedAt());
         return response;

@@ -43,6 +43,24 @@ services:
     networks:
       - crm-net
 
+  crm-minio:
+    image: minio/minio:latest
+    container_name: crm-minio
+    restart: unless-stopped
+    environment:
+      MINIO_ROOT_USER: ${CRM_MINIO_ACCESS_KEY:-minioadmin}
+      MINIO_ROOT_PASSWORD: ${CRM_MINIO_SECRET_KEY:-please-change-minio-secret}
+      TZ: ${CRM_TIMEZONE}
+    command:
+      - server
+      - /data
+      - --console-address
+      - :9001
+    volumes:
+      - ./data/minio:/data
+    networks:
+      - crm-net
+
   crm-backend:
     image: crm-backend:${CRM_VERSION}
     container_name: crm-backend
@@ -52,6 +70,10 @@ services:
         condition: service_healthy
       crm-redis:
         condition: service_healthy
+      crm-minio:
+        condition: service_started
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
     environment:
       TZ: ${CRM_TIMEZONE}
       JAVA_OPTS: ${CRM_JAVA_OPTS}
@@ -71,6 +93,8 @@ services:
       CRM_LOG_LEVEL: ${CRM_LOG_LEVEL}
       CRM_LOG_PATH: /app/logs
       CRM_CHANNEL_UPLOAD_DIR: /app/uploads/channel
+      CRM_STORAGE_UPLOAD_DIR: /app/uploads
+      CRM_STORAGE_PUBLIC_PATH: /uploads
       CRM_AGENT_WORKSPACE: /app/data/agent-runtime
       CRM_AGENT_WEB_SEARCH_ENABLED: ${CRM_AGENT_WEB_SEARCH_ENABLED}
       CRM_AGENT_WEB_SEARCH_PROVIDER: ${CRM_AGENT_WEB_SEARCH_PROVIDER}
@@ -84,8 +108,36 @@ services:
       CRM_AI_INTERNAL_TOKEN: ${CRM_AI_INTERNAL_TOKEN}
       CRM_AI_RUNTIME_TIMEOUT_MS: ${CRM_AI_RUNTIME_TIMEOUT_MS}
       CRM_NACOS_ENABLED: ${CRM_NACOS_ENABLED}
-      CRM_MINIO_ENABLED: ${CRM_MINIO_ENABLED}
+      CRM_MINIO_ENABLED: ${CRM_MINIO_ENABLED:-false}
+      CRM_MINIO_ENDPOINT: ${CRM_MINIO_ENDPOINT:-http://crm-minio:9000}
+      CRM_MINIO_PUBLIC_URL: ${CRM_MINIO_PUBLIC_URL:-/minio}
+      CRM_MINIO_ACCESS_KEY: ${CRM_MINIO_ACCESS_KEY:-minioadmin}
+      CRM_MINIO_SECRET_KEY: ${CRM_MINIO_SECRET_KEY:-please-change-minio-secret}
+      CRM_MINIO_BUCKET: ${CRM_MINIO_BUCKET:-crm}
+      CRM_MINIO_PUBLIC_READ: ${CRM_MINIO_PUBLIC_READ:-true}
       CRM_ES_ENABLED: ${CRM_ES_ENABLED}
+      CRM_ES_URIS: ${CRM_ES_URIS}
+      CRM_ES_USERNAME: ${CRM_ES_USERNAME}
+      CRM_ES_PASSWORD: ${CRM_ES_PASSWORD}
+      CRM_KB_INGEST_CORE_SIZE: ${CRM_KB_INGEST_CORE_SIZE}
+      CRM_KB_INGEST_MAX_SIZE: ${CRM_KB_INGEST_MAX_SIZE}
+      CRM_KB_INGEST_QUEUE_CAPACITY: ${CRM_KB_INGEST_QUEUE_CAPACITY}
+      CRM_KB_CHUNK_MAX_CHARS: ${CRM_KB_CHUNK_MAX_CHARS}
+      CRM_KB_CHUNK_OVERLAP_CHARS: ${CRM_KB_CHUNK_OVERLAP_CHARS}
+      CRM_KB_EMBEDDING_ENABLED: ${CRM_KB_EMBEDDING_ENABLED}
+      CRM_KB_EMBEDDING_BASE_URL: ${CRM_KB_EMBEDDING_BASE_URL}
+      CRM_KB_EMBEDDING_API_KEY: ${CRM_KB_EMBEDDING_API_KEY}
+      CRM_KB_EMBEDDING_MODEL: ${CRM_KB_EMBEDDING_MODEL}
+      CRM_KB_EMBEDDING_DIMENSIONS: ${CRM_KB_EMBEDDING_DIMENSIONS}
+      CRM_KB_EMBEDDING_TIMEOUT_MS: ${CRM_KB_EMBEDDING_TIMEOUT_MS}
+      CRM_KB_ES_INDEX: ${CRM_KB_ES_INDEX}
+      CRM_KB_ES_TIMEOUT_MS: ${CRM_KB_ES_TIMEOUT_MS}
+      CRM_KB_MILVUS_ENABLED: ${CRM_KB_MILVUS_ENABLED}
+      CRM_KB_MILVUS_ENDPOINT: ${CRM_KB_MILVUS_ENDPOINT}
+      CRM_KB_MILVUS_TOKEN: ${CRM_KB_MILVUS_TOKEN}
+      CRM_KB_MILVUS_DATABASE: ${CRM_KB_MILVUS_DATABASE}
+      CRM_KB_MILVUS_COLLECTION: ${CRM_KB_MILVUS_COLLECTION}
+      CRM_KB_MILVUS_TIMEOUT_MS: ${CRM_KB_MILVUS_TIMEOUT_MS}
     volumes:
       - ./logs/backend:/app/logs
       - ./data/backend:/app/data
@@ -135,6 +187,8 @@ services:
       TZ: ${CRM_TIMEZONE}
       CRM_FRONTEND_API_BASE_URL: ${CRM_FRONTEND_API_BASE_URL}
       CRM_FRONTEND_API_TIMEOUT: ${CRM_FRONTEND_API_TIMEOUT}
+      CRM_ASSISTANT_TYPEWRITER_INTERVAL: ${CRM_ASSISTANT_TYPEWRITER_INTERVAL}
+      CRM_ASSISTANT_TYPEWRITER_STEP: ${CRM_ASSISTANT_TYPEWRITER_STEP}
       CRM_FRONTEND_APP_ENV: production
     ports:
       - "${CRM_FRONTEND_PORT}:80"

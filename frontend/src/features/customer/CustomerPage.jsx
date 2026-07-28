@@ -1,17 +1,9 @@
 import { useEffect, useState } from 'react'
 import {
-  ArrowUpRight,
   Building2,
-  CalendarDays,
-  Edit2,
-  Mail,
-  Phone,
   Plus,
   RefreshCw,
   Search,
-  Trash2,
-  UserRound,
-  X,
 } from 'lucide-react'
 import { api } from '../../api'
 import { Badge, Button, Card, ConfirmDialog, Field, Modal, PageHeader, useConfirmDialog } from '../../components'
@@ -98,7 +90,6 @@ export function CustomerPage({ can, notify, navigate }) {
   const [query, setQuery] = useState({ keyword: '', status: '', pageNo: 1, pageSize: 20 })
   const [page, setPage] = useState(emptyPage)
   const [loading, setLoading] = useState(true)
-  const [selected, setSelected] = useState(null)
   const [editing, setEditing] = useState(null)
 
   const load = async (nextQuery = query) => {
@@ -123,25 +114,15 @@ export function CustomerPage({ can, notify, navigate }) {
     load({ ...query, pageNo: 1 })
   }
 
-  const openDetail = async (row) => {
-    setSelected(row)
-    try {
-      setSelected(await api.customer.detail(row.id))
-    } catch (err) {
-      notify(err.message || '客户详情加载失败', 'info')
-    }
-  }
-
   const saveCustomer = async (form) => {
     if (!form.name || !form.name.trim()) {
       notify('客户名称不能为空', 'info')
       return
     }
     try {
-      const saved = await api.customer.save(toPayload(form))
+      await api.customer.save(toPayload(form))
       notify('客户资料已保存', 'success')
       setEditing(null)
-      setSelected(saved)
       load({ ...query, pageNo: form.id ? query.pageNo : 1 })
     } catch (err) {
       notify(err.message || '客户保存失败', 'info')
@@ -159,9 +140,6 @@ export function CustomerPage({ can, notify, navigate }) {
     try {
       await api.customer.delete(row.id)
       notify('客户已删除', 'success')
-      if (selected?.id === row.id) {
-        setSelected(null)
-      }
       load({ ...query, pageNo: 1 })
     } catch (err) {
       notify(err.message || '客户删除失败', 'info')
@@ -230,9 +208,8 @@ export function CustomerPage({ can, notify, navigate }) {
               <tbody>
                 {records.map((row) => (
                   <tr
-                    className={selected?.id === row.id ? 'selected-row' : ''}
                     key={row.id}
-                    onClick={() => openDetail(row)}
+                    onClick={() => openFullDetail(row)}
                   >
                     <td><strong>{row.name}</strong><small>ID：{row.id}</small></td>
                     <td>{row.industry || '-'}</td>
@@ -246,18 +223,30 @@ export function CustomerPage({ can, notify, navigate }) {
                     <td>{ownerName(row)}</td>
                     <td>{formatDateTime(row.updatedAt || row.createdAt)}</td>
                     <td>
-                      <div className="table-action-row" onClick={(event) => event.stopPropagation()}>
+                      <div className="table-action-row text-actions" onClick={(event) => event.stopPropagation()}>
+                        <button
+                          type="button"
+                          className="table-text-button"
+                          onClick={() => openFullDetail(row)}
+                        >
+                          详情
+                        </button>
                         {canWrite && (
-                          <button className="icon-button" onClick={() => setEditing(toForm(row))}>
-                            <Edit2 size={17} />
+                          <button
+                            type="button"
+                            className="table-text-button"
+                            onClick={() => setEditing(toForm(row))}
+                          >
+                            编辑
                           </button>
                         )}
-                        <button className="icon-button" title="查看完整详情" onClick={() => openFullDetail(row)}>
-                          <ArrowUpRight size={17} />
-                        </button>
                         {canDelete && (
-                          <button className="icon-button" onClick={() => deleteCustomer(row)}>
-                            <Trash2 size={17} />
+                          <button
+                            type="button"
+                            className="table-text-button danger"
+                            onClick={() => deleteCustomer(row)}
+                          >
+                            删除
                           </button>
                         )}
                       </div>
@@ -291,15 +280,6 @@ export function CustomerPage({ can, notify, navigate }) {
           </div>
         </Card>
 
-        <CustomerDetailCard
-          data={selected}
-          canWrite={canWrite}
-          canDelete={canDelete}
-          onEdit={() => setEditing(toForm(selected))}
-          onDelete={() => deleteCustomer(selected)}
-          onOpenFull={() => openFullDetail(selected)}
-          onClose={() => setSelected(null)}
-        />
       </div>
 
       <CustomerFormModal
@@ -311,64 +291,6 @@ export function CustomerPage({ can, notify, navigate }) {
         onSave={saveCustomer}
       />
       <ConfirmDialog {...dialogProps} />
-    </div>
-  )
-}
-
-function CustomerDetailCard({ data, canWrite, canDelete, onEdit, onDelete, onOpenFull, onClose }) {
-  if (!data) {
-    return (
-      <Card className="customer-detail-panel empty">
-        <span><Building2 size={24} /></span>
-        <h2>请选择客户</h2>
-        <p>先从左侧客户列表选择一条真实客户记录，再查看详情。</p>
-      </Card>
-    )
-  }
-
-  return (
-    <Card className="customer-detail-panel">
-      <div className="customer-detail-head">
-        <span className="company-avatar large">{(data.name || '?').slice(0, 1)}</span>
-        <div>
-          <h2>{data.name}</h2>
-          <p>ID：{data.id}</p>
-        </div>
-        <button className="icon-button" onClick={onClose}><X size={18} /></button>
-      </div>
-      <div className="customer-detail-actions">
-        <Button icon={ArrowUpRight} onClick={onOpenFull}>完整详情</Button>
-        {canWrite && <Button variant="secondary" icon={Edit2} onClick={onEdit}>编辑客户</Button>}
-        {canDelete && <Button variant="ghost" icon={Trash2} onClick={onDelete}>删除</Button>}
-      </div>
-      <div className="channel-detail-grid customer-detail-grid">
-        <DetailItem icon={Building2} label="行业" value={data.industry} />
-        <DetailItem icon={UserRound} label="联系人" value={data.contactName} />
-        <DetailItem icon={Phone} label="电话" value={data.contactPhone} />
-        <DetailItem icon={Mail} label="邮箱" value={data.contactEmail} />
-        <DetailItem label="客户级别" value={customerLevelText[data.level] || data.level} />
-        <DetailItem label="客户状态" value={customerStatusText[data.status] || data.status} />
-        <DetailItem label="负责人" value={ownerName(data)} />
-        <DetailItem icon={CalendarDays} label="创建时间" value={formatDateTime(data.createdAt)} />
-        <DetailItem icon={CalendarDays} label="更新时间" value={formatDateTime(data.updatedAt)} />
-      </div>
-      <div className="channel-text-block">
-        <span>备注</span>
-        <p>{data.remark || '暂无备注'}</p>
-      </div>
-      <div className="channel-text-block">
-        <span>AI 分析</span>
-        <p>暂无 AI 分析结果，等待接入真实客户交互数据后生成。</p>
-      </div>
-    </Card>
-  )
-}
-
-function DetailItem({ icon: Icon, label, value }) {
-  return (
-    <div>
-      <span>{Icon && <Icon size={13} />} {label}</span>
-      <b>{value || '-'}</b>
     </div>
   )
 }

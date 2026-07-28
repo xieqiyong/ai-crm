@@ -1,5 +1,6 @@
 package com.hz.crm.auth.security;
 
+import jakarta.servlet.DispatcherType;
 import java.util.Arrays;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.context.properties.EnableConfigurationProperties;
@@ -38,6 +39,8 @@ public class AuthSecurityConfiguration {
                 .cors(Customizer.withDefaults())
                 .sessionManagement(session -> session.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
                 .authorizeHttpRequests(authorize -> authorize
+                        .dispatcherTypeMatchers(DispatcherType.ASYNC, DispatcherType.ERROR)
+                        .permitAll()
                         .requestMatchers(HttpMethod.OPTIONS, "/**")
                         .permitAll()
                         .requestMatchers(
@@ -46,6 +49,7 @@ public class AuthSecurityConfiguration {
                                 "/api/auth/reset-password",
                                 "/api/install/**",
                                 "/api/public/marketing-form/**",
+                                "/uploads/**",
                                 "/actuator/health")
                         .permitAll()
                         .anyRequest()

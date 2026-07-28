@@ -11,6 +11,12 @@ export const runtimeConfig = {
   appEnv: runtimeEnv.APP_ENV || viteEnv.VITE_APP_ENV || viteEnv.MODE || 'production',
   apiBaseUrl: trimSlash(runtimeEnv.API_BASE_URL || viteEnv.VITE_API_BASE_URL || ''),
   apiTimeout: Number(runtimeEnv.API_TIMEOUT || viteEnv.VITE_API_TIMEOUT || 30000),
+  assistantTypewriterInterval: Number(
+    runtimeEnv.ASSISTANT_TYPEWRITER_INTERVAL || viteEnv.VITE_ASSISTANT_TYPEWRITER_INTERVAL || 12,
+  ),
+  assistantTypewriterStep: Number(
+    runtimeEnv.ASSISTANT_TYPEWRITER_STEP || viteEnv.VITE_ASSISTANT_TYPEWRITER_STEP || 4,
+  ),
 }
 
 export function backendAddressLabel() {

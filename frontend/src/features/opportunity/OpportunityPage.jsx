@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from 'react'
 import {
   BriefcaseBusiness,
+  Building2,
   CalendarDays,
   CircleDollarSign,
   Edit2,
@@ -13,7 +14,16 @@ import {
 } from 'lucide-react'
 import { api } from '../../api'
 import { Badge, Button, Card, ConfirmDialog, Field, Modal, PageHeader, useConfirmDialog } from '../../components'
+import { customerOptionLabel, useCustomerOptions } from '../../hooks/useCustomerOptions'
+import { FollowupPanel } from '../followup/FollowupPanel'
 import { ownerName, ownerOptionLabel, useOwnerOptions } from '../../hooks/useOwnerOptions'
+import { useProductOptions } from '../../hooks/useProductOptions'
+import {
+  OpportunityProductEditor,
+  OpportunityProductList,
+  normalizeOpportunityProducts,
+  toOpportunityProductPayload,
+} from './OpportunityProductEditor'
 
 const stageText = {
   DISCOVERY: '需求发现',
@@ -48,6 +58,7 @@ const emptyForm = {
   probability: '',
   expectedCloseDate: '',
   ownerId: '',
+  products: [],
   remark: '',
 }
 
@@ -69,6 +80,7 @@ function compactQuery(query) {
     pageSize: query.pageSize || 20,
     keyword: query.keyword || undefined,
     stage: query.stage || undefined,
+    customerId: query.customerId || undefined,
   }
 }
 
@@ -82,6 +94,7 @@ function toForm(row) {
     probability: row.probability || '',
     expectedCloseDate: row.expectedCloseDate || '',
     ownerId: row.ownerId || '',
+    products: normalizeOpportunityProducts(row.products || []),
     remark: row.remark || '',
   }
 }
@@ -96,15 +109,22 @@ function toPayload(form) {
     probability: form.probability === '' ? null : Number(form.probability),
     expectedCloseDate: form.expectedCloseDate || null,
     ownerId: form.ownerId || null,
+    products: toOpportunityProductPayload(form.products || []),
     remark: form.remark || null,
   }
 }
 
-export function OpportunityPage({ can, notify }) {
+export function OpportunityPage({ can, notify, navigate }) {
   const canManage = can('crm:opportunity:manage')
   const canCreate = canManage || can('crm:opportunity:create')
   const canDelete = can('crm:opportunity:manage')
+  const canViewCustomer = can('crm:customer:view')
+  const canViewProduct = can('crm:product:view') || can('crm:product:manage')
+  const canViewFollowup = can('crm:followup:view')
+  const canFollowup = can('crm:followup:manage') || can('crm:followup:create')
   const ownerOptions = useOwnerOptions(notify)
+  const customerOptions = useCustomerOptions(notify, canViewCustomer)
+  const productOptions = useProductOptions(notify, true, canViewProduct)
   const { confirm, dialogProps } = useConfirmDialog()
   const [query, setQuery] = useState({ keyword: '', stage: '', pageNo: 1, pageSize: 20 })
   const [page, setPage] = useState(emptyPage)
@@ -242,7 +262,7 @@ export function OpportunityPage({ can, notify }) {
               <thead>
                 <tr>
                   <th>商机名称</th>
-                  <th>客户ID</th>
+                  <th>客户</th>
                   <th>阶段</th>
                   <th>金额</th>
                   <th>赢率</th>
@@ -259,7 +279,10 @@ export function OpportunityPage({ can, notify }) {
                     onClick={() => openDetail(row)}
                   >
                     <td><strong>{row.name}</strong><small>ID：{row.id}</small></td>
-                    <td>{row.customerId || '-'}</td>
+                    <td>
+                      <span>{row.customerName || '-'}</span>
+                      <small>{row.customerId || '-'}</small>
+                    </td>
                     <td><Badge dot tone={stageTone[row.stage] || 'neutral'}>{stageText[row.stage] || row.stage || '-'}</Badge></td>
                     <td>{formatAmount(row.amount)}</td>
                     <td>{row.probability == null ? '-' : `${row.probability}%`}</td>
@@ -304,6 +327,10 @@ export function OpportunityPage({ can, notify }) {
           data={selected}
           canWrite={canManage}
           canDelete={canDelete}
+          canFollowup={canFollowup}
+          canViewFollowup={canViewFollowup}
+          notify={notify}
+          onOpenCustomer={() => selected?.customerId && navigate(`customers/detail/${encodeURIComponent(selected.customerId)}`)}
           onEdit={() => setEditing(toForm(selected))}
           onDelete={() => deleteOpportunity(selected)}
           onClose={() => setSelected(null)}
@@ -314,6 +341,8 @@ export function OpportunityPage({ can, notify }) {
         open={Boolean(editing)}
         form={editing || emptyForm}
         ownerOptions={ownerOptions}
+        customerOptions={customerOptions}
+        productOptions={productOptions}
         onChange={setEditing}
         onClose={() => setEditing(null)}
         onSave={saveOpportunity}
@@ -323,7 +352,18 @@ export function OpportunityPage({ can, notify }) {
   )
 }
 
-function OpportunityDetailCard({ data, canWrite, canDelete, onEdit, onDelete, onClose }) {
+function OpportunityDetailCard({
+  data,
+  canWrite,
+  canDelete,
+  canFollowup,
+  canViewFollowup,
+  notify,
+  onOpenCustomer,
+  onEdit,
+  onDelete,
+  onClose,
+}) {
   if (!data) {
     return (
       <Card className="customer-detail-panel empty">
@@ -345,6 +385,7 @@ function OpportunityDetailCard({ data, canWrite, canDelete, onEdit, onDelete, on
         <button className="icon-button" onClick={onClose}><X size={18} /></button>
       </div>
       <div className="customer-detail-actions">
+        {data.customerId && <Button variant="secondary" icon={Building2} onClick={onOpenCustomer}>查看客户</Button>}
         {canWrite && <Button variant="secondary" icon={Edit2} onClick={onEdit}>编辑商机</Button>}
         {canDelete && <Button variant="ghost" icon={Trash2} onClick={onDelete}>删除</Button>}
       </div>
@@ -352,7 +393,7 @@ function OpportunityDetailCard({ data, canWrite, canDelete, onEdit, onDelete, on
         <DetailItem icon={CircleDollarSign} label="金额" value={formatAmount(data.amount)} />
         <DetailItem icon={Target} label="阶段" value={stageText[data.stage] || data.stage} />
         <DetailItem label="赢率" value={data.probability == null ? '-' : `${data.probability}%`} />
-        <DetailItem label="客户ID" value={data.customerId} />
+        <DetailItem label="客户" value={data.customerName || data.customerId} />
         <DetailItem label="负责人" value={ownerName(data)} />
         <DetailItem icon={CalendarDays} label="预计成交" value={data.expectedCloseDate} />
         <DetailItem icon={CalendarDays} label="创建时间" value={formatDateTime(data.createdAt)} />
@@ -366,6 +407,19 @@ function OpportunityDetailCard({ data, canWrite, canDelete, onEdit, onDelete, on
         <span>AI 分析</span>
         <p>暂无 AI 分析结果，后续可基于客户、线索、跟进记录和阶段变化生成赢率建议。</p>
       </div>
+      <div className="channel-text-block">
+        <span>产品明细</span>
+        <OpportunityProductList products={data.products || []} />
+      </div>
+      <FollowupPanel
+        targetType="OPPORTUNITY"
+        targetId={data.id}
+        title="商机跟进"
+        canWrite={canFollowup}
+        canView={canViewFollowup}
+        notify={notify}
+        pageSize={5}
+      />
     </Card>
   )
 }
@@ -379,12 +433,23 @@ function DetailItem({ icon: Icon, label, value }) {
   )
 }
 
-function OpportunityFormModal({ open, form, ownerOptions, onChange, onClose, onSave }) {
+function OpportunityFormModal({
+  open,
+  form,
+  ownerOptions,
+  customerOptions,
+  productOptions,
+  onChange,
+  onClose,
+  onSave,
+}) {
   const update = (patch) => onChange({ ...form, ...patch })
   const hasSelectedOwner = ownerOptions.some((item) => String(item.id) === String(form.ownerId || ''))
+  const hasSelectedCustomer = (customerOptions || []).some((item) => String(item.id) === String(form.customerId || ''))
   return (
     <Modal
       open={open}
+      size="xl"
       title={form.id ? '编辑商机' : '新建商机'}
       onClose={onClose}
       footer={(
@@ -403,8 +468,14 @@ function OpportunityFormModal({ open, form, ownerOptions, onChange, onClose, onS
             {Object.entries(stageText).map(([value, label]) => <option value={value} key={value}>{label}</option>)}
           </select>
         </Field>
-        <Field label="客户ID">
-          <input value={form.customerId || ''} onChange={(event) => update({ customerId: event.target.value })} />
+        <Field label="关联客户">
+          <select value={form.customerId || ''} onChange={(event) => update({ customerId: event.target.value })}>
+            <option value="">暂不关联客户</option>
+            {form.customerId && !hasSelectedCustomer && <option value={form.customerId}>当前客户</option>}
+            {(customerOptions || []).map((item) => (
+              <option value={item.id} key={item.id}>{customerOptionLabel(item)}</option>
+            ))}
+          </select>
         </Field>
         <Field label="负责人" hint="不选则由后台设置为当前登录用户">
           <select value={form.ownerId || ''} onChange={(event) => update({ ownerId: event.target.value })}>
@@ -417,10 +488,23 @@ function OpportunityFormModal({ open, form, ownerOptions, onChange, onClose, onS
           <input value={form.amount || ''} onChange={(event) => update({ amount: event.target.value })} placeholder="例如 120000" />
         </Field>
         <Field label="赢率">
-          <input type="number" min="0" max="100" value={form.probability || ''} onChange={(event) => update({ probability: event.target.value })} />
+          <input
+            type="number"
+            min="0"
+            max="100"
+            value={form.probability || ''}
+            onChange={(event) => update({ probability: event.target.value })}
+          />
         </Field>
         <Field label="预计成交日期">
           <input type="date" value={form.expectedCloseDate || ''} onChange={(event) => update({ expectedCloseDate: event.target.value })} />
+        </Field>
+        <Field label="产品明细" className="wide-field">
+          <OpportunityProductEditor
+            products={form.products || []}
+            productOptions={productOptions || []}
+            onChange={(products) => update({ products })}
+          />
         </Field>
         <Field label="备注">
           <textarea rows="4" value={form.remark || ''} onChange={(event) => update({ remark: event.target.value })} />

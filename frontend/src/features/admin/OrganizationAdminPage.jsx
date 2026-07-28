@@ -41,6 +41,7 @@ const MODULE_DEFINITIONS = [
   { key: 'leads', label: '线索管理', menuCodes: ['menu.leads'], actionPrefixes: ['crm:lead:'] },
   { key: 'channels', label: '渠道管理', menuCodes: ['menu.channels'], actionPrefixes: ['crm:channel:'] },
   { key: 'customers', label: '客户管理', menuCodes: ['menu.customers'], actionPrefixes: ['crm:customer:'] },
+  { key: 'products', label: '产品管理', menuCodes: ['menu.products'], actionPrefixes: ['crm:product:'] },
   { key: 'opportunities', label: '商机管理', menuCodes: ['menu.opportunities'], actionPrefixes: ['crm:opportunity:'] },
   { key: 'followups', label: '跟进记录', menuCodes: ['menu.followups'] },
   { key: 'tasks', label: '销售任务', menuCodes: ['menu.tasks'] },

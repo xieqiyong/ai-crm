@@ -7,6 +7,7 @@ import jakarta.persistence.Entity;
 import jakarta.persistence.EnumType;
 import jakarta.persistence.Enumerated;
 import jakarta.persistence.Table;
+import java.time.LocalDateTime;
 import lombok.Getter;
 import lombok.Setter;
 
@@ -44,4 +45,9 @@ public class CustomerEntity extends BaseEntity {
 
     @Column(length = 512)
     private String remark;
+
+    @Column(columnDefinition = "text")
+    private String aiSummary;
+
+    private LocalDateTime aiAnalyzedAt;
 }

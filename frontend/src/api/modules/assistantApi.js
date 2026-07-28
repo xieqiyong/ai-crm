@@ -1,4 +1,4 @@
-import { request } from '../httpClient'
+import { request, streamRequest } from '../httpClient'
 
 function parseJsonOutput(output) {
   if (!output) return null
@@ -47,6 +47,14 @@ function adaptLeadAnalyzeResponse(payload, response) {
 
 export const assistantApi = {
   chat: (payload) => request('/api/assistant/chat', {
+    method: 'POST',
+    body: JSON.stringify(payload || {}),
+  }),
+  chatStream: (payload, handlers) => streamRequest('/api/assistant/chat/stream', {
+    method: 'POST',
+    body: JSON.stringify(payload || {}),
+  }, handlers),
+  summarizeCustomer: (payload) => request('/api/assistant/customer/deep-summary', {
     method: 'POST',
     body: JSON.stringify(payload || {}),
   }),

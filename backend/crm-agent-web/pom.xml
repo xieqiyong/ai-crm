@@ -35,6 +35,11 @@
             <version>${project.version}</version>
         </dependency>
         <dependency>
+            <groupId>com.hz.crm</groupId>
+            <artifactId>crm-knowledge</artifactId>
+            <version>${project.version}</version>
+        </dependency>
+        <dependency>
             <groupId>com.alibaba.fastjson2</groupId>
             <artifactId>fastjson2</artifactId>
         </dependency>

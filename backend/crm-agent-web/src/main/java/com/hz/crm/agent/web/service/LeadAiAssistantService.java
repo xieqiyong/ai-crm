@@ -143,6 +143,8 @@ public class LeadAiAssistantService {
         builder.append("请分析以下线索，按销售能直接行动的格式给出判断。");
         builder.append("\n如果线索中存在公司名称，可先调用customer_web_search搜索公开客户信息。");
         builder.append("\n搜索结果只能作为公开资料补充，不能编造搜索结果中不存在的负责人、规模、行业、电话等信息。");
+        builder.append("\n如果需要判断产品匹配、解决方案、客户案例或销售话术，必须先调用knowledge_search检索公司知识库。");
+        builder.append("\nknowledge_search无命中时，不能编造公司产品能力、案例或话术。");
         builder.append("\n必须调用函数lead_analysis_result，参数必须是合法JSON。");
         builder.append("\n如果线索已转客户，recommendConvert仍可表示该转化是否合理，但nextActions必须转向客户运营动作。");
         if (!blank(instruction)) {
@@ -161,6 +163,8 @@ public class LeadAiAssistantService {
         builder.append("JSON字段值如需引用公司、人名、产品名，优先使用中文引号，避免破坏JSON格式。");
         builder.append("如调用customer_web_search，必须把可确认的公开信息整理到customerProfile。");
         builder.append("优先使用customer_web_search返回的profileDraft填充customerProfile。");
+        builder.append("涉及公司产品、方案、案例、FAQ、销售话术时，必须先调用knowledge_search。");
+        builder.append("knowledge_search返回的hits只能作为内部知识引用，未命中就说明知识库暂无资料。");
         builder.append("customerProfile无法确认的字段使用空字符串，sourceUrls只填写搜索结果中的真实链接。");
         builder.append("字段必须包含conclusionTitle、salesConclusion、stage、priority、recommendConvert、score、confidence、");
         builder.append("keyFindings、riskWarnings、nextActions、reason、nextAction、convertDraft、customerProfile。");

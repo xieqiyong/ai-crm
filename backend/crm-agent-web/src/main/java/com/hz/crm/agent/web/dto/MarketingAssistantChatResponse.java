@@ -17,6 +17,16 @@ public class MarketingAssistantChatResponse {
 
     private String reply;
 
+    private boolean available;
+
+    private boolean success = true;
+
+    private String message;
+
+    private Long runId;
+
+    private Long conversationId;
+
     private List<String> suggestions = new ArrayList<String>();
 
     private List<MarketingAssistantActionResponse> quickActions = new ArrayList<MarketingAssistantActionResponse>();

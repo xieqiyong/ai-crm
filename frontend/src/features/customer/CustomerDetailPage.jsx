@@ -8,7 +8,6 @@ import {
   Edit2,
   FileText,
   Mail,
-  MessageCircleMore,
   Network,
   Phone,
   RefreshCw,
@@ -19,8 +18,25 @@ import {
   Users,
 } from 'lucide-react'
 import { api } from '../../api'
-import { Badge, Button, Card, ConfirmDialog, Field, Modal, PageHeader, useConfirmDialog } from '../../components'
+import {
+  Badge,
+  Button,
+  Card,
+  ConfirmDialog,
+  Field,
+  MarkdownText,
+  Modal,
+  PageHeader,
+  useConfirmDialog,
+} from '../../components'
+import { FollowupPanel } from '../followup/FollowupPanel'
 import { ownerName, ownerOptionLabel, useOwnerOptions } from '../../hooks/useOwnerOptions'
+import { useProductOptions } from '../../hooks/useProductOptions'
+import {
+  OpportunityProductEditor,
+  normalizeOpportunityProducts,
+  toOpportunityProductPayload,
+} from '../opportunity/OpportunityProductEditor'
 import {
   customerLevelText,
   customerLevelTone,
@@ -42,11 +58,35 @@ const emptyForm = {
   remark: '',
 }
 
+const emptyOpportunityForm = {
+  name: '',
+  amount: '',
+  stage: 'DISCOVERY',
+  probability: '',
+  expectedCloseDate: '',
+  products: [],
+  remark: '',
+}
+
+const opportunityStageText = {
+  DISCOVERY: '需求发现',
+  QUALIFICATION: '资格确认',
+  PROPOSAL: '方案报价',
+  NEGOTIATION: '商务谈判',
+  WON: '已成交',
+  LOST: '已丢单',
+}
+
 function formatDateTime(value) {
   if (!value) return '-'
   const date = new Date(value)
   if (Number.isNaN(date.getTime())) return '-'
   return date.toLocaleString('zh-CN', { hour12: false })
+}
+
+function formatAmount(value) {
+  const amount = Number(value || 0)
+  return amount.toLocaleString('zh-CN', { style: 'currency', currency: 'CNY' })
 }
 
 function toForm(row) {
@@ -103,12 +143,23 @@ export function CustomerDetailPage({ routeParams, can, notify, navigate }) {
   const customerId = routeParams?.id
   const canWrite = can('crm:customer:manage') || can('crm:customer:edit')
   const canDelete = can('crm:customer:manage')
+  const canViewProduct = can('crm:product:view') || can('crm:product:manage')
   const ownerOptions = useOwnerOptions(notify)
+  const productOptions = useProductOptions(notify, true, canViewProduct)
   const { confirm, dialogProps } = useConfirmDialog()
   const [data, setData] = useState(null)
   const [loading, setLoading] = useState(true)
   const [tab, setTab] = useState('概览')
   const [editing, setEditing] = useState(null)
+  const [opportunities, setOpportunities] = useState([])
+  const [opportunityEditing, setOpportunityEditing] = useState(null)
+  const [summary, setSummary] = useState(null)
+  const [summarizing, setSummarizing] = useState(false)
+  const canViewFollowup = can('crm:followup:view')
+  const canFollowup = can('crm:followup:manage') || can('crm:followup:create')
+  const canViewOpportunity = can('crm:opportunity:view')
+  const canCreateOpportunity = can('crm:opportunity:manage') || can('crm:opportunity:create')
+  const canUseAi = can('crm:assistant:use') && can('crm:customer:view')
 
   const load = async () => {
     if (!customerId) {
@@ -128,6 +179,23 @@ export function CustomerDetailPage({ routeParams, can, notify, navigate }) {
   useEffect(() => {
     load()
   }, [customerId])
+
+  const loadOpportunities = async (id = customerId) => {
+    if (!id || !canViewOpportunity) return
+    try {
+      const page = await api.opportunity.page({ customerId: id, pageNo: 1, pageSize: 20 })
+      setOpportunities(page?.records || [])
+    } catch (err) {
+      notify(err.message || '客户商机加载失败', 'info')
+    }
+  }
+
+  useEffect(() => {
+    if (data?.id) {
+      loadOpportunities(data.id)
+      setSummary(data.aiSummary ? { summary: data.aiSummary, analyzedAt: data.aiAnalyzedAt } : null)
+    }
+  }, [data?.id])
 
   const saveCustomer = async (form) => {
     if (!form.name || !form.name.trim()) {
@@ -159,6 +227,45 @@ export function CustomerDetailPage({ routeParams, can, notify, navigate }) {
       navigate('customers')
     } catch (err) {
       notify(err.message || '客户删除失败', 'info')
+    }
+  }
+
+  const saveOpportunity = async (form) => {
+    if (!form.name || !form.name.trim()) {
+      notify('商机名称不能为空', 'info')
+      return
+    }
+    try {
+      await api.opportunity.save({
+        ...form,
+        name: form.name.trim(),
+        customerId: data.id,
+        amount: form.amount === '' ? null : form.amount,
+        probability: form.probability === '' ? null : Number(form.probability),
+        expectedCloseDate: form.expectedCloseDate || null,
+        remark: form.remark || null,
+        products: toOpportunityProductPayload(form.products || []),
+      })
+      notify('客户商机已保存', 'success')
+      setOpportunityEditing(null)
+      loadOpportunities(data.id)
+    } catch (err) {
+      notify(err.message || '客户商机保存失败', 'info')
+    }
+  }
+
+  const summarizeCustomer = async () => {
+    if (!data?.id || summarizing) return
+    setSummarizing(true)
+    try {
+      const response = await api.assistant.summarizeCustomer({ customerId: data.id })
+      setSummary(response)
+      setData({ ...data, aiSummary: response.summary, aiAnalyzedAt: response.analyzedAt })
+      notify(response.message || '客户总结已生成', response.success ? 'success' : 'info')
+    } catch (err) {
+      notify(err.message || '客户 AI 深度总结失败', 'info')
+    } finally {
+      setSummarizing(false)
     }
   }
 
@@ -215,7 +322,9 @@ export function CustomerDetailPage({ routeParams, can, notify, navigate }) {
             <div className="customer-name">
               <h1>{data.name}</h1>
               <Badge tone={customerLevelTone[data.level] || 'neutral'}>{customerLevelText[data.level] || data.level || '未分级'}</Badge>
-              <Badge dot tone={customerStatusTone[data.status] || 'neutral'}>{customerStatusText[data.status] || data.status || '未设置状态'}</Badge>
+              <Badge dot tone={customerStatusTone[data.status] || 'neutral'}>
+                {customerStatusText[data.status] || data.status || '未设置状态'}
+              </Badge>
             </div>
             <div className="customer-meta">
               <span><Building2 size={15} />{data.industry || '未填写行业'}</span>
@@ -243,9 +352,34 @@ export function CustomerDetailPage({ routeParams, can, notify, navigate }) {
       </Card>
 
       {tab === '概览' ? (
-        <CustomerOverview data={data} tags={tags} />
+        <CustomerOverview
+          data={data}
+          tags={tags}
+          opportunities={opportunities}
+          summary={summary}
+          canUseAi={canUseAi}
+          summarizing={summarizing}
+          onSummarize={summarizeCustomer}
+          canFollowup={canFollowup}
+          canViewFollowup={canViewFollowup}
+          notify={notify}
+          onCreateOpportunity={canCreateOpportunity ? () => setOpportunityEditing(emptyOpportunityForm) : null}
+        />
       ) : (
-        <CustomerTabContent tab={tab} data={data} />
+        <CustomerTabContent
+          tab={tab}
+          data={data}
+          opportunities={opportunities}
+          canFollowup={canFollowup}
+          canViewFollowup={canViewFollowup}
+          canUseAi={canUseAi}
+          canCreateOpportunity={canCreateOpportunity}
+          notify={notify}
+          summary={summary}
+          summarizing={summarizing}
+          onSummarize={summarizeCustomer}
+          onCreateOpportunity={() => setOpportunityEditing(emptyOpportunityForm)}
+        />
       )}
 
       <CustomerFormModal
@@ -256,12 +390,32 @@ export function CustomerDetailPage({ routeParams, can, notify, navigate }) {
         onClose={() => setEditing(null)}
         onSave={saveCustomer}
       />
+      <OpportunityFormModal
+        open={Boolean(opportunityEditing)}
+        form={opportunityEditing || emptyOpportunityForm}
+        productOptions={productOptions}
+        onChange={setOpportunityEditing}
+        onClose={() => setOpportunityEditing(null)}
+        onSave={saveOpportunity}
+      />
       <ConfirmDialog {...dialogProps} />
     </div>
   )
 }
 
-function CustomerOverview({ data, tags }) {
+function CustomerOverview({
+  data,
+  tags,
+  opportunities,
+  summary,
+  canUseAi,
+  summarizing,
+  onSummarize,
+  canFollowup,
+  canViewFollowup,
+  notify,
+  onCreateOpportunity,
+}) {
   return (
     <div className="customer-layout">
       <div className="customer-main">
@@ -305,25 +459,26 @@ function CustomerOverview({ data, tags }) {
           </Card>
         </div>
 
-        <Card className="timeline-card">
-          <div className="card-heading">
-            <div>
-              <h2><MessageCircleMore size={18} />交互时间轴</h2>
-              <p>等待接入真实跟进记录、电话、邮件和会议数据。</p>
-            </div>
-          </div>
-          <EmptyFeature icon={MessageCircleMore} title="暂无真实交互记录" description="客户基础资料已接入，交互数据需要后续跟进记录模块提供。" />
-        </Card>
+        <FollowupPanel
+          targetType="CUSTOMER"
+          targetId={data.id}
+          title="交互时间轴"
+          canWrite={canFollowup}
+          canView={canViewFollowup}
+          notify={notify}
+          pageSize={5}
+        />
 
         <div className="customer-bottom-grid">
           <Card>
             <div className="card-heading">
               <div>
                 <h2>关联商机</h2>
-                <p>等待商机模块支持按客户聚合后展示。</p>
+                <p>展示当前客户名下的真实商机。</p>
               </div>
+              {onCreateOpportunity && <Button icon={BriefcaseBusiness} onClick={onCreateOpportunity}>新建商机</Button>}
             </div>
-            <EmptyFeature icon={BriefcaseBusiness} title="暂无关联商机数据" description="当前不会展示非真实商机，后续接真实商机接口。" />
+            <CustomerOpportunityList opportunities={opportunities} compact />
           </Card>
           <Card>
             <div className="card-heading">
@@ -346,24 +501,35 @@ function CustomerOverview({ data, tags }) {
             <span><Sparkles size={19} /></span>
             <div>
               <h2>AI 客户深度总结</h2>
-              <small>等待真实交互数据和 AI 分析接口</small>
+              <small>基于客户、商机和跟进记录生成</small>
             </div>
           </div>
-          <span className="section-caption">当前客户资料</span>
-          <blockquote>
-            当前客户名称为 <b>{data.name}</b>，行业为 <b>{data.industry || '未填写'}</b>，主联系人为 <b>{data.contactName || '未填写'}</b>。
-          </blockquote>
+          <span className="section-caption">客户总结</span>
+          {summary?.summary ? (
+            <MarkdownText value={summary.summary} />
+          ) : (
+            <blockquote>
+              当前客户名称为 <b>{data.name}</b>，行业为 <b>{data.industry || '未填写'}</b>，主联系人为 <b>{data.contactName || '未填写'}</b>。
+            </blockquote>
+          )}
           <div className="ai-metrics">
             <div><small>联系电话</small><b>{data.contactPhone || '-'}</b></div>
             <div><small>联系邮箱</small><b>{data.contactEmail || '-'}</b></div>
           </div>
-          <div className="risk-box">
-            <Sparkles size={18} />
-            <div>
-              <b>AI 分析未生成</b>
-              <p>暂未接入客户跟进、商机和行为数据，不生成非真实洞察。</p>
+          {canUseAi && (
+            <Button icon={Sparkles} onClick={onSummarize} disabled={summarizing}>
+              {summarizing ? '总结中' : '生成深度总结'}
+            </Button>
+          )}
+          {summary?.message && (
+            <div className="risk-box">
+              <Sparkles size={18} />
+              <div>
+                <b>生成结果</b>
+                <p>{summary.message}</p>
+              </div>
             </div>
-          </div>
+          )}
         </Card>
         <Card className="timing-card">
           <span><CalendarDays size={20} /></span>
@@ -377,20 +543,67 @@ function CustomerOverview({ data, tags }) {
   )
 }
 
-function CustomerTabContent({ tab, data }) {
+function CustomerTabContent({
+  tab,
+  data,
+  opportunities,
+  canFollowup,
+  canViewFollowup,
+  canUseAi,
+  canCreateOpportunity,
+  notify,
+  summary,
+  summarizing,
+  onSummarize,
+  onCreateOpportunity,
+}) {
   if (tab === '基础资料') {
     return <CustomerProfileMatrix data={data} />
   }
   if (tab === '联系人') {
     return <CustomerContactPanel data={data} />
   }
+  if (tab === '商机') {
+    return (
+      <Card>
+        <div className="card-heading">
+          <div>
+            <h2>客户商机</h2>
+            <p>按当前客户编号查询真实商机。</p>
+          </div>
+          {canCreateOpportunity && <Button icon={BriefcaseBusiness} onClick={onCreateOpportunity}>新建商机</Button>}
+        </div>
+        <CustomerOpportunityList opportunities={opportunities} />
+      </Card>
+    )
+  }
+  if (tab === '跟进记录') {
+    return (
+      <FollowupPanel
+        targetType="CUSTOMER"
+        targetId={data.id}
+        canWrite={canFollowup}
+        canView={canViewFollowup}
+        notify={notify}
+        pageSize={20}
+      />
+    )
+  }
+  if (tab === 'AI 智能分析') {
+    return (
+      <CustomerAiSummaryPanel
+        data={data}
+        summary={summary}
+        canUseAi={canUseAi}
+        summarizing={summarizing}
+        onSummarize={onSummarize}
+      />
+    )
+  }
 
   const map = {
-    商机: ['客户商机', '暂无真实关联商机数据，等待商机模块提供按客户查询接口。', BriefcaseBusiness],
-    跟进记录: ['跟进记录', '暂无真实跟进记录，等待跟进记录模块接入。', MessageCircleMore],
     任务: ['客户任务', '暂无真实任务数据，等待任务模块接入。', CheckCircle2],
     相关文档: ['相关文档', '暂无真实文档数据，等待文档或知识库模块接入。', FileText],
-    'AI 智能分析': ['AI 智能分析', '暂无真实 AI 分析结果，等待客户交互数据与 Agent 分析能力接入。', Sparkles],
   }
   const [title, desc, Icon] = map[tab] || ['客户信息', '暂无真实数据。', FileText]
   return <Card className="tab-placeholder"><span><Icon size={26} /></span><h2>{title}</h2><p>{desc}</p></Card>
@@ -447,6 +660,81 @@ function CustomerContactPanel({ data }) {
   )
 }
 
+function CustomerOpportunityList({ opportunities = [], compact = false }) {
+  if (!opportunities.length) {
+    return (
+      <EmptyFeature
+        icon={BriefcaseBusiness}
+        title="暂无关联商机"
+        description="当前客户还没有真实商机，可在客户详情中创建。"
+      />
+    )
+  }
+  return (
+    <div className={`customer-opportunity-list ${compact ? 'compact' : ''}`}>
+      {opportunities.map((item) => (
+        <div className="customer-opportunity-item" key={item.id}>
+          <span><BriefcaseBusiness size={18} /></span>
+          <div>
+            <b>{item.name}</b>
+            <small>{opportunityStageText[item.stage] || item.stage || '未设置阶段'} · {formatAmount(item.amount)}</small>
+            {item.products?.length > 0 && <small>产品：{item.products.map((product) => product.productName).join('、')}</small>}
+          </div>
+          <em>{item.probability == null ? '-' : `${item.probability}%`}</em>
+        </div>
+      ))}
+    </div>
+  )
+}
+
+function CustomerAiSummaryPanel({ data, summary, canUseAi, summarizing, onSummarize }) {
+  return (
+    <Card ai className="customer-ai-detail-card">
+      <div className="ai-card-title">
+        <span><Sparkles size={19} /></span>
+        <div>
+          <h2>AI 客户深度总结</h2>
+          <small>基于客户资料、商机和跟进记录生成</small>
+        </div>
+      </div>
+      {summary?.summary || data.aiSummary ? (
+        <MarkdownText value={summary?.summary || data.aiSummary} />
+      ) : (
+        <div className="customer-empty-feature">
+          <span><Sparkles size={22} /></span>
+          <b>暂无客户深度总结</b>
+          <p>点击生成后，会调用客户深度总结接口；未配置智能体时返回真实数据基础总结。</p>
+        </div>
+      )}
+      {summary?.keyFindings?.length > 0 && (
+        <div className="customer-ai-list">
+          <b>关键事实</b>
+          <ul>{summary.keyFindings.map((item, index) => <li key={index}>{item}</li>)}</ul>
+        </div>
+      )}
+      {summary?.risks?.length > 0 && (
+        <div className="customer-ai-list warning">
+          <b>风险提醒</b>
+          <ul>{summary.risks.map((item, index) => <li key={index}>{item}</li>)}</ul>
+        </div>
+      )}
+      {summary?.nextActions?.length > 0 && (
+        <div className="customer-ai-list active">
+          <b>下一步动作</b>
+          <ul>{summary.nextActions.map((item, index) => <li key={index}>{item}</li>)}</ul>
+        </div>
+      )}
+      <div className="customer-detail-actions">
+        {canUseAi && (
+          <Button icon={Sparkles} onClick={onSummarize} disabled={summarizing}>
+            {summarizing ? '总结中' : '生成深度总结'}
+          </Button>
+        )}
+      </div>
+    </Card>
+  )
+}
+
 function InfoRow({ label, value }) {
   return (
     <div>
@@ -472,6 +760,65 @@ function EmptyFeature({ icon: Icon, title, description }) {
       <b>{title}</b>
       <p>{description}</p>
     </div>
+  )
+}
+
+function OpportunityFormModal({ open, form, productOptions, onChange, onClose, onSave }) {
+  if (!open || !form) return null
+  const update = (patch) => onChange({ ...form, ...patch })
+  return (
+    <Modal
+      open={open}
+      size="xl"
+      title="新建客户商机"
+      onClose={onClose}
+      footer={(
+        <>
+          <Button variant="secondary" onClick={onClose}>取消</Button>
+          <Button onClick={() => onSave(form)}>保存商机</Button>
+        </>
+      )}
+    >
+      <div className="customer-form-grid">
+        <Field label="商机名称" required>
+          <input value={form.name || ''} onChange={(event) => update({ name: event.target.value })} />
+        </Field>
+        <Field label="阶段">
+          <select value={form.stage || 'DISCOVERY'} onChange={(event) => update({ stage: event.target.value })}>
+            {Object.entries(opportunityStageText).map(([value, label]) => <option value={value} key={value}>{label}</option>)}
+          </select>
+        </Field>
+        <Field label="商机金额">
+          <input value={form.amount || ''} onChange={(event) => update({ amount: event.target.value })} />
+        </Field>
+        <Field label="赢率">
+          <input
+            type="number"
+            min="0"
+            max="100"
+            value={form.probability || ''}
+            onChange={(event) => update({ probability: event.target.value })}
+          />
+        </Field>
+        <Field label="预计成交日期">
+          <input
+            type="date"
+            value={form.expectedCloseDate || ''}
+            onChange={(event) => update({ expectedCloseDate: event.target.value })}
+          />
+        </Field>
+        <Field label="产品明细" className="wide-field">
+          <OpportunityProductEditor
+            products={normalizeOpportunityProducts(form.products || [])}
+            productOptions={productOptions || []}
+            onChange={(products) => update({ products })}
+          />
+        </Field>
+        <Field label="备注">
+          <textarea rows="4" value={form.remark || ''} onChange={(event) => update({ remark: event.target.value })} />
+        </Field>
+      </div>
+    </Modal>
   )
 }
 

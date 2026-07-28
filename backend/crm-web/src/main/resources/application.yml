@@ -4,6 +4,10 @@ server:
 spring:
   application:
     name: crm
+  servlet:
+    multipart:
+      max-file-size: ${CRM_UPLOAD_MAX_FILE_SIZE:10MB}
+      max-request-size: ${CRM_UPLOAD_MAX_REQUEST_SIZE:12MB}
   datasource:
     url: ${CRM_DB_URL:jdbc:postgresql://localhost:5432/crm}
     username: ${CRM_DB_USERNAME:app_user}
@@ -66,18 +70,59 @@ crm:
     namespace: ${CRM_NACOS_NAMESPACE:}
     group: ${CRM_NACOS_GROUP:DEFAULT_GROUP}
   storage:
+    upload-dir: ${CRM_STORAGE_UPLOAD_DIR:./uploads}
+    public-path: ${CRM_STORAGE_PUBLIC_PATH:/uploads}
     minio:
       enabled: ${CRM_MINIO_ENABLED:false}
       endpoint: ${CRM_MINIO_ENDPOINT:http://localhost:9000}
+      public-url: ${CRM_MINIO_PUBLIC_URL:}
       access-key: ${CRM_MINIO_ACCESS_KEY:}
       secret-key: ${CRM_MINIO_SECRET_KEY:}
       bucket: ${CRM_MINIO_BUCKET:crm}
+      public-read: ${CRM_MINIO_PUBLIC_READ:true}
   search:
     elasticsearch:
-      enabled: ${CRM_ES_ENABLED:false}
-      uris: ${CRM_ES_URIS:http://localhost:9200}
+      enabled: ${CRM_ES_ENABLED:true}
+      uris: ${CRM_ES_URIS:http://192.168.50.105:9200}
       username: ${CRM_ES_USERNAME:}
       password: ${CRM_ES_PASSWORD:}
+  knowledge:
+    search:
+      hybrid:
+        vector-candidates: ${CRM_KB_SEARCH_VECTOR_CANDIDATES:20}
+        keyword-candidates: ${CRM_KB_SEARCH_KEYWORD_CANDIDATES:20}
+        database-candidates: ${CRM_KB_SEARCH_DATABASE_CANDIDATES:20}
+        vector-weight: ${CRM_KB_SEARCH_VECTOR_WEIGHT:0.55}
+        keyword-weight: ${CRM_KB_SEARCH_KEYWORD_WEIGHT:0.35}
+        database-weight: ${CRM_KB_SEARCH_DATABASE_WEIGHT:0.10}
+        rrf-k: ${CRM_KB_SEARCH_RRF_K:60}
+        min-score: ${CRM_KB_SEARCH_MIN_SCORE:0}
+        database-fallback-only: ${CRM_KB_SEARCH_DATABASE_FALLBACK_ONLY:true}
+    ingest:
+      executor:
+        core-size: ${CRM_KB_INGEST_CORE_SIZE:2}
+        max-size: ${CRM_KB_INGEST_MAX_SIZE:4}
+        queue-capacity: ${CRM_KB_INGEST_QUEUE_CAPACITY:100}
+    chunk:
+      max-chars: ${CRM_KB_CHUNK_MAX_CHARS:900}
+      overlap-chars: ${CRM_KB_CHUNK_OVERLAP_CHARS:120}
+    embedding:
+      enabled: ${CRM_KB_EMBEDDING_ENABLED:true}
+      base-url: ${CRM_KB_EMBEDDING_BASE_URL:http://localhost:11434/v1}
+      api-key: ${CRM_KB_EMBEDDING_API_KEY:}
+      model: ${CRM_KB_EMBEDDING_MODEL:bge-m3:latest}
+      dimensions: ${CRM_KB_EMBEDDING_DIMENSIONS:0}
+      timeout-ms: ${CRM_KB_EMBEDDING_TIMEOUT_MS:30000}
+    elasticsearch:
+      index-name: ${CRM_KB_ES_INDEX:crm_knowledge_chunk}
+      timeout-ms: ${CRM_KB_ES_TIMEOUT_MS:10000}
+    milvus:
+      enabled: ${CRM_KB_MILVUS_ENABLED:true}
+      endpoint: ${CRM_KB_MILVUS_ENDPOINT:http://192.168.50.105:19530}
+      token: ${CRM_KB_MILVUS_TOKEN:}
+      database: ${CRM_KB_MILVUS_DATABASE:}
+      collection: ${CRM_KB_MILVUS_COLLECTION:crm_knowledge_chunk}
+      timeout-ms: ${CRM_KB_MILVUS_TIMEOUT_MS:10000}
   agent:
     workspace: ${CRM_AGENT_WORKSPACE:./data/agent-runtime}
     web-search:

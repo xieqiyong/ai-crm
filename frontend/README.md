@@ -32,8 +32,15 @@ VITE_DEV_PROXY_TARGET=http://localhost:8080
 window.__CRM_CONFIG__ = {
   API_BASE_URL: '',
   API_TIMEOUT: 30000,
+  ASSISTANT_TYPEWRITER_INTERVAL: 12,
+  ASSISTANT_TYPEWRITER_STEP: 4,
   APP_ENV: '',
 }
 ```
 
 `API_BASE_URL` 为空时使用同源 `/api`，部署后可直接改 `dist/config.js`，不需要重新打包。
+
+AI 助手打字机速度由 `ASSISTANT_TYPEWRITER_INTERVAL` 和 `ASSISTANT_TYPEWRITER_STEP` 控制：
+
+- `ASSISTANT_TYPEWRITER_INTERVAL`：每次输出间隔，单位毫秒，越小越快。
+- `ASSISTANT_TYPEWRITER_STEP`：每次输出字符数，越大越快。

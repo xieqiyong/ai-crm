@@ -1,9 +1,17 @@
 package com.hz.crm.agent.web.service;
 
 import com.baomidou.mybatisplus.core.conditions.query.QueryWrapper;
+import com.hz.crm.agent.runtime.core.AgentRuntimeRequest;
+import com.hz.crm.agent.runtime.domain.AgentEntity;
+import com.hz.crm.agent.runtime.dto.AgentRuntimeEvent;
+import com.hz.crm.agent.runtime.service.AgentDefinitionService;
+import com.hz.crm.agent.runtime.service.AgentRuntimeFacade;
 import com.hz.crm.agent.web.dto.MarketingAssistantActionResponse;
 import com.hz.crm.agent.web.dto.MarketingAssistantChatRequest;
 import com.hz.crm.agent.web.dto.MarketingAssistantChatResponse;
+import com.hz.crm.auth.security.CurrentUserContext;
+import com.hz.crm.auth.security.JwtPrincipal;
+import com.hz.crm.common.json.Jsons;
 import com.hz.crm.domain.channel.ChannelRecordEntity;
 import com.hz.crm.domain.channel.ChannelStatus;
 import com.hz.crm.domain.channel.MarketingFormEntity;
@@ -19,17 +27,26 @@ import com.hz.crm.domain.lead.mapper.LeadMapper;
 import com.hz.crm.domain.opportunity.OpportunityEntity;
 import com.hz.crm.domain.opportunity.OpportunityStage;
 import com.hz.crm.domain.opportunity.mapper.OpportunityMapper;
+import java.io.IOException;
 import java.math.BigDecimal;
+import java.time.Duration;
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.CompletableFuture;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.security.core.context.SecurityContext;
+import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.stereotype.Service;
 import org.springframework.util.StringUtils;
+import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
 
 @Service
 public class MarketingAssistantChatService {
+
+    private static final String GENERAL_ASSISTANT_SCENE = "GENERAL_ASSISTANT";
 
     @Autowired
     private LeadMapper leadMapper;
@@ -46,15 +63,294 @@ public class MarketingAssistantChatService {
     @Autowired
     private MarketingFormMapper marketingFormMapper;
 
+    @Autowired
+    private AgentDefinitionService agentDefinitionService;
+
+    @Autowired
+    private AgentRuntimeFacade agentRuntimeFacade;
+
     public MarketingAssistantChatResponse chat(
             Long tenantId, Long userId, String dataScope, MarketingAssistantChatRequest request) {
         MarketingAssistantChatRequest safeRequest = request == null ? new MarketingAssistantChatRequest() : request;
         String scenario = resolveScenario(safeRequest);
+        MarketingAssistantChatResponse fallback = ruleAssistant(tenantId, userId, dataScope, safeRequest, scenario);
+        AgentEntity agent = resolveAgent(tenantId, fallback);
+        if (agent == null && fallback.getMessage() != null) {
+            return fallback;
+        }
+        if (!canRunAgent(agent)) {
+            fallback.setAvailable(false);
+            fallback.setSuccess(true);
+            fallback.setMessage("未配置通用营销助手智能体，已返回真实数据规则建议");
+            return fallback;
+        }
+        AgentRuntimeRequest runtimeRequest = null;
+        try {
+            runtimeRequest = buildRuntimeRequest(tenantId, userId, dataScope, safeRequest, scenario, fallback, agent);
+            List<AgentRuntimeEvent> events = agentRuntimeFacade
+                    .run(runtimeRequest)
+                    .collectList()
+                    .block(Duration.ofSeconds(90));
+            return buildAiResponse(scenario, fallback, runtimeRequest, events);
+        } catch (RuntimeException ex) {
+            fallback.setAvailable(true);
+            fallback.setSuccess(false);
+            fallback.setMessage("AI营销助手调用失败，已返回真实数据规则建议：" + ex.getMessage());
+            if (runtimeRequest != null) {
+                fallback.setRunId(runtimeRequest.getRunId());
+                fallback.setConversationId(runtimeRequest.getConversationId());
+            }
+            return fallback;
+        }
+    }
+
+    public SseEmitter chatStream(
+            Long tenantId, Long userId, String dataScope, MarketingAssistantChatRequest request) {
+        SseEmitter emitter = new SseEmitter(Long.valueOf(120000L));
+        SecurityContext securityContext = SecurityContextHolder.getContext();
+        JwtPrincipal principal = CurrentUserContext.getPrincipal();
+        String token = CurrentUserContext.getToken();
+        CompletableFuture.runAsync(new Runnable() {
+            @Override
+            public void run() {
+                SecurityContextHolder.setContext(securityContext);
+                if (principal != null) {
+                    CurrentUserContext.setPrincipal(principal);
+                }
+                if (StringUtils.hasText(token)) {
+                    CurrentUserContext.setToken(token);
+                }
+                try {
+                    doChatStream(tenantId, userId, dataScope, request, emitter);
+                } finally {
+                    CurrentUserContext.clear();
+                    SecurityContextHolder.clearContext();
+                }
+            }
+        });
+        return emitter;
+    }
+
+    private void doChatStream(
+            Long tenantId,
+            Long userId,
+            String dataScope,
+            MarketingAssistantChatRequest request,
+            SseEmitter emitter) {
+        AgentRuntimeRequest runtimeRequest = null;
+        MarketingAssistantChatRequest safeRequest = request == null ? new MarketingAssistantChatRequest() : request;
+        String scenario = resolveScenario(safeRequest);
+        MarketingAssistantChatResponse fallback = null;
+        try {
+            sendThought(emitter, "已读取当前业务数据");
+            fallback = ruleAssistant(tenantId, userId, dataScope, safeRequest, scenario);
+            AgentEntity agent = resolveAgent(tenantId, fallback);
+            if (agent == null && fallback.getMessage() != null) {
+                sendDone(emitter, fallback);
+                emitter.complete();
+                return;
+            }
+            if (!canRunAgent(agent)) {
+                fallback.setAvailable(false);
+                fallback.setSuccess(true);
+                fallback.setMessage("未配置通用营销助手智能体，已返回真实数据规则建议");
+                sendThought(emitter, "未找到可用智能体配置，返回规则建议");
+                sendDone(emitter, fallback);
+                emitter.complete();
+                return;
+            }
+            sendThought(emitter, "已准备营销助手回答策略");
+            runtimeRequest = buildRuntimeRequest(tenantId, userId, dataScope, safeRequest, scenario, fallback, agent);
+            String output = cleanAssistantOutput(collectRuntimeStream(emitter, runtimeRequest));
+            MarketingAssistantChatResponse response = baseResponse(scenario, fallback.getTitle());
+            copyAssistantState(response, fallback);
+            response.setAvailable(true);
+            response.setRunId(runtimeRequest.getRunId());
+            response.setConversationId(runtimeRequest.getConversationId());
+            if (!StringUtils.hasText(output)) {
+                response.setSuccess(false);
+                response.setMessage("AI营销助手未返回内容，已返回真实数据规则建议");
+                response.setReply(fallback.getReply());
+            } else {
+                response.setSuccess(true);
+                response.setMessage("AI营销助手回复完成");
+                response.setReply(output.trim());
+            }
+                sendThought(emitter, "已生成销售可执行建议");
+            sendDone(emitter, response);
+            emitter.complete();
+        } catch (RuntimeException ex) {
+            MarketingAssistantChatResponse response = fallback == null
+                    ? baseResponse(scenario, "请求失败")
+                    : fallback;
+            response.setAvailable(runtimeRequest != null);
+            response.setSuccess(false);
+            response.setMessage("AI营销助手调用失败，已返回真实数据规则建议：" + ex.getMessage());
+            if (runtimeRequest != null) {
+                response.setRunId(runtimeRequest.getRunId());
+                response.setConversationId(runtimeRequest.getConversationId());
+            }
+            try {
+                sendThought(emitter, "AI回复失败，已返回规则建议");
+                sendDone(emitter, response);
+                emitter.complete();
+            } catch (RuntimeException sendEx) {
+                emitter.completeWithError(sendEx);
+            }
+        }
+    }
+
+    private String collectRuntimeStream(SseEmitter emitter, AgentRuntimeRequest runtimeRequest) {
+        final StringBuilder streamContent = new StringBuilder();
+        final String[] finalContent = new String[1];
+        agentRuntimeFacade
+                .run(runtimeRequest)
+                .doOnNext(event -> handleRuntimeEvent(emitter, event, streamContent, finalContent))
+                .blockLast(Duration.ofSeconds(90));
+        if (StringUtils.hasText(finalContent[0])) {
+            return finalContent[0];
+        }
+        return streamContent.toString();
+    }
+
+    private void handleRuntimeEvent(
+            SseEmitter emitter,
+            AgentRuntimeEvent event,
+            StringBuilder streamContent,
+            String[] finalContent) {
+        if (event == null) {
+            return;
+        }
+        String type = event.getType() == null ? "" : event.getType().toUpperCase();
+        if (type.contains("TOOL_CALL")) {
+            sendThought(emitter, resolveToolThought(event));
+            return;
+        }
+        if (type.contains("TOOL_RESULT")) {
+            if (type.contains("END")) {
+                sendThought(emitter, "已完成资料摘要");
+            }
+            return;
+        }
+        String content = event.getContent();
+        if (!StringUtils.hasText(content)) {
+            return;
+        }
+        if (type.contains("RESULT") || type.contains("FINAL")) {
+            finalContent[0] = content;
+            return;
+        }
+        streamContent.append(content);
+    }
+
+    private String cleanAssistantOutput(String output) {
+        if (!StringUtils.hasText(output)) {
+            return "";
+        }
+        String text = output.trim();
+        if (looksLikeRawKnowledgeResult(text)) {
+            return "";
+        }
+        text = removeAssistantProcessText(text);
+        return normalizeAssistantMarkdown(text);
+    }
+
+    private boolean looksLikeRawKnowledgeResult(String text) {
+        String value = text == null ? "" : text.toLowerCase();
+        return (value.contains("\"references\"") && value.contains("\"retrieval\""))
+                || (value.contains("\"hitcount\"") && value.contains("\"query\""));
+    }
+
+    private String removeAssistantProcessText(String text) {
+        if (!StringUtils.hasText(text)) {
+            return "";
+        }
+        String value = text.trim();
+        value = value.replaceFirst(
+                "^(好的|好|收到|可以)[，,。\\s]*(我)?(先|再)?(查一下|查询一下|检索一下|看一下)[^。！？!?\n]*[。！？!?\\s]*",
+                "");
+        value = value.replaceFirst(
+                "^(我)?(先|再)?(查一下|查询一下|检索一下|看一下)(知识库)?[^。！？!?\n]*[。！？!?\\s]*",
+                "");
+        value = value.replaceFirst(
+                "^(让我)?(先|再)?(查一份|查一下|检索一下|看一下)更详细的?资料[^。！？!?\n]*[。！？!?\\s]*",
+                "");
+        value = value.replaceFirst(
+                "^(好的|好)[，,。\\s]*以下是(知识库中)?关于[^\\n]{0,60}(完整介绍|详细介绍|资料)[：:\\s-]*",
+                "");
+        return value.trim();
+    }
+
+    private String normalizeAssistantMarkdown(String text) {
+        if (!StringUtils.hasText(text)) {
+            return "";
+        }
+        String value = text.trim();
+        value = value.replaceAll("([^\\n])\\s+---\\s*", "$1\n\n---\n\n");
+        value = value.replaceAll("([^\\n|])(\\|[^\\n|]+\\|[^\\n|]+\\|)", "$1\n\n$2");
+        value = value.replaceAll("(\\|[^\\n|]*\\|[^\\n|]*\\|)\\s+(?=\\|[^\\n|]*\\|[^\\n|]*\\|)", "$1\n");
+        value = value.replaceAll("\\n{3,}", "\n\n");
+        return value.trim();
+    }
+
+    private String resolveToolThought(AgentRuntimeEvent event) {
+        String toolName = event == null ? "" : text(event.getToolName());
+        if ("knowledge_search".equals(toolName)) {
+            return "正在检索公司知识库";
+        }
+        if ("customer_web_search".equals(toolName)) {
+            return "正在检索客户公开信息";
+        }
+        return "";
+    }
+
+    private void sendThought(SseEmitter emitter, String content) {
+        if (!StringUtils.hasText(content)) {
+            return;
+        }
+        Map<String, Object> payload = new LinkedHashMap<String, Object>();
+        payload.put("type", "thought");
+        payload.put("content", content);
+        sendSse(emitter, "thought", payload);
+    }
+
+    private void sendDone(SseEmitter emitter, MarketingAssistantChatResponse response) {
+        Map<String, Object> payload = new LinkedHashMap<String, Object>();
+        payload.put("type", "done");
+        payload.put("response", response);
+        sendSse(emitter, "done", payload);
+    }
+
+    private void sendSse(SseEmitter emitter, String eventName, Map<String, Object> payload) {
+        try {
+            emitter.send(SseEmitter.event().name(eventName).data(Jsons.toJson(payload)));
+        } catch (IOException ex) {
+            throw new IllegalStateException("助手消息推送失败", ex);
+        }
+    }
+
+    private AgentEntity resolveAgent(Long tenantId, MarketingAssistantChatResponse fallback) {
+        try {
+            return agentDefinitionService.findEnabledByScene(tenantId, GENERAL_ASSISTANT_SCENE);
+        } catch (RuntimeException ex) {
+            fallback.setAvailable(false);
+            fallback.setSuccess(false);
+            fallback.setMessage("通用营销助手智能体配置异常，已返回真实数据规则建议：" + ex.getMessage());
+            return null;
+        }
+    }
+
+    private MarketingAssistantChatResponse ruleAssistant(
+            Long tenantId,
+            Long userId,
+            String dataScope,
+            MarketingAssistantChatRequest request,
+            String scenario) {
         if ("LEAD".equals(scenario)) {
-            return leadAssistant(tenantId, userId, dataScope, safeRequest);
+            return leadAssistant(tenantId, userId, dataScope, request);
         }
         if ("CHANNEL".equals(scenario)) {
-            return channelAssistant(tenantId, userId, dataScope, safeRequest);
+            return channelAssistant(tenantId, userId, dataScope, request);
         }
         if ("CUSTOMER".equals(scenario)) {
             return customerAssistant(tenantId, userId, dataScope);
@@ -63,6 +359,164 @@ public class MarketingAssistantChatService {
             return opportunityAssistant(tenantId, userId, dataScope);
         }
         return dashboardAssistant(tenantId, userId, dataScope);
+    }
+
+    private boolean canRunAgent(AgentEntity agent) {
+        return agent != null && StringUtils.hasText(agent.getApiKey());
+    }
+
+    private AgentRuntimeRequest buildRuntimeRequest(
+            Long tenantId,
+            Long userId,
+            String dataScope,
+            MarketingAssistantChatRequest request,
+            String scenario,
+            MarketingAssistantChatResponse fallback,
+            AgentEntity agent) {
+        AgentRuntimeRequest runtimeRequest = new AgentRuntimeRequest();
+        runtimeRequest.setTenantId(tenantId);
+        runtimeRequest.setUserId(userId);
+        runtimeRequest.setAgent(agent);
+        runtimeRequest.setSessionId("marketing-assistant-" + userId);
+        runtimeRequest.setSceneCode(GENERAL_ASSISTANT_SCENE);
+        runtimeRequest.setBusinessType(resolveRuntimeBusinessType(request, scenario));
+        runtimeRequest.setBusinessId(request.getBusinessId());
+        runtimeRequest.setInjectedPrompt(buildMarketingAssistantPrompt());
+        runtimeRequest.setMessage(buildMarketingAssistantMessage(request, scenario, dataScope, fallback));
+        runtimeRequest.setContext(buildRuntimeContext(request, scenario, dataScope, fallback));
+        return runtimeRequest;
+    }
+
+    private MarketingAssistantChatResponse buildAiResponse(
+            String scenario,
+            MarketingAssistantChatResponse fallback,
+            AgentRuntimeRequest runtimeRequest,
+            List<AgentRuntimeEvent> events) {
+        MarketingAssistantChatResponse response = baseResponse(scenario, fallback.getTitle());
+        copyAssistantState(response, fallback);
+        response.setAvailable(true);
+        response.setRunId(runtimeRequest.getRunId());
+        response.setConversationId(runtimeRequest.getConversationId());
+        String output = cleanAssistantOutput(resolveOutput(events));
+        if (!StringUtils.hasText(output)) {
+            response.setSuccess(false);
+            response.setMessage("AI营销助手未返回内容，已返回真实数据规则建议");
+            response.setReply(fallback.getReply());
+            return response;
+        }
+        response.setSuccess(true);
+        response.setMessage("AI营销助手回复完成");
+        response.setReply(output.trim());
+        return response;
+    }
+
+    private void copyAssistantState(MarketingAssistantChatResponse target, MarketingAssistantChatResponse source) {
+        target.setReply(source.getReply());
+        target.getSuggestions().addAll(source.getSuggestions());
+        target.getQuickActions().addAll(source.getQuickActions());
+        target.getMetrics().putAll(source.getMetrics());
+    }
+
+    private String buildMarketingAssistantPrompt() {
+        StringBuilder builder = new StringBuilder();
+        builder.append("你是智能营销管理系统里的AI营销客服助手。");
+        builder.append("你只能基于本次传入的真实业务摘要、对话历史和工具返回结果回答。");
+        builder.append("禁止编造不存在的客户、线索、渠道、商机、产品能力、价格、案例或联系方式。");
+        builder.append("当用户询问产品定位、解决方案、客户案例、FAQ、销售话术、投放文案时，");
+        builder.append("必须先调用knowledge_search检索公司知识库。");
+        builder.append("如果knowledge_search没有命中，必须明确说明知识库暂无资料，并给出需要补充的资料清单。");
+        builder.append("知识库返回内容只能作为摘要参考，禁止把检索JSON、字段名和来源明细原样输出。");
+        builder.append("不要向用户展示AgentRuntime、function call、tool、节点、Python、Java等底层实现字样。");
+        builder.append("最终回复不要描述查询过程，不要输出“我查一下”“让我再查一份资料”等过程话。");
+        builder.append("Markdown必须规范：标题使用###，段落之间留空行，列表每项独占一行。");
+        builder.append("表格每一行必须完整写在同一行，内容太长时不要用表格，改用要点列表。");
+        builder.append("生成营销话术、跟进场景、销售动作时禁止使用Markdown表格，必须使用“### 场景标题 + 适用场景 + 话术”格式。");
+        builder.append("话术正文必须放在引用块或普通段落中，不要拆成场景、适用、话术三列表格。");
+        builder.append("可以根据内容选择结论卡片、要点列表、对比表、行动清单等展示样式。");
+        builder.append("不要把一个词、一句话拆成多行输出。");
+        builder.append("用中文Markdown输出，语气像客服助手，先给结论，再给依据和下一步动作。");
+        builder.append("回答尽量短，重点要能让销售直接执行。");
+        return builder.toString();
+    }
+
+    private String buildMarketingAssistantMessage(
+            MarketingAssistantChatRequest request,
+            String scenario,
+            String dataScope,
+            MarketingAssistantChatResponse fallback) {
+        Map<String, Object> data = new LinkedHashMap<String, Object>();
+        data.put("用户问题", text(request.getMessage()));
+        data.put("当前场景", scenario);
+        data.put("当前页面", text(request.getRouteKey()));
+        data.put("数据权限", text(dataScope));
+        data.put("业务类型", text(request.getBusinessType()));
+        data.put("业务编号", text(request.getBusinessId()));
+        data.put("真实指标", fallback.getMetrics());
+        data.put("真实业务摘要", fallback.getReply());
+        data.put("最近对话", resolveHistory(request));
+        StringBuilder builder = new StringBuilder();
+        builder.append("请像客服助手一样回答用户问题，必要时结合公司知识库。");
+        builder.append("\n如果问题只涉及当前CRM数据，直接基于真实业务摘要回答。");
+        builder.append("\n如果问题涉及产品、方案、案例、FAQ或话术，先调用knowledge_search。");
+        builder.append("\n输入数据：").append(Jsons.toJson(data));
+        return builder.toString();
+    }
+
+    private Map<String, Object> buildRuntimeContext(
+            MarketingAssistantChatRequest request,
+            String scenario,
+            String dataScope,
+            MarketingAssistantChatResponse fallback) {
+        Map<String, Object> context = new HashMap<String, Object>();
+        context.put("scenario", scenario);
+        context.put("routeKey", request.getRouteKey());
+        context.put("businessType", request.getBusinessType());
+        context.put("businessId", request.getBusinessId());
+        context.put("dataScope", dataScope);
+        context.put("metrics", fallback.getMetrics());
+        return context;
+    }
+
+    private Object resolveHistory(MarketingAssistantChatRequest request) {
+        Map<String, Object> context = request.getContext();
+        if (context == null) {
+            return new ArrayList<Object>();
+        }
+        Object history = context.get("history");
+        return history == null ? new ArrayList<Object>() : history;
+    }
+
+    private String resolveRuntimeBusinessType(MarketingAssistantChatRequest request, String scenario) {
+        if (StringUtils.hasText(request.getBusinessType())) {
+            return request.getBusinessType().trim();
+        }
+        return scenario;
+    }
+
+    private String resolveOutput(List<AgentRuntimeEvent> events) {
+        if (events == null || events.isEmpty()) {
+            return "";
+        }
+        String finalContent = null;
+        StringBuilder streamContent = new StringBuilder();
+        for (AgentRuntimeEvent event : events) {
+            if (event == null || !StringUtils.hasText(event.getContent())) {
+                continue;
+            }
+            String type = event.getType() == null ? "" : event.getType().toLowerCase();
+            if (type.contains("tool_result")) {
+                continue;
+            }
+            if (type.contains("result") || type.contains("final")) {
+                finalContent = event.getContent();
+            } else {
+                streamContent.append(event.getContent());
+            }
+        }
+        if (StringUtils.hasText(finalContent)) {
+            return finalContent;
+        }
+        return streamContent.toString();
     }
 
     private MarketingAssistantChatResponse dashboardAssistant(Long tenantId, Long userId, String dataScope) {

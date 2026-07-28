@@ -12,4 +12,6 @@ public class OpportunityQuery extends PageQuery {
     private String keyword;
 
     private OpportunityStage stage;
+
+    private Long customerId;
 }

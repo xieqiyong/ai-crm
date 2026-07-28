@@ -27,6 +27,7 @@ import {
   useConfirmDialog,
 } from '../../components'
 import { customerOptionLabel, useCustomerOptions } from '../../hooks/useCustomerOptions'
+import { FollowupPanel } from '../followup/FollowupPanel'
 import { ownerName, ownerOptionLabel, useOwnerOptions } from '../../hooks/useOwnerOptions'
 import {
   customerLevelText,
@@ -225,6 +226,15 @@ function buildBusinessRuntimeSteps(events = []) {
       })),
     },
     {
+      title: '匹配公司知识库',
+      status: '完成',
+      matched: values.some((event) => matchRuntimeEvent(event, {
+        nodes: ['knowledge_search'],
+        nodeNames: ['知识库', '产品知识', '方案知识'],
+        tools: ['knowledge_search'],
+      })),
+    },
+    {
       title: '生成销售分析',
       status: '完成',
       matched: values.some((event) => matchRuntimeEvent(event, {
@@ -283,6 +293,8 @@ export function LeadPage({ can, notify, navigate }) {
   const canConvert = canManage && (can('crm:customer:manage') || can('crm:customer:edit'))
   const canBindCustomer = canConvert && can('crm:customer:view')
   const canAnalyze = can('crm:assistant:use') && (can('crm:lead:view') || canManage)
+  const canViewFollowup = can('crm:followup:view')
+  const canFollowup = can('crm:followup:manage') || can('crm:followup:create')
   const ownerOptions = useOwnerOptions(notify)
   const customerOptions = useCustomerOptions(notify, canBindCustomer)
   const { confirm, dialogProps } = useConfirmDialog()
@@ -519,29 +531,60 @@ export function LeadPage({ can, notify, navigate }) {
                     <td>{ownerName(row)}</td>
                     <td>{formatDateTime(row.updatedAt || row.createdAt)}</td>
                     <td>
-                      <div className="table-action-row" onClick={(event) => event.stopPropagation()}>
-                        {canManage && <button className="icon-button" onClick={() => setEditing(toForm(row))}><Edit2 size={17} /></button>}
+                      <div className="table-action-row text-actions" onClick={(event) => event.stopPropagation()}>
+                        <button
+                          type="button"
+                          className="table-text-button"
+                          onClick={() => openDetail(row)}
+                        >
+                          详情
+                        </button>
+                        {canManage && (
+                          <button
+                            type="button"
+                            className="table-text-button"
+                            onClick={() => setEditing(toForm(row))}
+                          >
+                            编辑
+                          </button>
+                        )}
                         {canAnalyze && (
                           <button
-                            className="icon-button"
-                            title="AI 分析"
+                            type="button"
+                            className="table-text-button"
                             disabled={String(analyzingId || '') === String(row.id)}
                             onClick={() => analyzeLead(row)}
                           >
-                            <Sparkles size={17} />
+                            {String(analyzingId || '') === String(row.id) ? '分析中' : 'AI分析'}
                           </button>
                         )}
                         {canConvert && row.status !== 'CONVERTED' && (
-                          <button className="icon-button" title="转为客户" onClick={() => setConverting(toConvertForm(row))}>
-                            <UserPlus size={17} />
+                          <button
+                            type="button"
+                            className="table-text-button primary"
+                            onClick={() => setConverting(toConvertForm(row))}
+                          >
+                            转客户
                           </button>
                         )}
                         {row.status === 'CONVERTED' && row.customerId && (
-                          <button className="icon-button" title="查看客户" onClick={() => navigate(`customers/detail/${encodeURIComponent(row.customerId)}`)}>
-                            <ArrowUpRight size={17} />
+                          <button
+                            type="button"
+                            className="table-text-button"
+                            onClick={() => navigate(`customers/detail/${encodeURIComponent(row.customerId)}`)}
+                          >
+                            查看客户
                           </button>
                         )}
-                        {canDelete && <button className="icon-button" onClick={() => deleteLead(row)}><Trash2 size={17} /></button>}
+                        {canDelete && (
+                          <button
+                            type="button"
+                            className="table-text-button danger"
+                            onClick={() => deleteLead(row)}
+                          >
+                            删除
+                          </button>
+                        )}
                       </div>
                     </td>
                   </tr>
@@ -581,7 +624,10 @@ export function LeadPage({ can, notify, navigate }) {
         canDelete={canDelete}
         canConvert={canConvert}
         canAnalyze={canAnalyze}
+        canFollowup={canFollowup}
+        canViewFollowup={canViewFollowup}
         analyzing={String(analyzingId || '') === String(selected?.id || '')}
+        notify={notify}
         onConvert={() => setConverting(toConvertForm(selected))}
         onAnalyze={() => analyzeLead(selected)}
         onOpenCustomer={() => navigate(`customers/detail/${encodeURIComponent(selected.customerId)}`)}
@@ -628,7 +674,10 @@ function LeadDetailDrawer({
   canDelete,
   canConvert,
   canAnalyze,
+  canFollowup,
+  canViewFollowup,
   analyzing,
+  notify,
   onConvert,
   onAnalyze,
   onOpenCustomer,
@@ -690,6 +739,15 @@ function LeadDetailDrawer({
             <p>暂无 AI 分析结果，可点击 AI 分析基于当前线索真实数据生成建议。</p>
           )}
         </div>
+        <FollowupPanel
+          targetType="LEAD"
+          targetId={data.id}
+          title="线索跟进"
+          canWrite={canFollowup}
+          canView={canViewFollowup}
+          notify={notify}
+          pageSize={5}
+        />
       </div>
     </Drawer>
   )

@@ -19,6 +19,9 @@ public class LeadAnalysisResultToolProvider implements AgentRuntimeToolProvider 
     @Autowired
     private CompanyWebSearchTool companyWebSearchTool;
 
+    @Autowired
+    private KnowledgeSearchTool knowledgeSearchTool;
+
     @Override
     public List<AgentTool> resolveTools(AgentRuntimeRequest request) {
         List<AgentTool> tools = new ArrayList<AgentTool>();
@@ -26,6 +29,7 @@ public class LeadAnalysisResultToolProvider implements AgentRuntimeToolProvider 
             return tools;
         }
         tools.add(companyWebSearchTool);
+        tools.add(knowledgeSearchTool.bind(request));
         tools.add(leadAnalysisResultTool);
         return tools;
     }

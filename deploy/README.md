@@ -267,6 +267,8 @@ docker-compose down
 - 目标服务器不需要联网拉镜像，镜像已包含在 `images/crm-images.tar`。
 - 目标服务器必须保留 `data`、`logs`、`uploads` 目录。
 - PostgreSQL 和 Redis 默认只在 Docker 网络内访问，不暴露到公网。
-- 前端通过 Nginx 代理 `/api` 到后端服务。
+- 富文本图片默认落本地 `uploads`，开启 MinIO 时设置 `CRM_MINIO_ENABLED=true`。
+- MinIO 默认通过前端 Nginx 的 `/minio` 路径提供图片访问。
+- 前端通过 Nginx 代理 `/api`、`/uploads`、`/minio` 到后端或 MinIO 服务。
 - 首次启动后，如果系统没有超级管理员，会进入初始化页面。
 - 生产环境必须修改 `.env` 里的密码和 `CRM_JWT_SECRET`。

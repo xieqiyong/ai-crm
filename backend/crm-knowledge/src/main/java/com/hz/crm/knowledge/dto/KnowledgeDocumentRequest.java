@@ -15,6 +15,12 @@ public class KnowledgeDocumentRequest {
 
     private String sourceType;
 
+    private String category;
+
+    private String tags;
+
+    private String sourceUrl;
+
     private String objectKey;
 
     private String content;

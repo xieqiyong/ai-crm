@@ -1,6 +1,6 @@
 import {
   BarChart3, BookOpen, Bot, BriefcaseBusiness, ClipboardCheck,
-  LayoutDashboard, MessageSquareText, Network, Settings, UserRoundCog, Users,
+  LayoutDashboard, MessageSquareText, Network, Package, Settings, UserRoundCog, Users,
 } from 'lucide-react'
 import { AgentConfigPage } from '../features/agent/AgentConfigPage'
 import { MarketingAssistantPage } from '../features/assistant/MarketingAssistantPage'
@@ -10,9 +10,12 @@ import { ChannelPage } from '../features/channel/ChannelPage'
 import { CustomerDetailPage } from '../features/customer/CustomerDetailPage'
 import { CustomerPage } from '../features/customer/CustomerPage'
 import { DashboardPage } from '../features/dashboard/DashboardPage'
+import { FollowupPage } from '../features/followup/FollowupPage'
+import { KnowledgePage } from '../features/knowledge/KnowledgePage'
 import { LeadPage } from '../features/lead/LeadPage'
 import { SimpleModulePage } from '../features/module/SimpleModulePage'
 import { OpportunityPage } from '../features/opportunity/OpportunityPage'
+import { ProductPage } from '../features/product/ProductPage'
 import { SettingsPage } from '../features/settings/SettingsPage'
 
 export const DEFAULT_ROUTE = 'dashboard'
@@ -50,6 +53,13 @@ export const routeGroups = [
         component: CustomerPage,
       },
       {
+        key: 'products',
+        label: '产品管理',
+        icon: Package,
+        permission: 'menu.products',
+        component: ProductPage,
+      },
+      {
         key: 'opportunities',
         label: '商机管理',
         icon: BriefcaseBusiness,
@@ -61,8 +71,7 @@ export const routeGroups = [
         label: '跟进记录',
         icon: MessageSquareText,
         permission: 'menu.followups',
-        component: SimpleModulePage,
-        pageType: 'followups',
+        component: FollowupPage,
       },
       {
         key: 'tasks',
@@ -96,8 +105,7 @@ export const routeGroups = [
         label: '知识库',
         icon: BookOpen,
         permission: 'menu.knowledge',
-        component: SimpleModulePage,
-        pageType: 'knowledge',
+        component: KnowledgePage,
       },
       {
         key: 'model-configs',

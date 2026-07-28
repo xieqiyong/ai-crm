@@ -1,7 +1,6 @@
 import { useEffect, useState } from 'react'
 import {
   ArrowUpRight,
-  Bot,
   CheckCircle2,
   CloudUpload,
   Copy,
@@ -27,6 +26,7 @@ const typeOptions = [
   { value: 'FORM', label: '获客表单' },
   { value: 'AUDIO', label: '录音导入' },
   { value: 'VIDEO', label: '视频导入' },
+  { value: 'DOCUMENT', label: '文档导入' },
 ]
 
 const sourceOptions = [
@@ -81,6 +81,7 @@ const typeText = {
   FORM: '获客表单',
   AUDIO: '录音导入',
   VIDEO: '视频导入',
+  DOCUMENT: '文档导入',
 }
 
 const emptyForm = {
@@ -96,7 +97,7 @@ const emptyForm = {
 
 const emptyImportForm = {
   title: '',
-  channelType: 'AUDIO',
+  channelType: 'DOCUMENT',
   source: 'PHONE',
   contactName: '',
   companyName: '',
@@ -113,11 +114,51 @@ const emptyMarketingForm = {
   status: 'PUBLISHED',
   autoCreateLead: true,
   fields: [
-    { fieldKey: 'name', label: '姓名', fieldType: 'TEXT', requiredField: false, placeholder: '请填写姓名', systemMapping: 'name', sortOrder: 0 },
-    { fieldKey: 'companyName', label: '公司名称', fieldType: 'TEXT', requiredField: true, placeholder: '请填写公司名称', systemMapping: 'companyName', sortOrder: 1 },
-    { fieldKey: 'phone', label: '手机号', fieldType: 'PHONE', requiredField: true, placeholder: '请填写手机号', systemMapping: 'phone', sortOrder: 2 },
-    { fieldKey: 'email', label: '邮箱', fieldType: 'EMAIL', requiredField: false, placeholder: '请填写邮箱', systemMapping: 'email', sortOrder: 3 },
-    { fieldKey: 'remark', label: '需求描述', fieldType: 'TEXTAREA', requiredField: false, placeholder: '请简单描述您的需求', systemMapping: 'remark', sortOrder: 4 },
+    {
+      fieldKey: 'name',
+      label: '姓名',
+      fieldType: 'TEXT',
+      requiredField: false,
+      placeholder: '请填写姓名',
+      systemMapping: 'name',
+      sortOrder: 0,
+    },
+    {
+      fieldKey: 'companyName',
+      label: '公司名称',
+      fieldType: 'TEXT',
+      requiredField: true,
+      placeholder: '请填写公司名称',
+      systemMapping: 'companyName',
+      sortOrder: 1,
+    },
+    {
+      fieldKey: 'phone',
+      label: '手机号',
+      fieldType: 'PHONE',
+      requiredField: true,
+      placeholder: '请填写手机号',
+      systemMapping: 'phone',
+      sortOrder: 2,
+    },
+    {
+      fieldKey: 'email',
+      label: '邮箱',
+      fieldType: 'EMAIL',
+      requiredField: false,
+      placeholder: '请填写邮箱',
+      systemMapping: 'email',
+      sortOrder: 3,
+    },
+    {
+      fieldKey: 'remark',
+      label: '需求描述',
+      fieldType: 'TEXTAREA',
+      requiredField: false,
+      placeholder: '请简单描述您的需求',
+      systemMapping: 'remark',
+      sortOrder: 4,
+    },
   ],
 }
 
@@ -143,6 +184,22 @@ function formatSize(size) {
   if (size < 1024) return `${size} B`
   if (size < 1024 * 1024) return `${(size / 1024).toFixed(1)} KB`
   return `${(size / 1024 / 1024).toFixed(1)} MB`
+}
+
+function resolveImportType(file) {
+  const type = file?.type || ''
+  const name = (file?.name || '').toLowerCase()
+  if (type.startsWith('video/') || /\.(mp4|mov|avi|mkv|webm)$/.test(name)) {
+    return 'VIDEO'
+  }
+  if (type.startsWith('audio/') || /\.(mp3|wav|m4a|aac|flac)$/.test(name)) {
+    return 'AUDIO'
+  }
+  return 'DOCUMENT'
+}
+
+function isDocumentImport(channelType) {
+  return channelType === 'DOCUMENT'
 }
 
 function compactPayload(query) {
@@ -353,7 +410,7 @@ export function ChannelPage({ can, notify }) {
       </Button>
       {canMedia && (
         <Button variant="secondary" icon={Upload} onClick={() => setImporting(true)}>
-          导入音视频
+          导入渠道材料
         </Button>
       )}
       {canManage && (
@@ -373,7 +430,9 @@ export function ChannelPage({ can, notify }) {
   const currentPage = page.pageNo || query.pageNo || 1
   const pageSize = page.pageSize || query.pageSize || 20
   const totalPages = Math.max(1, Math.ceil((page.total || 0) / pageSize))
-  const importedCount = records.filter((row) => row.channelType === 'AUDIO' || row.channelType === 'VIDEO').length
+  const importedCount = records.filter((row) => (
+    row.channelType === 'AUDIO' || row.channelType === 'VIDEO' || row.channelType === 'DOCUMENT'
+  )).length
   const promotedCount = records.filter((row) => row.leadId).length
 
   return (
@@ -381,13 +440,13 @@ export function ChannelPage({ can, notify }) {
       <PageHeader
         eyebrow="渠道管理"
         title="渠道管理"
-        description="沉淀市场、电话、活动和音视频渠道线索，确认有效后可直接晋升为线索"
+        description="沉淀市场、电话、活动、文档和音视频渠道线索，确认有效后可直接晋升为线索"
         actions={headerActions}
       />
 
       <div className="channel-overview">
         <ChannelStat icon={FileText} label="当前页渠道" value={records.length} />
-        <ChannelStat icon={CloudUpload} label="当前页音视频" value={importedCount} />
+        <ChannelStat icon={CloudUpload} label="当前页导入材料" value={importedCount} />
         <ChannelStat icon={CheckCircle2} label="当前页已晋升" value={promotedCount} />
       </div>
 
@@ -427,8 +486,6 @@ export function ChannelPage({ can, notify }) {
           onPromote={handlePromote}
           onDelete={deleteChannel}
         />
-
-        <ChannelReserveCard />
       </div>
 
       <ChannelEditModal
@@ -546,7 +603,7 @@ function ChannelTable({
               <th>渠道信息</th>
               <th>联系人</th>
               <th>类型</th>
-              <th>文件</th>
+              <th>材料</th>
               <th>状态</th>
               <th>负责人</th>
               <th>创建时间</th>
@@ -576,7 +633,7 @@ function ChannelTable({
           <div className="empty-table">
             <Search size={26} />
             <b>暂无渠道记录</b>
-            <span>新增渠道或导入录音/视频后，这里会展示真实数据。</span>
+            <span>新增渠道或导入渠道材料后，这里会展示真实数据。</span>
           </div>
         )}
         {loading && (
@@ -623,6 +680,7 @@ function ChannelTableRow({
   onDelete,
 }) {
   const promoted = Boolean(row.leadId)
+  const documentImported = row.channelType === 'DOCUMENT'
 
   return (
     <tr onClick={() => onSelect(row)}>
@@ -670,20 +728,24 @@ function ChannelTableRow({
               删除
             </button>
           )}
-          <button
-            className="text-action"
-            disabled={!canMedia || row.status === 'PROMOTED'}
-            onClick={() => onPrepareTranscription(row)}
-          >
-            转译
-          </button>
-          <button
-            className="text-action"
-            disabled={!canMedia || row.status === 'PROMOTED'}
-            onClick={() => onPrepareAnalysis(row)}
-          >
-            AI分析
-          </button>
+          {!documentImported && (
+            <button
+              className="text-action"
+              disabled={!canMedia || row.status === 'PROMOTED'}
+              onClick={() => onPrepareTranscription(row)}
+            >
+              转译
+            </button>
+          )}
+          {!documentImported && (
+            <button
+              className="text-action"
+              disabled={!canMedia || row.status === 'PROMOTED'}
+              onClick={() => onPrepareAnalysis(row)}
+            >
+              AI分析
+            </button>
+          )}
           <button
             className="text-action strong"
             disabled={!canPromote || promoted}
@@ -694,44 +756,6 @@ function ChannelTableRow({
         </div>
       </td>
     </tr>
-  )
-}
-
-function ChannelReserveCard() {
-  return (
-    <Card ai className="channel-sidebar">
-      <div className="ai-card-title">
-        <span><Bot size={18} /></span>
-        <div>
-          <h2>转译与AI分析预留</h2>
-          <small>当前只做状态流转，不生成伪造内容</small>
-        </div>
-      </div>
-
-      <div className="channel-stage-list">
-        <div className="channel-stage active">
-          <b>1. 导入渠道</b>
-          <span>录音、视频或手动渠道进入渠道池</span>
-        </div>
-        <div className="channel-stage">
-          <b>2. 转译中文</b>
-          <span>后续接入音视频转译服务后写入转译文本</span>
-        </div>
-        <div className="channel-stage">
-          <b>3. AI分析</b>
-          <span>后续接入大模型后提取需求、预算、联系人和关键风险</span>
-        </div>
-        <div className="channel-stage">
-          <b>4. 晋升线索</b>
-          <span>确认有效后创建真实线索记录并回写线索ID</span>
-        </div>
-      </div>
-
-      <div className="reserve-note">
-        <Sparkles size={16} />
-        <span>后续只需要在后端补齐文件存储、转译回调、AI分析服务，即可沿用当前渠道记录和权限体系。</span>
-      </div>
-    </Card>
   )
 }
 
@@ -777,9 +801,18 @@ function MarketingFormPanel({
                 {row.autoCreateLead && <Badge tone="success">自动转线索</Badge>}
               </div>
               <div className="marketing-form-actions">
-                <button className="text-action" onClick={() => onCopyLink(row)}><Copy size={13} />复制链接</button>
-                <button className="text-action" onClick={() => onCopySms(row)}><MessageSquareText size={13} />复制短信</button>
-                <a className="text-action" href={marketingFormUrl(row)} target="_blank" rel="noreferrer"><ExternalLink size={13} />打开</a>
+                <button className="text-action" onClick={() => onCopyLink(row)}>
+                  <Copy size={13} />
+                  复制链接
+                </button>
+                <button className="text-action" onClick={() => onCopySms(row)}>
+                  <MessageSquareText size={13} />
+                  复制短信
+                </button>
+                <a className="text-action" href={marketingFormUrl(row)} target="_blank" rel="noreferrer">
+                  <ExternalLink size={13} />
+                  打开
+                </a>
                 {canManage && <button className="text-action strong" onClick={() => onEdit(row)}>编辑</button>}
                 {canManage && <button className="text-action danger" onClick={() => onDelete(row)}>删除</button>}
               </div>
@@ -861,23 +894,38 @@ function MarketingFormModal({ open, data, onClose, notify, reload }) {
       <div className="marketing-form-editor">
         <div className="form-grid">
           <Field label="表单标题" required>
-            <input value={form.title || ''} onChange={(event) => setForm({ ...form, title: event.target.value })} placeholder="例如：产品演示预约" />
+            <input
+              value={form.title || ''}
+              onChange={(event) => setForm({ ...form, title: event.target.value })}
+              placeholder="例如：产品演示预约"
+            />
           </Field>
           <Field label="渠道来源">
             <SourceSelect value={form.source} onChange={(value) => setForm({ ...form, source: value })} />
           </Field>
           <Field label="发布状态">
-            <select value={form.status || 'PUBLISHED'} onChange={(event) => setForm({ ...form, status: event.target.value })}>
+            <select
+              value={form.status || 'PUBLISHED'}
+              onChange={(event) => setForm({ ...form, status: event.target.value })}
+            >
               <option value="PUBLISHED">发布</option>
               <option value="DRAFT">草稿</option>
               <option value="CLOSED">关闭</option>
             </select>
           </Field>
           <Field label="提交后提示语">
-            <input value={form.submitMessage || ''} onChange={(event) => setForm({ ...form, submitMessage: event.target.value })} />
+            <input
+              value={form.submitMessage || ''}
+              onChange={(event) => setForm({ ...form, submitMessage: event.target.value })}
+            />
           </Field>
           <Field label="表单说明">
-            <textarea rows="3" value={form.description || ''} onChange={(event) => setForm({ ...form, description: event.target.value })} placeholder="展示给外部客户看的说明文案" />
+            <textarea
+              rows="3"
+              value={form.description || ''}
+              onChange={(event) => setForm({ ...form, description: event.target.value })}
+              placeholder="展示给外部客户看的说明文案"
+            />
           </Field>
         </div>
 
@@ -900,15 +948,25 @@ function MarketingFormModal({ open, data, onClose, notify, reload }) {
           </div>
           {(form.fields || []).map((field, index) => (
             <div className="marketing-field-row" key={`${field.fieldKey}-${index}`}>
-              <input value={field.label || ''} onChange={(event) => updateField(index, { label: event.target.value })} placeholder="字段名称" />
-              <select value={field.fieldType || 'TEXT'} onChange={(event) => updateField(index, { fieldType: event.target.value })}>
+              <input
+                value={field.label || ''}
+                onChange={(event) => updateField(index, { label: event.target.value })}
+                placeholder="字段名称"
+              />
+              <select
+                value={field.fieldType || 'TEXT'}
+                onChange={(event) => updateField(index, { fieldType: event.target.value })}
+              >
                 <option value="TEXT">单行文本</option>
                 <option value="TEXTAREA">多行文本</option>
                 <option value="PHONE">手机号</option>
                 <option value="EMAIL">邮箱</option>
                 <option value="SELECT">下拉选择</option>
               </select>
-              <select value={field.systemMapping || 'custom'} onChange={(event) => updateField(index, { systemMapping: event.target.value })}>
+              <select
+                value={field.systemMapping || 'custom'}
+                onChange={(event) => updateField(index, { systemMapping: event.target.value })}
+              >
                 <option value="name">姓名</option>
                 <option value="companyName">公司名称</option>
                 <option value="phone">电话</option>
@@ -917,13 +975,27 @@ function MarketingFormModal({ open, data, onClose, notify, reload }) {
                 <option value="custom">自定义</option>
               </select>
               <label>
-                <input type="checkbox" checked={Boolean(field.requiredField)} onChange={(event) => updateField(index, { requiredField: event.target.checked })} />
+                <input
+                  type="checkbox"
+                  checked={Boolean(field.requiredField)}
+                  onChange={(event) => updateField(index, { requiredField: event.target.checked })}
+                />
                 必填
               </label>
               <button type="button" className="text-action danger" onClick={() => removeField(index)}>删除</button>
-              <input className="marketing-field-placeholder" value={field.placeholder || ''} onChange={(event) => updateField(index, { placeholder: event.target.value })} placeholder="占位提示" />
+              <input
+                className="marketing-field-placeholder"
+                value={field.placeholder || ''}
+                onChange={(event) => updateField(index, { placeholder: event.target.value })}
+                placeholder="占位提示"
+              />
               {field.fieldType === 'SELECT' && (
-                <input className="marketing-field-options" value={field.optionsText || ''} onChange={(event) => updateField(index, { optionsText: event.target.value })} placeholder="选项，用逗号或换行分隔" />
+                <input
+                  className="marketing-field-options"
+                  value={field.optionsText || ''}
+                  onChange={(event) => updateField(index, { optionsText: event.target.value })}
+                  placeholder="选项，用逗号或换行分隔"
+                />
               )}
             </div>
           ))}
@@ -1037,7 +1109,7 @@ function ChannelImportModal({ open, onClose, notify, reload }) {
     setForm({
       ...form,
       title: form.title || nextFile.name,
-      channelType: nextFile.type?.startsWith('video/') ? 'VIDEO' : 'AUDIO',
+      channelType: resolveImportType(nextFile),
     })
   }
 
@@ -1046,7 +1118,6 @@ function ChannelImportModal({ open, onClose, notify, reload }) {
     const formData = new FormData()
     formData.append('file', file)
     formData.append('title', form.title || file.name)
-    formData.append('channelType', form.channelType || 'AUDIO')
     formData.append('source', form.source || '')
     formData.append('contactName', form.contactName || '')
     formData.append('companyName', form.companyName || '')
@@ -1054,12 +1125,18 @@ function ChannelImportModal({ open, onClose, notify, reload }) {
     formData.append('email', form.email || '')
     formData.append('remark', form.remark || '')
     try {
-      await api.channel.importMedia(formData)
-      notify('音视频已导入渠道池', 'success')
+      if (isDocumentImport(form.channelType)) {
+        await api.channel.importDocument(formData)
+        notify('文档已导入，关键信息已提取', 'success')
+      } else {
+        formData.append('channelType', form.channelType || 'AUDIO')
+        await api.channel.importMedia(formData)
+        notify('音视频已导入渠道池', 'success')
+      }
       onClose()
       reload()
     } catch (err) {
-      notify(err.message || '音视频导入失败', 'info')
+      notify(err.message || '渠道材料导入失败', 'info')
     }
   }
 
@@ -1071,18 +1148,22 @@ function ChannelImportModal({ open, onClose, notify, reload }) {
   )
 
   return (
-    <Modal open={open} title="导入录音或视频" onClose={onClose} footer={footer}>
+    <Modal open={open} title="导入渠道材料" onClose={onClose} footer={footer}>
       <div className="form-grid">
         <Field
-          label="音视频文件"
+          label="渠道材料"
           required
-          hint="当前会上传到后端并登记文件元信息；转译和AI分析服务后续接入。"
+          hint="HTML、TXT、MD、DOCX 会提取关键信息；音视频暂登记文件并等待转译。"
         >
           <div className="upload-drop">
             <CloudUpload size={26} />
-            <span>{file ? file.name : '选择录音或视频文件'}</span>
-            <small>{file ? formatSize(file.size) : '支持 mp3、wav、m4a、mp4、mov 等常见格式'}</small>
-            <input type="file" accept="audio/*,video/*" onChange={selectFile} />
+            <span>{file ? file.name : '选择文档、HTML、录音或视频'}</span>
+            <small>{file ? formatSize(file.size) : '支持 html、txt、md、docx、mp3、wav、mp4、mov 等格式'}</small>
+            <input
+              type="file"
+              accept="audio/*,video/*,.html,.htm,.txt,.md,.markdown,.docx"
+              onChange={selectFile}
+            />
           </div>
         </Field>
         <Field label="渠道标题">
@@ -1090,6 +1171,7 @@ function ChannelImportModal({ open, onClose, notify, reload }) {
         </Field>
         <Field label="渠道类型">
           <select value={form.channelType} onChange={(event) => setForm({ ...form, channelType: event.target.value })}>
+            <option value="DOCUMENT">文档导入</option>
             <option value="AUDIO">录音导入</option>
             <option value="VIDEO">视频导入</option>
           </select>
@@ -1110,7 +1192,11 @@ function ChannelImportModal({ open, onClose, notify, reload }) {
           <input value={form.email} onChange={(event) => setForm({ ...form, email: event.target.value })} />
         </Field>
         <Field label="备注">
-          <textarea rows="4" value={form.remark} onChange={(event) => setForm({ ...form, remark: event.target.value })} />
+          <textarea
+            rows="4"
+            value={form.remark}
+            onChange={(event) => setForm({ ...form, remark: event.target.value })}
+          />
         </Field>
       </div>
     </Modal>
@@ -1131,25 +1217,30 @@ function ChannelDetailModal({
 }) {
   if (!data) return null
   const promoted = Boolean(data.leadId)
+  const documentImported = data.channelType === 'DOCUMENT'
   const footer = (
     <>
       <Button variant="secondary" onClick={onClose}>关闭</Button>
-      <Button
-        variant="secondary"
-        disabled={!canMedia || promoted}
-        icon={FileText}
-        onClick={() => onPrepareTranscription(data)}
-      >
-        转译中文
-      </Button>
-      <Button
-        variant="secondary"
-        disabled={!canMedia || promoted}
-        icon={Sparkles}
-        onClick={() => onPrepareAnalysis(data)}
-      >
-        AI分析
-      </Button>
+      {!documentImported && (
+        <Button
+          variant="secondary"
+          disabled={!canMedia || promoted}
+          icon={FileText}
+          onClick={() => onPrepareTranscription(data)}
+        >
+          转译中文
+        </Button>
+      )}
+      {!documentImported && (
+        <Button
+          variant="secondary"
+          disabled={!canMedia || promoted}
+          icon={Sparkles}
+          onClick={() => onPrepareAnalysis(data)}
+        >
+          AI分析
+        </Button>
+      )}
       <Button disabled={!canPromote || promoted} icon={ArrowUpRight} onClick={() => onPromote(data)}>
         晋升线索
       </Button>
@@ -1172,16 +1263,16 @@ function ChannelDetailModal({
         <DetailItem label="公司名称" value={data.companyName} />
         <DetailItem label="手机号" value={data.phone} />
         <DetailItem label="邮箱" value={data.email} />
-        <DetailItem label="音视频文件" value={data.mediaFileName} />
+        <DetailItem label="渠道材料" value={data.mediaFileName} />
         <DetailItem label="文件大小" value={formatSize(data.mediaSize)} />
         <DetailItem label="线索ID" value={data.leadId} />
         <DetailItem label="负责人" value={ownerName(data)} />
         <DetailItem label="创建时间" value={formatDateTime(data.createdAt)} />
       </div>
       <TextBlock label="备注" value={data.remark || '暂无备注'} />
-      <TextBlock label="转译文本" value={data.transcriptText || '暂无转译文本，等待接入转译服务。'} />
-      <TextBlock label="AI总结" value={data.aiSummary || '暂无AI总结，等待接入分析服务。'} />
-      <TextBlock label="有用信息" value={data.usefulInfo || '暂无有用信息，等待接入AI分析服务。'} />
+      <TextBlock label="提取文本" value={data.transcriptText || '暂无提取文本。'} />
+      <TextBlock label="结构化摘要" value={data.aiSummary || '暂无结构化摘要。'} />
+      <TextBlock label="有用信息" value={data.usefulInfo || '暂无有用信息。'} />
     </Modal>
   )
 }

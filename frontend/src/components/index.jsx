@@ -1,5 +1,6 @@
 export { BrandLogo } from './brand'
 export { MarkdownText } from './markdown'
+export { RichTextEditor, RichTextViewer } from './richText'
 export {
   Badge,
   Button,

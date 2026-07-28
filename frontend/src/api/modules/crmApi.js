@@ -42,9 +42,23 @@ export const customerApi = {
   delete: (id) => remove('/api/customer', id),
 }
 
+export const productApi = {
+  page: (payload) => page('/api/product', payload),
+  detail: (id) => detail('/api/product', id),
+  save: (payload) => save('/api/product', payload),
+  delete: (id) => remove('/api/product', id),
+}
+
 export const opportunityApi = {
   page: (payload) => page('/api/opportunity', payload),
   detail: (id) => detail('/api/opportunity', id),
   save: (payload) => save('/api/opportunity', payload),
   delete: (id) => remove('/api/opportunity', id),
+}
+
+export const followupApi = {
+  page: (payload) => page('/api/followup', payload),
+  detail: (id) => detail('/api/followup', id),
+  save: (payload) => save('/api/followup', payload),
+  delete: (id) => remove('/api/followup', id),
 }

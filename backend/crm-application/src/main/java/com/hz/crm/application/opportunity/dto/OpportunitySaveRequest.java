@@ -4,6 +4,7 @@ import com.hz.crm.domain.opportunity.OpportunityStage;
 import jakarta.validation.constraints.NotBlank;
 import java.math.BigDecimal;
 import java.time.LocalDate;
+import java.util.List;
 import lombok.Getter;
 import lombok.Setter;
 
@@ -29,4 +30,6 @@ public class OpportunitySaveRequest {
     private Long ownerId;
 
     private String remark;
+
+    private List<OpportunityProductSaveRequest> products;
 }

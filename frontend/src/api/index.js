@@ -3,7 +3,8 @@ import { installApi } from './modules/installApi'
 import { agentApi } from './modules/agentApi'
 import { adminApi, modelConfigApi } from './modules/adminApi'
 import { assistantApi } from './modules/assistantApi'
-import { customerApi, leadApi, opportunityApi } from './modules/crmApi'
+import { attachmentApi } from './modules/attachmentApi'
+import { customerApi, followupApi, leadApi, opportunityApi, productApi } from './modules/crmApi'
 import { channelApi } from './modules/channelApi'
 import { dashboardApi } from './modules/dashboardApi'
 import { knowledgeApi } from './modules/knowledgeApi'
@@ -17,9 +18,12 @@ export const api = {
   lead: leadApi,
   channel: channelApi,
   customer: customerApi,
+  product: productApi,
   opportunity: opportunityApi,
+  followup: followupApi,
   agent: agentApi,
   assistant: assistantApi,
+  attachment: attachmentApi,
   admin: adminApi,
   modelConfig: modelConfigApi,
   knowledge: knowledgeApi,
