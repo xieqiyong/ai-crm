@@ -47,6 +47,7 @@
         <kotlin-stdlib.version>1.8.21</kotlin-stdlib.version>
         <httpcore5.version>5.4</httpcore5.version>
         <redisson.version>3.52.0</redisson.version>
+        <poi.version>5.5.1</poi.version>
     </properties>
 
     <dependencyManagement>
@@ -120,6 +121,11 @@
                 <groupId>org.redisson</groupId>
                 <artifactId>redisson</artifactId>
                 <version>${redisson.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>org.apache.poi</groupId>
+                <artifactId>poi-ooxml</artifactId>
+                <version>${poi.version}</version>
             </dependency>
             <dependency>
                 <groupId>org.apache.httpcomponents.core5</groupId>

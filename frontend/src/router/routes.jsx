@@ -13,6 +13,7 @@ import { CustomerPage } from '../features/customer/CustomerPage'
 import { DashboardPage } from '../features/dashboard/DashboardPage'
 import { FollowupPage } from '../features/followup/FollowupPage'
 import { KnowledgePage } from '../features/knowledge/KnowledgePage'
+import { LeadDetailPage } from '../features/lead/LeadDetailPage'
 import { LeadPage } from '../features/lead/LeadPage'
 import { SimpleModulePage } from '../features/module/SimpleModulePage'
 import { OpportunityPage } from '../features/opportunity/OpportunityPage'
@@ -147,6 +148,13 @@ export const routeGroups = [
 
 export const hiddenRoutes = [
   {
+    key: 'leads/detail',
+    label: '线索详情',
+    permission: 'menu.leads',
+    component: LeadDetailPage,
+    navKey: 'leads',
+  },
+  {
     key: 'customers/detail',
     label: '客户详情',
     permission: 'menu.customers',
@@ -164,6 +172,9 @@ export const routeMap = routes.reduce((map, route) => {
 
 export function normalizeRouteKey(routeKey) {
   const key = String(routeKey || DEFAULT_ROUTE).split('?')[0]
+  if (key.startsWith('leads/detail/')) {
+    return 'leads/detail'
+  }
   if (key.startsWith('customers/detail/')) {
     return 'customers/detail'
   }
@@ -172,6 +183,9 @@ export function normalizeRouteKey(routeKey) {
 
 export function resolveRouteParams(routeKey) {
   const key = String(routeKey || '')
+  if (key.startsWith('leads/detail/')) {
+    return { id: decodeURIComponent(key.slice('leads/detail/'.length).split('?')[0]) }
+  }
   if (key.startsWith('customers/detail/')) {
     return { id: decodeURIComponent(key.slice('customers/detail/'.length).split('?')[0]) }
   }

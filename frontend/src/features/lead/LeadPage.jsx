@@ -1,16 +1,10 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import {
-  ArrowUpRight,
-  Building2,
-  CalendarDays,
-  Edit2,
-  Mail,
-  Phone,
+  FileSpreadsheet,
   Plus,
   RefreshCw,
   Search,
   Sparkles,
-  Trash2,
   UserPlus,
 } from 'lucide-react'
 import { api } from '../../api'
@@ -19,7 +13,6 @@ import {
   Button,
   Card,
   ConfirmDialog,
-  Drawer,
   Field,
   MarkdownText,
   Modal,
@@ -28,7 +21,6 @@ import {
   useConfirmDialog,
 } from '../../components'
 import { customerOptionLabel, useCustomerOptions } from '../../hooks/useCustomerOptions'
-import { FollowupPanel } from '../followup/FollowupPanel'
 import { ownerName, ownerOptionLabel, useOwnerOptions } from '../../hooks/useOwnerOptions'
 import {
   customerLevelText,
@@ -39,11 +31,12 @@ import {
   leadStatusTone as statusTone,
   recommendedLeadStatus,
 } from '../../models/crmStatus'
+import { leadSourceOptions, leadSourceText } from '../../models/crmSource'
 
 const emptyPage = {
   total: 0,
   pageNo: 1,
-  pageSize: 20,
+  pageSize: 10,
   records: [],
 }
 
@@ -79,7 +72,7 @@ const aiPriorityTone = {
   LOW: 'neutral',
 }
 
-function formatDateTime(value) {
+export function formatDateTime(value) {
   if (!value) return '-'
   const date = new Date(value)
   if (Number.isNaN(date.getTime())) return '-'
@@ -95,7 +88,7 @@ function compactQuery(query) {
   }
 }
 
-function toForm(row) {
+export function toForm(row) {
   return {
     id: row.id,
     name: row.name || '',
@@ -109,7 +102,7 @@ function toForm(row) {
   }
 }
 
-function toPayload(form) {
+export function toPayload(form) {
   return {
     ...form,
     name: (form.name || '').trim() || null,
@@ -123,7 +116,7 @@ function toPayload(form) {
   }
 }
 
-function toConvertForm(row) {
+export function toConvertForm(row) {
   return {
     leadId: row.id,
     convertType: 'CREATE_CUSTOMER',
@@ -140,7 +133,7 @@ function toConvertForm(row) {
   }
 }
 
-function toConvertPayload(form) {
+export function toConvertPayload(form) {
   return {
     ...form,
     leadId: form.leadId,
@@ -158,7 +151,7 @@ function toConvertPayload(form) {
   }
 }
 
-function toConvertFormFromAi(lead, analysis) {
+export function toConvertFormFromAi(lead, analysis) {
   const sourceLead = lead || analysis?.lead || { id: analysis?.leadId }
   const draft = analysis?.convertDraft || {}
   const base = toConvertForm(sourceLead)
@@ -176,7 +169,7 @@ function toConvertFormFromAi(lead, analysis) {
   }
 }
 
-function formatPercent(value) {
+export function formatPercent(value) {
   if (value === undefined || value === null || value === '') return '-'
   const numberValue = Number(value)
   if (!Number.isFinite(numberValue)) return '-'
@@ -291,19 +284,18 @@ export function LeadPage({ can, notify, navigate }) {
   const canManage = can('crm:lead:manage')
   const canAssign = can('crm:lead:assign')
   const canCreate = canManage || can('crm:lead:create')
+  const canImport = canManage || can('crm:lead:import')
   const canDelete = can('crm:lead:manage')
   const canConvert = canManage && (can('crm:customer:manage') || can('crm:customer:edit'))
   const canBindCustomer = canConvert && can('crm:customer:view')
   const canAnalyze = can('crm:assistant:use') && (can('crm:lead:view') || canManage)
-  const canViewFollowup = can('crm:followup:view')
-  const canFollowup = can('crm:followup:manage') || can('crm:followup:create')
   const ownerOptions = useOwnerOptions(notify)
   const customerOptions = useCustomerOptions(notify, canBindCustomer)
   const { confirm, dialogProps } = useConfirmDialog()
-  const [query, setQuery] = useState({ keyword: '', status: '', pageNo: 1, pageSize: 20 })
+  const importInputRef = useRef(null)
+  const [query, setQuery] = useState({ keyword: '', status: '', pageNo: 1, pageSize: 10 })
   const [page, setPage] = useState(emptyPage)
   const [loading, setLoading] = useState(true)
-  const [selected, setSelected] = useState(null)
   const [editing, setEditing] = useState(null)
   const [assigning, setAssigning] = useState(null)
   const [assignSubmitting, setAssignSubmitting] = useState(false)
@@ -311,6 +303,8 @@ export function LeadPage({ can, notify, navigate }) {
   const [aiAnalysis, setAiAnalysis] = useState(null)
   const [analyzingId, setAnalyzingId] = useState(null)
   const [aiElapsed, setAiElapsed] = useState(0)
+  const [importing, setImporting] = useState(false)
+  const [importResult, setImportResult] = useState(null)
 
   const load = async (nextQuery = query) => {
     setLoading(true)
@@ -343,21 +337,15 @@ export function LeadPage({ can, notify, navigate }) {
     load({ ...query, pageNo: 1 })
   }
 
-  const openDetail = async (row) => {
-    setSelected(row)
-    try {
-      setSelected(await api.lead.detail(row.id))
-    } catch (err) {
-      notify(err.message || '线索详情加载失败', 'info')
-    }
+  const openDetail = (row) => {
+    navigate(`leads/detail/${encodeURIComponent(row.id)}`)
   }
 
   const saveLead = async (form) => {
     try {
-      const saved = await api.lead.save(toPayload(form))
+      await api.lead.save(toPayload(form))
       notify('线索已保存', 'success')
       setEditing(null)
-      setSelected(saved)
       load({ ...query, pageNo: form.id ? query.pageNo : 1 })
     } catch (err) {
       notify(err.message || '线索保存失败', 'info')
@@ -375,9 +363,6 @@ export function LeadPage({ can, notify, navigate }) {
     try {
       await api.lead.delete(row.id)
       notify('线索已删除', 'success')
-      if (selected?.id === row.id) {
-        setSelected(null)
-      }
       load({ ...query, pageNo: 1 })
     } catch (err) {
       notify(err.message || '线索删除失败', 'info')
@@ -391,12 +376,9 @@ export function LeadPage({ can, notify, navigate }) {
     }
     setAssignSubmitting(true)
     try {
-      const assigned = await api.lead.assign({ id: assigning.id, ownerId })
+      await api.lead.assign({ id: assigning.id, ownerId })
       notify('线索已分配', 'success')
       setAssigning(null)
-      if (String(selected?.id || '') === String(assigned?.id || '')) {
-        setSelected(assigned)
-      }
       load(query)
     } catch (err) {
       notify(err.message || '线索分配失败', 'info')
@@ -422,7 +404,6 @@ export function LeadPage({ can, notify, navigate }) {
       const response = await api.lead.convertToCustomer(toConvertPayload(form))
       notify('线索已转为客户', 'success')
       setConverting(null)
-      setSelected(response.lead)
       load(query)
       if (response.customer?.id && navigate) {
         navigate(`customers/detail/${encodeURIComponent(response.customer.id)}`)
@@ -456,9 +437,6 @@ export function LeadPage({ can, notify, navigate }) {
         lead: response.lead || row,
       }
       setAiAnalysis(normalizedResponse)
-      if (response.lead) {
-        setSelected(response.lead)
-      }
       notify(response.success ? 'AI 分析完成' : response.message || 'AI 暂不可用', response.success ? 'success' : 'info')
       if (response.lead) {
         load(query)
@@ -483,14 +461,31 @@ export function LeadPage({ can, notify, navigate }) {
       notify('AI 分析结果缺少线索编号', 'info')
       return
     }
-    const lead = analysis.lead || selected || records.find((item) => String(item.id) === String(analysis.leadId))
+    const lead = analysis.lead || records.find((item) => String(item.id) === String(analysis.leadId))
     setConverting(toConvertFormFromAi(lead, analysis))
     setAiAnalysis(null)
   }
 
+  const importExcel = async (event) => {
+    const file = event.target.files?.[0]
+    event.target.value = ''
+    if (!file || importing) return
+    setImporting(true)
+    try {
+      const result = await api.lead.importExcel(file)
+      setImportResult(result)
+      notify(`Excel 导入完成，成功 ${result?.importedCount || 0} 条`, 'success')
+      load({ ...query, pageNo: 1 })
+    } catch (err) {
+      notify(err.message || 'Excel 线索导入失败', 'info')
+    } finally {
+      setImporting(false)
+    }
+  }
+
   const records = page.records || []
   const currentPage = page.pageNo || query.pageNo || 1
-  const pageSize = page.pageSize || query.pageSize || 20
+  const pageSize = page.pageSize || query.pageSize || 10
   const totalPages = Math.max(1, Math.ceil((page.total || 0) / pageSize))
 
   return (
@@ -501,6 +496,25 @@ export function LeadPage({ can, notify, navigate }) {
         actions={(
           <>
             <Button variant="secondary" icon={RefreshCw} onClick={() => load(query)}>刷新</Button>
+            {canImport && (
+              <>
+                <input
+                  ref={importInputRef}
+                  className="lead-import-input"
+                  type="file"
+                  accept=".xlsx,.xls"
+                  onChange={importExcel}
+                />
+                <Button
+                  variant="secondary"
+                  icon={FileSpreadsheet}
+                  disabled={importing}
+                  onClick={() => importInputRef.current?.click()}
+                >
+                  {importing ? '导入中' : '导入 Excel'}
+                </Button>
+              </>
+            )}
             {canCreate && <Button icon={Plus} onClick={() => setEditing(emptyForm)}>新建线索</Button>}
           </>
         )}
@@ -543,15 +557,11 @@ export function LeadPage({ can, notify, navigate }) {
               </thead>
               <tbody>
                 {records.map((row) => (
-                  <tr
-                    className={selected?.id === row.id ? 'selected-row' : ''}
-                    key={row.id}
-                    onClick={() => openDetail(row)}
-                  >
+                  <tr key={row.id} onClick={() => openDetail(row)}>
                     <td><strong>{row.name}</strong><small>ID：{row.id}</small></td>
                     <td>{row.companyName || '-'}</td>
                     <td><span>{row.phone || '-'}</span><small>{row.email || '-'}</small></td>
-                    <td>{row.source || '-'}</td>
+                    <td>{leadSourceText[row.source] || row.source || '-'}</td>
                     <td><Badge dot tone={statusTone[row.status] || 'neutral'}>{statusText[row.status] || row.status || '-'}</Badge></td>
                     <td>{ownerName(row)}</td>
                     <td>{formatDateTime(row.updatedAt || row.createdAt)}</td>
@@ -651,27 +661,6 @@ export function LeadPage({ can, notify, navigate }) {
         </Card>
       </div>
 
-      <LeadDetailDrawer
-        open={Boolean(selected)}
-        data={selected}
-        canWrite={canManage}
-        canAssign={canAssign}
-        canDelete={canDelete}
-        canConvert={canConvert}
-        canAnalyze={canAnalyze}
-        canFollowup={canFollowup}
-        canViewFollowup={canViewFollowup}
-        analyzing={String(analyzingId || '') === String(selected?.id || '')}
-        notify={notify}
-        onConvert={() => setConverting(toConvertForm(selected))}
-        onAnalyze={() => analyzeLead(selected)}
-        onOpenCustomer={() => navigate(`customers/detail/${encodeURIComponent(selected.customerId)}`)}
-        onEdit={() => setEditing(toForm(selected))}
-        onAssign={() => setAssigning(selected)}
-        onDelete={() => deleteLead(selected)}
-        onClose={() => setSelected(null)}
-      />
-
       <LeadFormModal
         open={Boolean(editing)}
         form={editing || emptyForm}
@@ -709,101 +698,90 @@ export function LeadPage({ can, notify, navigate }) {
         onApplyDraft={applyAiDraft}
         onClose={() => setAiAnalysis(null)}
       />
+      <LeadImportResultModal
+        open={Boolean(importResult)}
+        result={importResult}
+        onClose={() => setImportResult(null)}
+      />
       <ConfirmDialog {...dialogProps} />
     </div>
   )
 }
 
-function LeadDetailDrawer({
-  open,
-  data,
-  canWrite,
-  canAssign,
-  canDelete,
-  canConvert,
-  canAnalyze,
-  canFollowup,
-  canViewFollowup,
-  analyzing,
-  notify,
-  onConvert,
-  onAnalyze,
-  onOpenCustomer,
-  onEdit,
-  onAssign,
-  onDelete,
-  onClose,
-}) {
-  if (!data) return null
-  const footer = (
-    <div className="lead-detail-footer-actions">
-      {canAnalyze && <Button variant="secondary" icon={Sparkles} onClick={onAnalyze}>{analyzing ? '分析中' : 'AI 分析'}</Button>}
-      {canConvert && data.status !== 'CONVERTED' && <Button icon={UserPlus} onClick={onConvert}>转为客户</Button>}
-      {data.status === 'CONVERTED' && data.customerId && <Button icon={ArrowUpRight} onClick={onOpenCustomer}>查看客户</Button>}
-      {canWrite && <Button variant="secondary" icon={Edit2} onClick={onEdit}>编辑线索</Button>}
-      {canAssign && <Button variant="secondary" icon={UserPlus} onClick={onAssign}>分配负责人</Button>}
-      {canDelete && <Button variant="ghost" icon={Trash2} onClick={onDelete}>删除</Button>}
-    </div>
-  )
-
+function LeadImportResultModal({ open, result, onClose }) {
+  if (!result) return null
+  const issues = result.errors || []
   return (
-    <Drawer open={open} title="线索详情" onClose={onClose} footer={footer}>
-      <div className="lead-detail-panel lead-detail-drawer-body">
-        <div className="customer-detail-head">
-          <span className="company-avatar large">{(data.name || '?').slice(0, 1)}</span>
+    <Modal
+      open={open}
+      title="Excel 导入结果"
+      onClose={onClose}
+      size="lg"
+      footer={<Button onClick={onClose}>完成</Button>}
+    >
+      <div className="lead-import-result">
+        <div className="lead-import-summary">
           <div>
-            <h2>{data.name}</h2>
-            <p>ID：{data.id}</p>
+            <span>读取行数</span>
+            <strong>{result.totalCount || 0}</strong>
+          </div>
+          <div className="success">
+            <span>成功导入</span>
+            <strong>{result.importedCount || 0}</strong>
+          </div>
+          <div className="warning">
+            <span>跳过重复</span>
+            <strong>{result.skippedCount || 0}</strong>
+          </div>
+          <div className="danger">
+            <span>校验失败</span>
+            <strong>{result.failedCount || 0}</strong>
           </div>
         </div>
-        <div className="channel-detail-grid customer-detail-grid lead-detail-grid">
-          <DetailItem icon={Building2} label="公司" value={data.companyName} />
-          <DetailItem icon={Phone} label="电话" value={data.phone} />
-          <DetailItem icon={Mail} label="邮箱" value={data.email} />
-          <DetailItem label="来源" value={data.source} />
-          <DetailItem label="状态" value={statusText[data.status] || data.status} />
-          <DetailItem label="已转客户" value={data.customerName || data.customerId} />
-          <DetailItem label="转化人" value={data.convertedByName} />
-          <DetailItem icon={CalendarDays} label="转化时间" value={formatDateTime(data.convertedAt)} />
-          <DetailItem label="负责人" value={ownerName(data)} />
-          <DetailItem icon={CalendarDays} label="创建时间" value={formatDateTime(data.createdAt)} />
-          <DetailItem icon={CalendarDays} label="更新时间" value={formatDateTime(data.updatedAt)} />
+        <div className="lead-import-note">
+          已按手机号和邮箱检查重复数据；跳过或失败的行不会写入线索表。
         </div>
-        <div className="channel-text-block lead-detail-text-block">
-          <span>备注</span>
-          <p>{data.remark || '暂无备注'}</p>
-        </div>
-        <div className="channel-text-block lead-detail-text-block lead-ai-section">
-          <span>AI 分析</span>
-          {data.aiSummary ? (
-            <>
-              <MarkdownText value={data.aiSummary} empty="暂无 AI 分析结果" />
-              <div className="lead-ai-meta">
-                <Badge tone="info">置信度 {formatPercent(data.aiConfidence)}</Badge>
-                {data.aiSuggestedCustomerName && <Badge tone="success">建议客户：{data.aiSuggestedCustomerName}</Badge>}
-                {data.aiSuggestedContactName && <Badge>联系人：{data.aiSuggestedContactName}</Badge>}
-                {data.aiAnalyzedAt && <Badge>分析时间：{formatDateTime(data.aiAnalyzedAt)}</Badge>}
-              </div>
-            </>
-          ) : (
-            <p>暂无 AI 分析结果，可点击 AI 分析基于当前线索真实数据生成建议。</p>
-          )}
-        </div>
-        <FollowupPanel
-          targetType="LEAD"
-          targetId={data.id}
-          title="线索跟进"
-          canWrite={canFollowup}
-          canView={canViewFollowup}
-          notify={notify}
-          pageSize={5}
-        />
+        {issues.length > 0 ? (
+          <div className="data-table-wrap lead-import-issues">
+            <table className="data-table">
+              <thead>
+                <tr>
+                  <th>Excel 行号</th>
+                  <th>名称</th>
+                  <th>公司</th>
+                  <th>处理结果</th>
+                  <th>原因</th>
+                </tr>
+              </thead>
+              <tbody>
+                {issues.map((item, index) => (
+                  <tr key={`${item.rowNumber}-${index}`}>
+                    <td>{item.rowNumber}</td>
+                    <td>{item.name || '-'}</td>
+                    <td>{item.companyName || '-'}</td>
+                    <td>
+                      <Badge tone={item.type === 'SKIPPED' ? 'warning' : 'danger'}>
+                        {item.type === 'SKIPPED' ? '已跳过' : '导入失败'}
+                      </Badge>
+                    </td>
+                    <td>{item.reason || '-'}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        ) : (
+          <div className="lead-import-complete">
+            <FileSpreadsheet size={24} />
+            <span>本次数据已全部导入，没有跳过或失败的行。</span>
+          </div>
+        )}
       </div>
-    </Drawer>
+    </Modal>
   )
 }
 
-function LeadAiAnalysisModal({ open, analysis, elapsed, canConvert, onApplyDraft, onClose }) {
+export function LeadAiAnalysisModal({ open, analysis, elapsed, canConvert, onApplyDraft, onClose }) {
   if (!analysis) return null
   const draft = analysis.convertDraft || {}
   const customerProfile = analysis.customerProfile || {}
@@ -937,7 +915,7 @@ function LeadAiAnalysisModal({ open, analysis, elapsed, canConvert, onApplyDraft
 
           <div className="lead-ai-draft">
             <span>转客户草稿</span>
-            <div>
+            <div className="lead-ai-draft-grid">
               <DetailItem label="客户名称" value={draft.customerName} />
               <DetailItem label="行业" value={draft.industry} />
               <DetailItem label="联系人" value={draft.contactName} />
@@ -945,6 +923,12 @@ function LeadAiAnalysisModal({ open, analysis, elapsed, canConvert, onApplyDraft
               <DetailItem label="邮箱" value={draft.contactEmail} />
               <DetailItem label="客户级别" value={customerLevelText[draft.level] || draft.level} />
             </div>
+            {draft.remark && (
+              <div className="lead-ai-draft-remark">
+                <span>转化备注</span>
+                <MarkdownText value={draft.remark} empty="暂无转化备注" />
+              </div>
+            )}
           </div>
 
           <CustomerProfileCard profile={customerProfile} />
@@ -1066,7 +1050,7 @@ function DetailItem({ icon: Icon, label, value }) {
   )
 }
 
-function LeadConvertModal({ open, form, ownerOptions, customerOptions, canBindCustomer, onChange, onClose, onSave }) {
+export function LeadConvertModal({ open, form, ownerOptions, customerOptions, canBindCustomer, onChange, onClose, onSave }) {
   const update = (patch) => onChange({ ...form, ...patch })
   const hasSelectedOwner = ownerOptions.some((item) => String(item.id) === String(form?.ownerId || ''))
   const hasSelectedCustomer = customerOptions.some((item) => String(item.id) === String(form?.customerId || ''))
@@ -1149,7 +1133,7 @@ function LeadConvertModal({ open, form, ownerOptions, customerOptions, canBindCu
   )
 }
 
-function LeadFormModal({ open, form, ownerOptions, onChange, onClose, onSave }) {
+export function LeadFormModal({ open, form, ownerOptions, onChange, onClose, onSave }) {
   const update = (patch) => onChange({ ...form, ...patch })
   const hasSelectedOwner = ownerOptions.some((item) => String(item.id) === String(form.ownerId || ''))
   return (
@@ -1190,7 +1174,11 @@ function LeadFormModal({ open, form, ownerOptions, onChange, onClose, onSave }) 
           <input value={form.email || ''} onChange={(event) => update({ email: event.target.value })} />
         </Field>
         <Field label="线索来源">
-          <input value={form.source || ''} onChange={(event) => update({ source: event.target.value })} />
+          <select value={form.source || ''} onChange={(event) => update({ source: event.target.value })}>
+            <option value="">请选择线索来源</option>
+            {form.source && !leadSourceText[form.source] && <option value={form.source}>{form.source}</option>}
+            {leadSourceOptions.map((item) => <option value={item.value} key={item.value}>{item.label}</option>)}
+          </select>
         </Field>
         <Field label="备注">
           <textarea rows="4" value={form.remark || ''} onChange={(event) => update({ remark: event.target.value })} />

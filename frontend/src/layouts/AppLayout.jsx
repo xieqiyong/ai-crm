@@ -77,7 +77,12 @@ export function AppLayout({
     onNavigate(next)
     setMobileOpen(false)
   }
-  const activeRouteKey = String(routeKey || '').startsWith('customers/detail/') ? 'customers' : routeKey
+  const rawRouteKey = String(routeKey || '')
+  const activeRouteKey = rawRouteKey.startsWith('customers/detail/')
+    ? 'customers'
+    : rawRouteKey.startsWith('leads/detail/')
+      ? 'leads'
+      : routeKey
   const usageText = formatUsage(currentUser, tokenUsage)
   const unreadCount = resolveUnreadCount(currentUser)
   const unreadBadge = unreadCount > 99 ? '99+' : String(unreadCount)

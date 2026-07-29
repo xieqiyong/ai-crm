@@ -4,6 +4,8 @@ import com.hz.crm.application.lead.LeadApplicationService;
 import com.hz.crm.application.lead.dto.LeadAssignRequest;
 import com.hz.crm.application.lead.dto.LeadConvertRequest;
 import com.hz.crm.application.lead.dto.LeadConvertResponse;
+import com.hz.crm.application.lead.dto.LeadImportResult;
+import com.hz.crm.application.lead.dto.LeadImportRow;
 import com.hz.crm.application.lead.dto.LeadQuery;
 import com.hz.crm.application.lead.dto.LeadResponse;
 import com.hz.crm.application.lead.dto.LeadSaveRequest;
@@ -13,12 +15,16 @@ import com.hz.crm.common.api.PageData;
 import com.hz.crm.common.audit.AuditOperation;
 import com.hz.crm.web.support.IdRequest;
 import jakarta.validation.Valid;
+import java.util.List;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.http.MediaType;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
+import org.springframework.web.multipart.MultipartFile;
 
 @RestController
 @RequestMapping("/api/lead")
@@ -26,6 +32,9 @@ public class LeadController {
 
     @Autowired
     private LeadApplicationService leadApplicationService;
+
+    @Autowired
+    private LeadExcelImportParser leadExcelImportParser;
 
     @PostMapping("/page")
     @PreAuthorize("hasAuthority('*') or hasAuthority('crm:lead:view')")
@@ -79,6 +88,21 @@ public class LeadController {
             @Valid @RequestBody LeadAssignRequest request, JwtPrincipal principal) {
         return ApiResult.ok(leadApplicationService.assign(
                 principal.getTenantId(), principal.getUserId(), principal.getDataScope(), request));
+    }
+
+    @PostMapping(value = "/import-excel", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
+    @PreAuthorize("hasAuthority('*') or hasAuthority('crm:lead:import') or hasAuthority('crm:lead:manage')")
+    @AuditOperation(
+            module = "LEAD",
+            action = "IMPORT",
+            description = "导入线索",
+            targetType = "LEAD",
+            recordParameters = false)
+    public ApiResult<LeadImportResult> importExcel(
+            @RequestParam("file") MultipartFile file, JwtPrincipal principal) {
+        List<LeadImportRow> rows = leadExcelImportParser.parse(file);
+        return ApiResult.ok(leadApplicationService.importRows(
+                principal.getTenantId(), principal.getUserId(), rows));
     }
 
     @PostMapping("/convert-to-customer")

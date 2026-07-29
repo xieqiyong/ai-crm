@@ -93,6 +93,7 @@ public class PermissionSeedService {
             {"crm:lead:manage", "线索管理", "ACTION", ""},
             {"crm:lead:create", "线索创建", "ACTION", ""},
             {"crm:lead:assign", "线索分配", "ACTION", ""},
+            {"crm:lead:import", "线索导入", "ACTION", ""},
             {"crm:lead:export", "线索导出", "ACTION", ""},
             {"crm:channel:view", "渠道查看", "ACTION", ""},
             {"crm:channel:manage", "渠道管理", "ACTION", ""},

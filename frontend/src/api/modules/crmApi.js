@@ -31,6 +31,11 @@ export const leadApi = {
   page: (payload) => page('/api/lead', payload),
   detail: (id) => detail('/api/lead', id),
   save: (payload) => save('/api/lead', payload),
+  importExcel: (file) => {
+    const form = new FormData()
+    form.append('file', file)
+    return request('/api/lead/import-excel', { method: 'POST', body: form })
+  },
   assign: (payload) => request('/api/lead/assign', { method: 'POST', body: JSON.stringify(payload) }),
   convertToCustomer: (payload) => request('/api/lead/convert-to-customer', { method: 'POST', body: JSON.stringify(payload) }),
   delete: (id) => remove('/api/lead', id),

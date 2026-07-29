@@ -29,6 +29,7 @@ import {
   useConfirmDialog,
 } from '../../components'
 import { ownerName } from '../../hooks/useOwnerOptions'
+import { leadSourceOptions as sourceOptions, leadSourceText as sourceText } from '../../models/crmSource'
 
 const typeOptions = [
   { value: '', label: '全部类型' },
@@ -38,25 +39,6 @@ const typeOptions = [
   { value: 'VIDEO', label: '视频导入' },
   { value: 'DOCUMENT', label: '文档导入' },
 ]
-
-const sourceOptions = [
-  { value: 'WEBSITE', label: '官网' },
-  { value: 'LANDING_PAGE', label: '落地页' },
-  { value: 'SMS', label: '短信' },
-  { value: 'WECHAT', label: '微信' },
-  { value: 'WECHAT_GROUP', label: '微信群' },
-  { value: 'PHONE', label: '电话' },
-  { value: 'OFFLINE_EVENT', label: '线下活动' },
-  { value: 'LIVE', label: '直播' },
-  { value: 'REFERRAL', label: '转介绍' },
-  { value: 'AD', label: '广告投放' },
-  { value: 'OTHER', label: '其他' },
-]
-
-const sourceText = sourceOptions.reduce((map, item) => {
-  map[item.value] = item.label
-  return map
-}, {})
 
 const statusOptions = [
   { value: '', label: '全部状态' },

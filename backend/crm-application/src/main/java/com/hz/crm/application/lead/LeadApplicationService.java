@@ -1,12 +1,16 @@
 package com.hz.crm.application.lead;
 
 import com.baomidou.mybatisplus.core.toolkit.Wrappers;
+import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.hz.crm.application.customer.CustomerApplicationService;
 import com.hz.crm.application.customer.dto.CustomerResponse;
 import com.hz.crm.application.customer.dto.CustomerSaveRequest;
 import com.hz.crm.application.lead.dto.LeadAssignRequest;
 import com.hz.crm.application.lead.dto.LeadConvertRequest;
 import com.hz.crm.application.lead.dto.LeadConvertResponse;
+import com.hz.crm.application.lead.dto.LeadImportError;
+import com.hz.crm.application.lead.dto.LeadImportResult;
+import com.hz.crm.application.lead.dto.LeadImportRow;
 import com.hz.crm.application.lead.dto.LeadQuery;
 import com.hz.crm.application.lead.dto.LeadResponse;
 import com.hz.crm.application.lead.dto.LeadSaveRequest;
@@ -25,28 +29,23 @@ import com.hz.crm.domain.lead.LeadEntity;
 import com.hz.crm.domain.lead.LeadConvertType;
 import com.hz.crm.domain.lead.LeadStatus;
 import com.hz.crm.domain.lead.mapper.LeadMapper;
-import com.hz.crm.domain.lead.repository.LeadJpaRepository;
 import java.math.BigDecimal;
 import java.time.LocalDateTime;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.HashMap;
 import java.util.HashSet;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 import java.util.Set;
 import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.data.domain.Page;
-import org.springframework.data.domain.PageRequest;
-import org.springframework.data.domain.Sort;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 @Service
 public class LeadApplicationService {
-
-    @Autowired
-    private LeadJpaRepository leadRepository;
 
     @Autowired
     private SnowflakeIdGenerator snowflakeIdGenerator;
@@ -72,18 +71,22 @@ public class LeadApplicationService {
     @Transactional(readOnly = true)
     public PageData<LeadResponse> page(Long tenantId, Long userId, String dataScope, LeadQuery query) {
         LeadQuery safeQuery = query == null ? new LeadQuery() : query;
-        PageRequest pageRequest = PageRequest.of(
-                safeQuery.safePageNo() - 1, safeQuery.safePageSize(), Sort.by(Sort.Direction.DESC, "createdAt"));
-        Long ownerId = "SELF".equals(dataScope) ? userId : null;
-        Page<LeadEntity> page = leadRepository.search(
-                tenantId, ownerId, likeKeyword(safeQuery.getKeyword()), safeQuery.getStatus(), pageRequest);
+        int pageNo = safeQuery.safePageNo();
+        int pageSize = safeQuery.safePageSize();
+        long offset = (long) (pageNo - 1) * pageSize;
+        LambdaQueryWrapper<LeadEntity> wrapper = buildPageWrapper(
+                tenantId, userId, dataScope, safeQuery);
+        Long total = leadMapper.selectCount(wrapper);
+        wrapper.orderByDesc(LeadEntity::getCreatedAt)
+                .last("LIMIT " + pageSize + " OFFSET " + offset);
+        List<LeadEntity> entities = leadMapper.selectList(wrapper);
         List<LeadResponse> records = new ArrayList<LeadResponse>();
-        for (LeadEntity entity : page.getContent()) {
+        for (LeadEntity entity : entities) {
             records.add(toResponse(entity));
         }
         fillOwnerNames(tenantId, records);
         fillCustomerNames(tenantId, records);
-        return PageData.of(page.getTotalElements(), safeQuery.safePageNo(), safeQuery.safePageSize(), records);
+        return PageData.of(total == null ? 0L : total.longValue(), pageNo, pageSize, records);
     }
 
     @Transactional(readOnly = true)
@@ -125,7 +128,8 @@ public class LeadApplicationService {
         checkOwnerScope(operatorId, dataScope, targetOwnerId);
         entity.setOwnerId(targetOwnerId);
         entity.setRemark(trimToNull(request.getRemark()));
-        LeadResponse response = toResponse(leadRepository.save(entity));
+        saveEntity(entity, request.getId() == null);
+        LeadResponse response = toResponse(entity);
         fillOwnerName(tenantId, response);
         fillCustomerNames(tenantId, response);
         return response;
@@ -166,11 +170,41 @@ public class LeadApplicationService {
     }
 
     @Transactional
+    public LeadImportResult importRows(Long tenantId, Long operatorId, List<LeadImportRow> rows) {
+        if (rows == null || rows.isEmpty()) {
+            throw new BusinessException("LEAD_IMPORT_011", "没有可导入的线索数据");
+        }
+        LeadImportResult result = new LeadImportResult();
+        result.setTotalCount(rows.size());
+        Set<String> phones = new HashSet<String>();
+        Set<String> emails = new HashSet<String>();
+        List<LeadEntity> existingLeads = leadMapper.selectList(Wrappers.<LeadEntity>lambdaQuery()
+                .select(LeadEntity::getPhone, LeadEntity::getEmail)
+                .eq(LeadEntity::getTenantId, tenantId)
+                .eq(LeadEntity::isDeleted, false));
+        for (LeadEntity existingLead : existingLeads) {
+            String phone = normalizePhone(existingLead.getPhone());
+            String email = normalizeEmail(existingLead.getEmail());
+            if (phone != null) {
+                phones.add(phone);
+            }
+            if (email != null) {
+                emails.add(email);
+            }
+        }
+        for (LeadImportRow row : rows) {
+            importRow(tenantId, operatorId, row, phones, emails, result);
+        }
+        return result;
+    }
+
+    @Transactional
     public void delete(Long tenantId, Long userId, String dataScope, Long id) {
         LeadEntity entity = findOne(tenantId, id);
         checkDataScope(userId, dataScope, entity.getOwnerId());
         entity.setDeleted(true);
-        leadRepository.save(entity);
+        entity.setUpdatedAt(DateTimes.now());
+        updateExistingEntity(entity);
     }
 
     @Transactional
@@ -190,7 +224,9 @@ public class LeadApplicationService {
         entity.setAiSuggestedContactName(trimToNull(suggestedContactName));
         entity.setAiConfidence(confidence);
         entity.setAiAnalyzedAt(DateTimes.now());
-        LeadResponse response = toResponse(leadRepository.save(entity));
+        entity.setUpdatedAt(DateTimes.now());
+        updateExistingEntity(entity);
+        LeadResponse response = toResponse(entity);
         fillOwnerName(tenantId, response);
         fillCustomerNames(tenantId, response);
         return response;
@@ -221,7 +257,9 @@ public class LeadApplicationService {
         entity.setConvertedAt(DateTimes.now());
         entity.setConvertedBy(operatorId);
         entity.setConvertedType(convertType);
-        LeadResponse lead = toResponse(leadRepository.save(entity));
+        entity.setUpdatedAt(DateTimes.now());
+        updateExistingEntity(entity);
+        LeadResponse lead = toResponse(entity);
         fillOwnerName(tenantId, lead);
         fillCustomerNames(tenantId, lead);
         LeadConvertResponse response = new LeadConvertResponse();
@@ -289,13 +327,269 @@ public class LeadApplicationService {
         return trimToNull(entity.getRemark());
     }
 
+    private LambdaQueryWrapper<LeadEntity> buildPageWrapper(
+            Long tenantId,
+            Long userId,
+            String dataScope,
+            LeadQuery query) {
+        LambdaQueryWrapper<LeadEntity> wrapper = Wrappers.<LeadEntity>lambdaQuery()
+                .eq(LeadEntity::getTenantId, tenantId)
+                .eq(LeadEntity::isDeleted, false);
+        if ("SELF".equals(dataScope)) {
+            wrapper.eq(LeadEntity::getOwnerId, userId);
+        }
+        String keyword = trimToNull(query.getKeyword());
+        if (keyword != null) {
+            wrapper.and(item -> item
+                    .like(LeadEntity::getName, keyword)
+                    .or()
+                    .like(LeadEntity::getCompanyName, keyword)
+                    .or()
+                    .like(LeadEntity::getPhone, keyword)
+                    .or()
+                    .like(LeadEntity::getEmail, keyword)
+                    .or()
+                    .like(LeadEntity::getSource, keyword));
+        }
+        if (query.getStatus() != null) {
+            wrapper.eq(LeadEntity::getStatus, query.getStatus());
+        }
+        return wrapper;
+    }
+
+    private void saveEntity(LeadEntity entity, boolean newRecord) {
+        LocalDateTime now = DateTimes.now();
+        entity.setUpdatedAt(now);
+        if (newRecord) {
+            entity.setDeleted(false);
+            entity.setCreatedAt(now);
+            int inserted = leadMapper.insert(entity);
+            if (inserted != 1) {
+                throw new BusinessException("LEAD_004", "线索保存失败");
+            }
+            return;
+        }
+        updateExistingEntity(entity);
+    }
+
+    private void updateExistingEntity(LeadEntity entity) {
+        int updated = leadMapper.update(null, Wrappers.<LeadEntity>lambdaUpdate()
+                .eq(LeadEntity::getId, entity.getId())
+                .eq(LeadEntity::getTenantId, entity.getTenantId())
+                .eq(LeadEntity::isDeleted, false)
+                .set(LeadEntity::getName, entity.getName())
+                .set(LeadEntity::getCompanyName, entity.getCompanyName())
+                .set(LeadEntity::getPhone, entity.getPhone())
+                .set(LeadEntity::getEmail, entity.getEmail())
+                .set(LeadEntity::getSource, entity.getSource())
+                .set(LeadEntity::getStatus, entity.getStatus())
+                .set(LeadEntity::getCustomerId, entity.getCustomerId())
+                .set(LeadEntity::getConvertedAt, entity.getConvertedAt())
+                .set(LeadEntity::getConvertedBy, entity.getConvertedBy())
+                .set(LeadEntity::getConvertedType, entity.getConvertedType())
+                .set(LeadEntity::getAiSummary, entity.getAiSummary())
+                .set(LeadEntity::getAiSuggestedCustomerName, entity.getAiSuggestedCustomerName())
+                .set(LeadEntity::getAiSuggestedContactName, entity.getAiSuggestedContactName())
+                .set(LeadEntity::getAiConfidence, entity.getAiConfidence())
+                .set(LeadEntity::getAiAnalyzedAt, entity.getAiAnalyzedAt())
+                .set(LeadEntity::getOwnerId, entity.getOwnerId())
+                .set(LeadEntity::getRemark, entity.getRemark())
+                .set(LeadEntity::isDeleted, entity.isDeleted())
+                .set(LeadEntity::getUpdatedAt, entity.getUpdatedAt()));
+        if (updated != 1) {
+            throw new BusinessException("LEAD_004", "线索保存失败，请刷新后重试");
+        }
+    }
+
+    private void importRow(
+            Long tenantId,
+            Long operatorId,
+            LeadImportRow row,
+            Set<String> phones,
+            Set<String> emails,
+            LeadImportResult result) {
+        String name = trimToNull(row.getName());
+        String companyName = trimToNull(row.getCompanyName());
+        String phone = trimToNull(row.getPhone());
+        String email = trimToNull(row.getEmail());
+        if (name == null && companyName == null) {
+            addImportError(result, row, "FAILED", "名称和公司名称至少填写一个");
+            result.setFailedCount(result.getFailedCount() + 1);
+            return;
+        }
+        String fieldError = validateImportFields(name, companyName, phone, email);
+        if (fieldError != null) {
+            addImportError(result, row, "FAILED", fieldError);
+            result.setFailedCount(result.getFailedCount() + 1);
+            return;
+        }
+        String normalizedPhone = normalizePhone(phone);
+        String normalizedEmail = normalizeEmail(email);
+        if (normalizedPhone != null && phones.contains(normalizedPhone)) {
+            addImportError(result, row, "SKIPPED", "联系电话已存在");
+            result.setSkippedCount(result.getSkippedCount() + 1);
+            return;
+        }
+        if (normalizedEmail != null && emails.contains(normalizedEmail)) {
+            addImportError(result, row, "SKIPPED", "联系邮箱已存在");
+            result.setSkippedCount(result.getSkippedCount() + 1);
+            return;
+        }
+        LocalDateTime now = DateTimes.now();
+        LeadEntity entity = new LeadEntity();
+        entity.setId(snowflakeIdGenerator.nextId());
+        entity.setTenantId(tenantId);
+        entity.setName(name == null ? companyName : name);
+        entity.setCompanyName(companyName);
+        entity.setPhone(phone);
+        entity.setEmail(email);
+        entity.setSource(resolveImportSource(row.getSource()));
+        entity.setStatus(LeadStatus.recommended());
+        entity.setOwnerId(operatorId);
+        entity.setRemark(buildImportRemark(row));
+        entity.setDeleted(false);
+        entity.setCreatedAt(now);
+        entity.setUpdatedAt(now);
+        int inserted = leadMapper.insert(entity);
+        if (inserted != 1) {
+            throw new BusinessException("LEAD_IMPORT_012", "Excel线索导入失败");
+        }
+        if (normalizedPhone != null) {
+            phones.add(normalizedPhone);
+        }
+        if (normalizedEmail != null) {
+            emails.add(normalizedEmail);
+        }
+        result.setImportedCount(result.getImportedCount() + 1);
+    }
+
+    private String validateImportFields(String name, String companyName, String phone, String email) {
+        if (name != null && name.length() > 128) {
+            return "名称不能超过128个字符";
+        }
+        if (companyName != null && companyName.length() > 128) {
+            return "公司名称不能超过128个字符";
+        }
+        if (phone != null && phone.length() > 32) {
+            return "联系电话不能超过32个字符";
+        }
+        if (email != null && email.length() > 128) {
+            return "联系邮箱不能超过128个字符";
+        }
+        return null;
+    }
+
+    private void addImportError(LeadImportResult result, LeadImportRow row, String type, String reason) {
+        LeadImportError error = new LeadImportError();
+        error.setRowNumber(row.getRowNumber());
+        error.setName(trimToNull(row.getName()));
+        error.setCompanyName(trimToNull(row.getCompanyName()));
+        error.setType(type);
+        error.setReason(reason);
+        result.getErrors().add(error);
+    }
+
+    private String resolveImportSource(String value) {
+        String source = trimToNull(value);
+        if (source == null) {
+            return "OTHER";
+        }
+        String upperSource = source.toUpperCase(Locale.ROOT);
+        List<String> sourceCodes = Arrays.asList(
+                "WEBSITE",
+                "LANDING_PAGE",
+                "SMS",
+                "WECHAT",
+                "WECHAT_GROUP",
+                "PHONE",
+                "OFFLINE_EVENT",
+                "LIVE",
+                "REFERRAL",
+                "AD",
+                "OTHER");
+        if (sourceCodes.contains(upperSource)) {
+            return upperSource;
+        }
+        if (source.contains("微信群")) {
+            return "WECHAT_GROUP";
+        }
+        if (source.contains("微信")) {
+            return "WECHAT";
+        }
+        if (source.contains("电话")) {
+            return "PHONE";
+        }
+        if (source.contains("官网") || source.contains("网站")) {
+            return "WEBSITE";
+        }
+        if (source.contains("落地页") || source.contains("表单")) {
+            return "LANDING_PAGE";
+        }
+        if (source.contains("短信")) {
+            return "SMS";
+        }
+        if (source.contains("线下") || source.contains("活动")) {
+            return "OFFLINE_EVENT";
+        }
+        if (source.contains("直播")) {
+            return "LIVE";
+        }
+        if (source.contains("推荐") || source.contains("转介绍")) {
+            return "REFERRAL";
+        }
+        if (source.contains("广告")) {
+            return "AD";
+        }
+        return "OTHER";
+    }
+
+    private String buildImportRemark(LeadImportRow row) {
+        Map<String, String> fields = row.getAdditionalFields() == null
+                ? new LinkedHashMap<String, String>()
+                : row.getAdditionalFields();
+        if (fields.isEmpty()) {
+            return null;
+        }
+        StringBuilder builder = new StringBuilder("## Excel 导入信息");
+        for (Map.Entry<String, String> entry : fields.entrySet()) {
+            String key = trimToNull(entry.getKey());
+            String value = trimToNull(entry.getValue());
+            if (key == null || value == null) {
+                continue;
+            }
+            builder.append("\n\n- **")
+                    .append(key)
+                    .append("**：")
+                    .append(value.replace("\r\n", "\n").replace("\r", "\n").replace("\n", "\n  "));
+        }
+        return builder.length() == "## Excel 导入信息".length() ? null : builder.toString();
+    }
+
+    private String normalizePhone(String value) {
+        String phone = trimToNull(value);
+        if (phone == null) {
+            return null;
+        }
+        return phone.replace(" ", "").replace("-", "");
+    }
+
+    private String normalizeEmail(String value) {
+        String email = trimToNull(value);
+        return email == null ? null : email.toLowerCase(Locale.ROOT);
+    }
+
     private LeadEntity findOne(Long tenantId, Long id) {
         if (id == null) {
             throw new BusinessException("LEAD_001", "线索编号不能为空");
         }
-        return leadRepository
-                .findByIdAndTenantIdAndDeletedFalse(id, tenantId)
-                .orElseThrow(() -> new BusinessException("LEAD_002", "线索不存在"));
+        LeadEntity entity = leadMapper.selectOne(Wrappers.<LeadEntity>lambdaQuery()
+                .eq(LeadEntity::getId, id)
+                .eq(LeadEntity::getTenantId, tenantId)
+                .eq(LeadEntity::isDeleted, false));
+        if (entity == null) {
+            throw new BusinessException("LEAD_002", "线索不存在");
+        }
+        return entity;
     }
 
     private LeadEntity findOneForAssignment(Long tenantId, Long id) {
@@ -326,11 +620,6 @@ public class LeadApplicationService {
             return null;
         }
         return value.trim();
-    }
-
-    private String likeKeyword(String value) {
-        String keyword = trimToNull(value);
-        return keyword == null ? null : "%" + keyword.toLowerCase(Locale.ROOT) + "%";
     }
 
     private LeadResponse toResponse(LeadEntity entity) {

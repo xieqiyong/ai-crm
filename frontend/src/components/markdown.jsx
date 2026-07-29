@@ -1,3 +1,4 @@
+import { useEffect, useRef, useState } from 'react'
 import ReactMarkdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
 
@@ -478,6 +479,66 @@ export function MarkdownText({ value, empty = '暂无内容', variant = 'default
           </p>
         )
       })}
+    </div>
+  )
+}
+
+export function CollapsibleMarkdown({
+  value,
+  empty = '暂无内容',
+  variant = 'default',
+  maxHeight = 120,
+  className = '',
+}) {
+  const contentRef = useRef(null)
+  const [expanded, setExpanded] = useState(false)
+  const [collapsible, setCollapsible] = useState(false)
+
+  useEffect(() => {
+    setExpanded(false)
+  }, [value])
+
+  useEffect(() => {
+    const element = contentRef.current
+    if (!element) return undefined
+    const measure = () => {
+      setCollapsible(element.scrollHeight > Number(maxHeight || 120) + 2)
+    }
+    const frame = window.requestAnimationFrame(measure)
+    let observer
+    if (typeof ResizeObserver !== 'undefined') {
+      observer = new ResizeObserver(measure)
+      observer.observe(element)
+    } else {
+      window.addEventListener('resize', measure)
+    }
+    return () => {
+      window.cancelAnimationFrame(frame)
+      observer?.disconnect()
+      window.removeEventListener('resize', measure)
+    }
+  }, [value, variant, maxHeight])
+
+  const collapsed = collapsible && !expanded
+  const rootClassName = ['collapsible-markdown', className].filter(Boolean).join(' ')
+  return (
+    <div className={rootClassName} style={{ '--collapsible-markdown-height': `${maxHeight}px` }}>
+      <div className={`collapsible-markdown-viewport ${collapsed ? 'is-collapsed' : ''}`}>
+        <div ref={contentRef}>
+          <MarkdownText value={value} empty={empty} variant={variant} />
+        </div>
+        {collapsed && <div className="collapsible-markdown-fade" />}
+      </div>
+      {collapsible && (
+        <button
+          type="button"
+          className="collapsible-markdown-toggle"
+          aria-expanded={expanded}
+          onClick={() => setExpanded((current) => !current)}
+        >
+          {expanded ? '收起备注' : '展开全部'}
+        </button>
+      )}
     </div>
   )
 }

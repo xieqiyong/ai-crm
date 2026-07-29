@@ -423,10 +423,8 @@ export function MarketingAssistantPage({
               >
                 <span><Bot size={17} /></span>
                 <div>
-                  <strong>{agent.name}</strong>
-                  <small>{agentScene(agent)}</small>
-                  <p>{agent.description || '暂无功能描述，请在智能体配置管理中补充。'}</p>
-                  <em>{agent.modelName || '未配置模型'} · {agent.conversationCount || 0} 个会话</em>
+                  <strong title={agent.name}>{agent.name}</strong>
+                  <small>{agent.conversationCount || 0} 个会话</small>
                 </div>
               </button>
             ))}

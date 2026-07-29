@@ -17,7 +17,12 @@ function typewriterStep() {
 }
 
 export function findAssistantRouteLabel(routeGroups, routeKey) {
-  const activeKey = String(routeKey || '').startsWith('customers/detail/') ? 'customers' : routeKey
+  const key = String(routeKey || '')
+  const activeKey = key.startsWith('customers/detail/')
+    ? 'customers'
+    : key.startsWith('leads/detail/')
+      ? 'leads'
+      : routeKey
   for (const group of routeGroups || []) {
     const item = (group.items || []).find((route) => route.key === activeKey)
     if (item) return item.label
