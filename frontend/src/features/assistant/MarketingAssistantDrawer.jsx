@@ -16,7 +16,7 @@ export function MarketingAssistantDrawer({
     <aside className={`assistant-drawer ${open ? 'open' : ''}`}>
       <div className="assistant-head">
         <div className="ai-title-icon"><Sparkles size={18} /></div>
-        <div><strong>AI 营销助手</strong><small>{routeLabel} · 真实业务数据</small></div>
+        <div><strong>AI 智能体助手</strong><small>{routeLabel} · 真实业务数据</small></div>
         <button className="icon-button" onClick={onClose} aria-label="关闭"><X size={18} /></button>
       </div>
       <MarketingAssistantChatBox

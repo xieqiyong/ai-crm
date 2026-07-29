@@ -1,5 +1,9 @@
 package com.hz.crm.agent.runtime.domain;
 
+import com.baomidou.mybatisplus.annotation.IdType;
+import com.baomidou.mybatisplus.annotation.TableField;
+import com.baomidou.mybatisplus.annotation.TableId;
+import com.baomidou.mybatisplus.annotation.TableName;
 import com.fasterxml.jackson.annotation.JsonProperty;
 import com.hz.crm.common.time.DateTimes;
 import jakarta.persistence.Column;
@@ -16,9 +20,11 @@ import lombok.Setter;
 @Setter
 @Entity
 @Table(name = "agents")
+@TableName("agents")
 public class AgentEntity {
 
     @Id
+    @TableId(type = IdType.INPUT)
     private Long id;
 
     @Column(nullable = false, columnDefinition = "bigint")
@@ -54,6 +60,7 @@ public class AgentEntity {
     private String baseUrl;
 
     @JsonProperty(access = JsonProperty.Access.WRITE_ONLY)
+    @TableField("api_key_env")
     @Column(name = "api_key_env", nullable = false, columnDefinition = "text")
     private String apiKey;
 

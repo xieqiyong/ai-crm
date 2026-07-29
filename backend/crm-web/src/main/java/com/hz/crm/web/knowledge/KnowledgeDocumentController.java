@@ -3,6 +3,7 @@ package com.hz.crm.web.knowledge;
 import com.hz.crm.auth.security.JwtPrincipal;
 import com.hz.crm.common.api.ApiResult;
 import com.hz.crm.common.api.PageData;
+import com.hz.crm.common.audit.AuditOperation;
 import com.hz.crm.common.exception.BusinessException;
 import com.hz.crm.knowledge.dto.KnowledgeDocumentQuery;
 import com.hz.crm.knowledge.dto.KnowledgeDocumentRequest;
@@ -57,6 +58,12 @@ public class KnowledgeDocumentController {
 
     @PostMapping("/save")
     @PreAuthorize("hasAuthority('*') or hasAuthority('crm:knowledge:manage')")
+    @AuditOperation(
+            module = "KNOWLEDGE",
+            action = "DOCUMENT_SAVE",
+            description = "保存知识文档",
+            targetType = "KNOWLEDGE_DOCUMENT",
+            recordParameters = false)
     public ApiResult<KnowledgeDocumentResponse> save(
             @Valid @RequestBody KnowledgeDocumentRequest request, JwtPrincipal principal) {
         return ApiResult.ok(knowledgeDocumentService.save(principal.getTenantId(), request));
@@ -64,6 +71,13 @@ public class KnowledgeDocumentController {
 
     @PostMapping(value = "/import", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
     @PreAuthorize("hasAuthority('*') or hasAuthority('crm:knowledge:manage')")
+    @AuditOperation(
+            module = "KNOWLEDGE",
+            action = "DOCUMENT_IMPORT",
+            description = "导入知识文档",
+            targetType = "KNOWLEDGE_DOCUMENT",
+            targetIdField = "documentId",
+            recordParameters = false)
     public ApiResult<KnowledgeIngestResponse> importFile(
             @RequestParam(required = false) String title,
             @RequestParam(required = false) String sourceType,
@@ -87,6 +101,12 @@ public class KnowledgeDocumentController {
 
     @PostMapping("/ingest")
     @PreAuthorize("hasAuthority('*') or hasAuthority('crm:knowledge:manage')")
+    @AuditOperation(
+            module = "KNOWLEDGE",
+            action = "DOCUMENT_INGEST",
+            description = "训练知识文档",
+            targetType = "KNOWLEDGE_DOCUMENT",
+            targetIdField = "documentId")
     public ApiResult<KnowledgeIngestResponse> ingest(
             @RequestBody KnowledgeIngestRequest request, JwtPrincipal principal) {
         return ApiResult.ok(knowledgeDocumentService.ingest(principal.getTenantId(), request));
@@ -108,6 +128,11 @@ public class KnowledgeDocumentController {
 
     @PostMapping("/delete")
     @PreAuthorize("hasAuthority('*') or hasAuthority('crm:knowledge:manage')")
+    @AuditOperation(
+            module = "KNOWLEDGE",
+            action = "DOCUMENT_DELETE",
+            description = "删除知识文档",
+            targetType = "KNOWLEDGE_DOCUMENT")
     public ApiResult<Void> delete(@RequestBody IdRequest request, JwtPrincipal principal) {
         knowledgeDocumentService.delete(principal.getTenantId(), request.getId());
         return ApiResult.ok(null);

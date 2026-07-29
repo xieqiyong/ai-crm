@@ -44,6 +44,12 @@ public class ChannelResponse {
 
     private String usefulInfo;
 
+    private String aiAnalysisJson;
+
+    private Long agentRunId;
+
+    private LocalDateTime aiAnalyzedAt;
+
     private Long leadId;
 
     private Long ownerId;
@@ -51,6 +57,10 @@ public class ChannelResponse {
     private String ownerName;
 
     private String remark;
+
+    private boolean promotionReady;
+
+    private String promotionBlockReason;
 
     private LocalDateTime createdAt;
 

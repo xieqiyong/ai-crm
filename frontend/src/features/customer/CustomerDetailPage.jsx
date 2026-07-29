@@ -26,6 +26,7 @@ import {
   Field,
   MarkdownText,
   Modal,
+  OwnerAssignModal,
   PageHeader,
   useConfirmDialog,
 } from '../../components'
@@ -142,6 +143,7 @@ function buildCustomerTags(data) {
 export function CustomerDetailPage({ routeParams, can, notify, navigate }) {
   const customerId = routeParams?.id
   const canWrite = can('crm:customer:manage') || can('crm:customer:edit')
+  const canAssign = can('crm:customer:assign')
   const canDelete = can('crm:customer:manage')
   const canViewProduct = can('crm:product:view') || can('crm:product:manage')
   const ownerOptions = useOwnerOptions(notify)
@@ -151,6 +153,8 @@ export function CustomerDetailPage({ routeParams, can, notify, navigate }) {
   const [loading, setLoading] = useState(true)
   const [tab, setTab] = useState('概览')
   const [editing, setEditing] = useState(null)
+  const [assigning, setAssigning] = useState(false)
+  const [assignSubmitting, setAssignSubmitting] = useState(false)
   const [opportunities, setOpportunities] = useState([])
   const [opportunityEditing, setOpportunityEditing] = useState(null)
   const [summary, setSummary] = useState(null)
@@ -227,6 +231,24 @@ export function CustomerDetailPage({ routeParams, can, notify, navigate }) {
       navigate('customers')
     } catch (err) {
       notify(err.message || '客户删除失败', 'info')
+    }
+  }
+
+  const assignCustomer = async (ownerId) => {
+    if (!data?.id || !ownerId) {
+      notify('请选择负责人', 'info')
+      return
+    }
+    setAssignSubmitting(true)
+    try {
+      const assigned = await api.customer.assign({ id: data.id, ownerId })
+      setData(assigned)
+      setAssigning(false)
+      notify('客户已分配', 'success')
+    } catch (err) {
+      notify(err.message || '客户分配失败', 'info')
+    } finally {
+      setAssignSubmitting(false)
     }
   }
 
@@ -339,6 +361,7 @@ export function CustomerDetailPage({ routeParams, can, notify, navigate }) {
           <Button variant="secondary" icon={ArrowLeft} onClick={() => navigate('customers')}>返回列表</Button>
           <Button variant="secondary" icon={RefreshCw} onClick={load}>刷新</Button>
           {canWrite && <Button variant="secondary" icon={Edit2} onClick={() => setEditing(toForm(data))}>编辑资料</Button>}
+          {canAssign && <Button variant="secondary" icon={UserRound} onClick={() => setAssigning(true)}>分配负责人</Button>}
           {canDelete && <Button variant="ghost" icon={Trash2} onClick={deleteCustomer}>删除</Button>}
         </div>
         <div className="customer-tabs">
@@ -389,6 +412,17 @@ export function CustomerDetailPage({ routeParams, can, notify, navigate }) {
         onChange={setEditing}
         onClose={() => setEditing(null)}
         onSave={saveCustomer}
+      />
+      <OwnerAssignModal
+        open={assigning}
+        title="分配客户负责人"
+        recordName={data.name}
+        currentOwnerId={data.ownerId}
+        currentOwnerName={data.ownerId ? ownerName(data) : ''}
+        ownerOptions={ownerOptions}
+        submitting={assignSubmitting}
+        onClose={() => setAssigning(false)}
+        onConfirm={assignCustomer}
       />
       <OpportunityFormModal
         open={Boolean(opportunityEditing)}

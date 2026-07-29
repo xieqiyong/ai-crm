@@ -7,6 +7,7 @@ import com.hz.crm.application.product.dto.ProductSaveRequest;
 import com.hz.crm.auth.security.JwtPrincipal;
 import com.hz.crm.common.api.ApiResult;
 import com.hz.crm.common.api.PageData;
+import com.hz.crm.common.audit.AuditOperation;
 import com.hz.crm.web.support.IdRequest;
 import jakarta.validation.Valid;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -39,12 +40,22 @@ public class ProductController {
     @PostMapping("/save")
     @PreAuthorize("hasAuthority('*') or hasAuthority('crm:product:manage') "
             + "or (#request != null and #request.id == null and hasAuthority('crm:product:create'))")
+    @AuditOperation(
+            module = "PRODUCT",
+            action = "SAVE",
+            description = "保存产品",
+            targetType = "PRODUCT")
     public ApiResult<ProductResponse> save(@Valid @RequestBody ProductSaveRequest request, JwtPrincipal principal) {
         return ApiResult.ok(productApplicationService.save(principal.getTenantId(), request));
     }
 
     @PostMapping("/delete")
     @PreAuthorize("hasAuthority('*') or hasAuthority('crm:product:manage')")
+    @AuditOperation(
+            module = "PRODUCT",
+            action = "DELETE",
+            description = "删除产品",
+            targetType = "PRODUCT")
     public ApiResult<Void> delete(@RequestBody IdRequest request, JwtPrincipal principal) {
         productApplicationService.delete(principal.getTenantId(), request.getId());
         return ApiResult.ok(null);

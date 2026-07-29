@@ -7,9 +7,11 @@ import com.hz.crm.application.channel.dto.ChannelPromoteRequest;
 import com.hz.crm.application.channel.dto.ChannelQuery;
 import com.hz.crm.application.channel.dto.ChannelResponse;
 import com.hz.crm.application.channel.dto.ChannelSaveRequest;
+import com.hz.crm.agent.web.service.ChannelAiAnalysisService;
 import com.hz.crm.auth.security.JwtPrincipal;
 import com.hz.crm.common.api.ApiResult;
 import com.hz.crm.common.api.PageData;
+import com.hz.crm.common.audit.AuditOperation;
 import com.hz.crm.common.exception.BusinessException;
 import com.hz.crm.domain.channel.ChannelType;
 import com.hz.crm.web.support.IdRequest;
@@ -46,6 +48,9 @@ public class ChannelController {
     @Autowired
     private ChannelApplicationService channelApplicationService;
 
+    @Autowired
+    private ChannelAiAnalysisService channelAiAnalysisService;
+
     @Value("${crm.channel.upload-dir:./uploads/channel}")
     private String uploadDir;
 
@@ -66,6 +71,11 @@ public class ChannelController {
 
     @PostMapping("/save")
     @PreAuthorize("hasAuthority('*') or hasAuthority('crm:channel:manage')")
+    @AuditOperation(
+            module = "CHANNEL",
+            action = "SAVE",
+            description = "保存渠道记录",
+            targetType = "CHANNEL")
     public ApiResult<ChannelResponse> save(@Valid @RequestBody ChannelSaveRequest request, JwtPrincipal principal) {
         return ApiResult.ok(channelApplicationService.save(
                 principal.getTenantId(), principal.getUserId(), principal.getDataScope(), request));
@@ -73,6 +83,12 @@ public class ChannelController {
 
     @PostMapping(value = "/media/import", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
     @PreAuthorize("hasAuthority('*') or hasAuthority('crm:channel:media') or hasAuthority('crm:channel:manage')")
+    @AuditOperation(
+            module = "CHANNEL",
+            action = "MEDIA_IMPORT",
+            description = "导入渠道音视频",
+            targetType = "CHANNEL",
+            recordParameters = false)
     public ApiResult<ChannelResponse> importMedia(
             @RequestParam(required = false) String title,
             @RequestParam(required = false) ChannelType channelType,
@@ -81,7 +97,6 @@ public class ChannelController {
             @RequestParam(required = false) String companyName,
             @RequestParam(required = false) String phone,
             @RequestParam(required = false) String email,
-            @RequestParam(required = false) String remark,
             @RequestParam("file") MultipartFile file,
             JwtPrincipal principal) {
         validateMediaFile(file);
@@ -98,13 +113,18 @@ public class ChannelController {
         request.setMediaContentType(file.getContentType());
         request.setMediaSize(file.getSize());
         request.setMediaStorageKey(storageKey);
-        request.setRemark(remark);
         return ApiResult.ok(channelApplicationService.importMedia(
                 principal.getTenantId(), principal.getUserId(), request));
     }
 
     @PostMapping(value = "/document/import", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
     @PreAuthorize("hasAuthority('*') or hasAuthority('crm:channel:media') or hasAuthority('crm:channel:manage')")
+    @AuditOperation(
+            module = "CHANNEL",
+            action = "DOCUMENT_IMPORT",
+            description = "导入渠道文档",
+            targetType = "CHANNEL",
+            recordParameters = false)
     public ApiResult<ChannelResponse> importDocument(
             @RequestParam(required = false) String title,
             @RequestParam(required = false) String source,
@@ -112,7 +132,6 @@ public class ChannelController {
             @RequestParam(required = false) String companyName,
             @RequestParam(required = false) String phone,
             @RequestParam(required = false) String email,
-            @RequestParam(required = false) String remark,
             @RequestParam("file") MultipartFile file,
             JwtPrincipal principal) {
         validateDocumentFile(file);
@@ -129,7 +148,6 @@ public class ChannelController {
         request.setMediaSize(file.getSize());
         request.setMediaStorageKey(storageKey);
         request.setDocumentText(extractDocumentText(file));
-        request.setRemark(remark);
         return ApiResult.ok(channelApplicationService.importDocument(
                 principal.getTenantId(), principal.getUserId(), request));
     }
@@ -141,15 +159,26 @@ public class ChannelController {
                 principal.getTenantId(), principal.getUserId(), principal.getDataScope(), request.getId()));
     }
 
-    @PostMapping("/analysis/prepare")
-    @PreAuthorize("hasAuthority('*') or hasAuthority('crm:channel:media') or hasAuthority('crm:channel:manage')")
-    public ApiResult<ChannelResponse> prepareAiAnalysis(@RequestBody IdRequest request, JwtPrincipal principal) {
-        return ApiResult.ok(channelApplicationService.prepareAiAnalysis(
+    @PostMapping({"/analysis/run", "/analysis/prepare"})
+    @PreAuthorize("hasAuthority('*') or hasAuthority('crm:channel:analyze') or hasAuthority('crm:channel:manage')")
+    @AuditOperation(
+            module = "CHANNEL",
+            action = "ANALYZE",
+            description = "执行渠道智能分析",
+            targetType = "CHANNEL")
+    public ApiResult<ChannelResponse> analyze(@RequestBody IdRequest request, JwtPrincipal principal) {
+        return ApiResult.ok(channelAiAnalysisService.analyze(
                 principal.getTenantId(), principal.getUserId(), principal.getDataScope(), request.getId()));
     }
 
     @PostMapping("/promote")
     @PreAuthorize("hasAuthority('*') or hasAuthority('crm:channel:promote')")
+    @AuditOperation(
+            module = "CHANNEL",
+            action = "PROMOTE",
+            description = "渠道晋升线索",
+            targetType = "CHANNEL",
+            targetIdField = "channelId")
     public ApiResult<ChannelResponse> promote(@RequestBody ChannelPromoteRequest request, JwtPrincipal principal) {
         return ApiResult.ok(channelApplicationService.promoteToLead(
                 principal.getTenantId(), principal.getUserId(), principal.getDataScope(), request));
@@ -157,6 +186,11 @@ public class ChannelController {
 
     @PostMapping("/delete")
     @PreAuthorize("hasAuthority('*') or hasAuthority('crm:channel:manage')")
+    @AuditOperation(
+            module = "CHANNEL",
+            action = "DELETE",
+            description = "删除渠道记录",
+            targetType = "CHANNEL")
     public ApiResult<Void> delete(@RequestBody IdRequest request, JwtPrincipal principal) {
         channelApplicationService.delete(
                 principal.getTenantId(), principal.getUserId(), principal.getDataScope(), request.getId());

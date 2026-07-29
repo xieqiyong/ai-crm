@@ -107,12 +107,19 @@ export function Drawer({ open, title, children, onClose, footer, size = 'md' }) 
   )
 }
 
-export function Field({ label, required, children, hint, className = '' }) {
+export function Field({
+  label,
+  required,
+  children,
+  hint,
+  className = '',
+  as: Component = 'label',
+}) {
   return (
-    <label className={['field', className].filter(Boolean).join(' ')}>
+    <Component className={['field', className].filter(Boolean).join(' ')}>
       <span>{label}{required && <em>*</em>}</span>
       {children}
       {hint && <small>{hint}</small>}
-    </label>
+    </Component>
   )
 }

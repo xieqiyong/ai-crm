@@ -1,8 +1,10 @@
 package com.hz.crm.application.lead;
 
+import com.baomidou.mybatisplus.core.toolkit.Wrappers;
 import com.hz.crm.application.customer.CustomerApplicationService;
 import com.hz.crm.application.customer.dto.CustomerResponse;
 import com.hz.crm.application.customer.dto.CustomerSaveRequest;
+import com.hz.crm.application.lead.dto.LeadAssignRequest;
 import com.hz.crm.application.lead.dto.LeadConvertRequest;
 import com.hz.crm.application.lead.dto.LeadConvertResponse;
 import com.hz.crm.application.lead.dto.LeadQuery;
@@ -12,16 +14,20 @@ import com.hz.crm.common.api.PageData;
 import com.hz.crm.common.exception.BusinessException;
 import com.hz.crm.common.id.SnowflakeIdGenerator;
 import com.hz.crm.common.time.DateTimes;
+import com.hz.crm.common.user.AssignableUserResolver;
+import com.hz.crm.common.user.UserDataScopeValidator;
 import com.hz.crm.common.user.UserNameResolver;
 import com.hz.crm.domain.customer.CustomerEntity;
 import com.hz.crm.domain.customer.CustomerLevel;
 import com.hz.crm.domain.customer.CustomerStatus;
-import com.hz.crm.domain.customer.repository.CustomerJpaRepository;
+import com.hz.crm.domain.customer.mapper.CustomerMapper;
 import com.hz.crm.domain.lead.LeadEntity;
 import com.hz.crm.domain.lead.LeadConvertType;
 import com.hz.crm.domain.lead.LeadStatus;
+import com.hz.crm.domain.lead.mapper.LeadMapper;
 import com.hz.crm.domain.lead.repository.LeadJpaRepository;
 import java.math.BigDecimal;
+import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.HashSet;
@@ -49,10 +55,19 @@ public class LeadApplicationService {
     private CustomerApplicationService customerApplicationService;
 
     @Autowired
-    private CustomerJpaRepository customerRepository;
+    private CustomerMapper customerMapper;
 
     @Autowired(required = false)
     private UserNameResolver userNameResolver;
+
+    @Autowired
+    private AssignableUserResolver assignableUserResolver;
+
+    @Autowired
+    private LeadMapper leadMapper;
+
+    @Autowired
+    private UserDataScopeValidator userDataScopeValidator;
 
     @Transactional(readOnly = true)
     public PageData<LeadResponse> page(Long tenantId, Long userId, String dataScope, LeadQuery query) {
@@ -112,6 +127,40 @@ public class LeadApplicationService {
         entity.setRemark(trimToNull(request.getRemark()));
         LeadResponse response = toResponse(leadRepository.save(entity));
         fillOwnerName(tenantId, response);
+        fillCustomerNames(tenantId, response);
+        return response;
+    }
+
+    @Transactional
+    public LeadResponse assign(
+            Long tenantId, Long operatorId, String dataScope, LeadAssignRequest request) {
+        if (request == null || request.getId() == null) {
+            throw new BusinessException("LEAD_ASSIGN_001", "线索编号不能为空");
+        }
+        if (request.getOwnerId() == null) {
+            throw new BusinessException("LEAD_ASSIGN_002", "负责人不能为空");
+        }
+        LeadEntity entity = findOneForAssignment(tenantId, request.getId());
+        userDataScopeValidator.checkOwnerAccess(tenantId, operatorId, dataScope, entity.getOwnerId());
+        checkOwnerScope(operatorId, dataScope, request.getOwnerId());
+        String ownerName = assignableUserResolver.resolveAssignableName(
+                tenantId, operatorId, dataScope, request.getOwnerId());
+        if (!request.getOwnerId().equals(entity.getOwnerId())) {
+            LocalDateTime updatedAt = DateTimes.now();
+            int updated = leadMapper.update(null, Wrappers.<LeadEntity>lambdaUpdate()
+                    .eq(LeadEntity::getId, entity.getId())
+                    .eq(LeadEntity::getTenantId, tenantId)
+                    .eq(LeadEntity::isDeleted, false)
+                    .set(LeadEntity::getOwnerId, request.getOwnerId())
+                    .set(LeadEntity::getUpdatedAt, updatedAt));
+            if (updated != 1) {
+                throw new BusinessException("LEAD_ASSIGN_004", "线索分配失败，请刷新后重试");
+            }
+            entity.setOwnerId(request.getOwnerId());
+            entity.setUpdatedAt(updatedAt);
+        }
+        LeadResponse response = toResponse(entity);
+        response.setOwnerName(ownerName);
         fillCustomerNames(tenantId, response);
         return response;
     }
@@ -249,6 +298,17 @@ public class LeadApplicationService {
                 .orElseThrow(() -> new BusinessException("LEAD_002", "线索不存在"));
     }
 
+    private LeadEntity findOneForAssignment(Long tenantId, Long id) {
+        LeadEntity entity = leadMapper.selectOne(Wrappers.<LeadEntity>lambdaQuery()
+                .eq(LeadEntity::getId, id)
+                .eq(LeadEntity::getTenantId, tenantId)
+                .eq(LeadEntity::isDeleted, false));
+        if (entity == null) {
+            throw new BusinessException("LEAD_ASSIGN_003", "线索不存在");
+        }
+        return entity;
+    }
+
     private void checkDataScope(Long userId, String dataScope, Long ownerId) {
         if ("SELF".equals(dataScope) && (ownerId == null || !ownerId.equals(userId))) {
             throw new BusinessException("DATA_001", "无权访问该数据");
@@ -351,7 +411,10 @@ public class LeadApplicationService {
         if (customerIds.isEmpty()) {
             return;
         }
-        List<CustomerEntity> customers = customerRepository.findByTenantIdAndIdInAndDeletedFalse(tenantId, customerIds);
+        List<CustomerEntity> customers = customerMapper.selectList(Wrappers.<CustomerEntity>lambdaQuery()
+                .eq(CustomerEntity::getTenantId, tenantId)
+                .eq(CustomerEntity::isDeleted, false)
+                .in(CustomerEntity::getId, customerIds));
         Map<Long, String> names = new HashMap<Long, String>();
         for (CustomerEntity customer : customers) {
             names.put(customer.getId(), customer.getName());

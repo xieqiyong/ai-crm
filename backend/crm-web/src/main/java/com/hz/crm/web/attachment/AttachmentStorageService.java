@@ -62,6 +62,16 @@ public class AttachmentStorageService {
         return uploadToLocal(file, originalName, storageKey);
     }
 
+    public AttachmentUploadResponse uploadFile(MultipartFile file) {
+        validateFile(file);
+        String originalName = resolveOriginalName(file);
+        String storageKey = buildStorageKey(CurrentUserContext.current().getTenantId(), originalName);
+        if (minioEnabled && minioClient != null) {
+            return uploadToMinio(file, originalName, storageKey);
+        }
+        return uploadToLocal(file, originalName, storageKey);
+    }
+
     private AttachmentUploadResponse uploadToMinio(MultipartFile file, String originalName, String storageKey) {
         try {
             ensureBucket();
@@ -78,7 +88,7 @@ public class AttachmentStorageService {
             }
             return response(file, originalName, storageKey, buildMinioUrl(storageKey));
         } catch (Exception ex) {
-            throw new BusinessException("ATTACHMENT_004", "图片上传到MinIO失败：" + ex.getMessage());
+            throw new BusinessException("ATTACHMENT_004", "文件上传到MinIO失败：" + ex.getMessage());
         }
     }
 
@@ -96,7 +106,7 @@ public class AttachmentStorageService {
         } catch (BusinessException ex) {
             throw ex;
         } catch (Exception ex) {
-            throw new BusinessException("ATTACHMENT_006", "图片保存失败：" + ex.getMessage());
+            throw new BusinessException("ATTACHMENT_006", "文件保存失败：" + ex.getMessage());
         }
     }
 
@@ -149,6 +159,15 @@ public class AttachmentStorageService {
         }
         if (file.getSize() > 10 * 1024 * 1024L) {
             throw new BusinessException("ATTACHMENT_003", "图片不能超过10MB");
+        }
+    }
+
+    private void validateFile(MultipartFile file) {
+        if (file == null || file.isEmpty()) {
+            throw new BusinessException("ATTACHMENT_007", "请选择要上传的文件");
+        }
+        if (file.getSize() > 30 * 1024 * 1024L) {
+            throw new BusinessException("ATTACHMENT_008", "文件不能超过30MB");
         }
     }
 

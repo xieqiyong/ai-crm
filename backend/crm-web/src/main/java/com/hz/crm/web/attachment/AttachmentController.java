@@ -21,4 +21,10 @@ public class AttachmentController {
     public ApiResult<AttachmentUploadResponse> uploadImage(@RequestParam("file") MultipartFile file) {
         return ApiResult.ok(attachmentStorageService.uploadImage(file));
     }
+
+    @PostMapping("/upload-file")
+    @PreAuthorize("isAuthenticated()")
+    public ApiResult<AttachmentUploadResponse> uploadFile(@RequestParam("file") MultipartFile file) {
+        return ApiResult.ok(attachmentStorageService.uploadFile(file));
+    }
 }

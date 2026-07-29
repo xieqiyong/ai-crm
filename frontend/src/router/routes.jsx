@@ -1,11 +1,12 @@
 import {
-  BarChart3, BookOpen, Bot, BriefcaseBusiness, ClipboardCheck,
+  BarChart3, BookOpen, Bot, BriefcaseBusiness, ClipboardCheck, FileClock,
   LayoutDashboard, MessageSquareText, Network, Package, Settings, UserRoundCog, Users,
 } from 'lucide-react'
 import { AgentConfigPage } from '../features/agent/AgentConfigPage'
 import { MarketingAssistantPage } from '../features/assistant/MarketingAssistantPage'
 import { ModelConfigPage } from '../features/admin/ModelConfigPage'
 import { OrganizationAdminPage } from '../features/admin/OrganizationAdminPage'
+import { AuditLogPage } from '../features/admin/AuditLogPage'
 import { ChannelPage } from '../features/channel/ChannelPage'
 import { CustomerDetailPage } from '../features/customer/CustomerDetailPage'
 import { CustomerPage } from '../features/customer/CustomerPage'
@@ -88,7 +89,7 @@ export const routeGroups = [
     items: [
       {
         key: 'assistant',
-        label: 'AI 营销助手',
+        label: 'AI 智能体助手',
         icon: Bot,
         permission: 'menu.assistant',
         component: MarketingAssistantPage,
@@ -125,6 +126,13 @@ export const routeGroups = [
         icon: UserRoundCog,
         permission: 'menu.organization',
         component: OrganizationAdminPage,
+      },
+      {
+        key: 'audit-logs',
+        label: '审计日志',
+        icon: FileClock,
+        permission: 'menu.audit_logs',
+        component: AuditLogPage,
       },
       {
         key: 'settings',

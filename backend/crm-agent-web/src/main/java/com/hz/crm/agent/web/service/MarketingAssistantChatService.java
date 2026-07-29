@@ -30,11 +30,13 @@ import com.hz.crm.domain.opportunity.mapper.OpportunityMapper;
 import java.io.IOException;
 import java.math.BigDecimal;
 import java.time.Duration;
+import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.UUID;
 import java.util.concurrent.CompletableFuture;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.security.core.context.SecurityContext;
@@ -42,6 +44,7 @@ import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.stereotype.Service;
 import org.springframework.util.StringUtils;
 import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
+import reactor.core.publisher.Flux;
 
 @Service
 public class MarketingAssistantChatService {
@@ -95,7 +98,7 @@ public class MarketingAssistantChatService {
         } catch (RuntimeException ex) {
             fallback.setAvailable(true);
             fallback.setSuccess(false);
-            fallback.setMessage("AI营销助手调用失败，已返回真实数据规则建议：" + ex.getMessage());
+            fallback.setMessage("AI智能体助手调用失败，已返回真实数据规则建议：" + ex.getMessage());
             if (runtimeRequest != null) {
                 fallback.setRunId(runtimeRequest.getRunId());
                 fallback.setConversationId(runtimeRequest.getConversationId());
@@ -142,26 +145,25 @@ public class MarketingAssistantChatService {
         String scenario = resolveScenario(safeRequest);
         MarketingAssistantChatResponse fallback = null;
         try {
-            sendThought(emitter, "已读取当前业务数据");
+            sendRuntimeEvent(emitter, runtimeRequest, "RUN_STATUS_CHANGED", "运行状态变更", "营销助手开始处理", null);
             fallback = ruleAssistant(tenantId, userId, dataScope, safeRequest, scenario);
+            sendRuntimeEvent(emitter, runtimeRequest, "CONTEXT_LOADED", "上下文加载完成", "已读取当前业务数据", null);
             AgentEntity agent = resolveAgent(tenantId, fallback);
             if (agent == null && fallback.getMessage() != null) {
-                sendDone(emitter, fallback);
-                emitter.complete();
+                sendResponseAndComplete(emitter, runtimeRequest, fallback);
                 return;
             }
             if (!canRunAgent(agent)) {
                 fallback.setAvailable(false);
                 fallback.setSuccess(true);
                 fallback.setMessage("未配置通用营销助手智能体，已返回真实数据规则建议");
-                sendThought(emitter, "未找到可用智能体配置，返回规则建议");
-                sendDone(emitter, fallback);
-                emitter.complete();
+                sendRuntimeEvent(emitter, runtimeRequest, "RUN_STATUS_CHANGED", "运行状态变更", "未找到可用智能体配置，返回规则建议", null);
+                sendResponseAndComplete(emitter, runtimeRequest, fallback);
                 return;
             }
-            sendThought(emitter, "已准备营销助手回答策略");
+            sendRuntimeEvent(emitter, runtimeRequest, "RUN_STATUS_CHANGED", "运行状态变更", "已准备营销助手回答策略", null);
             runtimeRequest = buildRuntimeRequest(tenantId, userId, dataScope, safeRequest, scenario, fallback, agent);
-            String output = cleanAssistantOutput(collectRuntimeStream(emitter, runtimeRequest));
+            String output = collectRuntimeStream(emitter, runtimeRequest);
             MarketingAssistantChatResponse response = baseResponse(scenario, fallback.getTitle());
             copyAssistantState(response, fallback);
             response.setAvailable(true);
@@ -169,31 +171,29 @@ public class MarketingAssistantChatService {
             response.setConversationId(runtimeRequest.getConversationId());
             if (!StringUtils.hasText(output)) {
                 response.setSuccess(false);
-                response.setMessage("AI营销助手未返回内容，已返回真实数据规则建议");
+                response.setMessage("AI智能体助手未返回内容，已返回真实数据规则建议");
                 response.setReply(fallback.getReply());
             } else {
                 response.setSuccess(true);
-                response.setMessage("AI营销助手回复完成");
+                response.setMessage("AI智能体助手回复完成");
                 response.setReply(output.trim());
             }
-                sendThought(emitter, "已生成销售可执行建议");
-            sendDone(emitter, response);
-            emitter.complete();
+            sendRuntimeEvent(emitter, runtimeRequest, "RUN_STATUS_CHANGED", "运行状态变更", "已生成销售可执行建议", null);
+            sendResponseAndComplete(emitter, runtimeRequest, response);
         } catch (RuntimeException ex) {
             MarketingAssistantChatResponse response = fallback == null
                     ? baseResponse(scenario, "请求失败")
                     : fallback;
             response.setAvailable(runtimeRequest != null);
             response.setSuccess(false);
-            response.setMessage("AI营销助手调用失败，已返回真实数据规则建议：" + ex.getMessage());
+            response.setMessage("AI智能体助手调用失败，已返回真实数据规则建议：" + ex.getMessage());
             if (runtimeRequest != null) {
                 response.setRunId(runtimeRequest.getRunId());
                 response.setConversationId(runtimeRequest.getConversationId());
             }
             try {
-                sendThought(emitter, "AI回复失败，已返回规则建议");
-                sendDone(emitter, response);
-                emitter.complete();
+                sendRuntimeEvent(emitter, runtimeRequest, "RUN_ERROR", "运行异常", response.getMessage(), null);
+                sendResponseAndComplete(emitter, runtimeRequest, response);
             } catch (RuntimeException sendEx) {
                 emitter.completeWithError(sendEx);
             }
@@ -203,9 +203,17 @@ public class MarketingAssistantChatService {
     private String collectRuntimeStream(SseEmitter emitter, AgentRuntimeRequest runtimeRequest) {
         final StringBuilder streamContent = new StringBuilder();
         final String[] finalContent = new String[1];
-        agentRuntimeFacade
-                .run(runtimeRequest)
-                .doOnNext(event -> handleRuntimeEvent(emitter, event, streamContent, finalContent))
+        final boolean[] emittedDelta = new boolean[] { false };
+        Flux<AgentRuntimeEvent> runtimeFlux = agentRuntimeFacade.run(runtimeRequest);
+        sendRuntimeEvent(emitter, runtimeRequest, "RUN_STARTED", "运行开始", "Agent Run 已创建", null);
+        runtimeFlux
+                .doOnNext(event -> handleRuntimeEvent(
+                        emitter,
+                        runtimeRequest,
+                        event,
+                        streamContent,
+                        finalContent,
+                        emittedDelta))
                 .blockLast(Duration.ofSeconds(90));
         if (StringUtils.hasText(finalContent[0])) {
             return finalContent[0];
@@ -215,82 +223,75 @@ public class MarketingAssistantChatService {
 
     private void handleRuntimeEvent(
             SseEmitter emitter,
+            AgentRuntimeRequest runtimeRequest,
             AgentRuntimeEvent event,
             StringBuilder streamContent,
-            String[] finalContent) {
+            String[] finalContent,
+            boolean[] emittedDelta) {
         if (event == null) {
             return;
         }
         String type = event.getType() == null ? "" : event.getType().toUpperCase();
-        if (type.contains("TOOL_CALL")) {
-            sendThought(emitter, resolveToolThought(event));
+        if (isToolCallStartedEvent(type)) {
+            sendRuntimeEvent(
+                    emitter,
+                    runtimeRequest,
+                    "TOOL_CALL_STARTED",
+                    "调用辅助能力",
+                    resolveToolThought(event),
+                    runtimeMetadata(event));
             return;
         }
-        if (type.contains("TOOL_RESULT")) {
-            if (type.contains("END")) {
-                sendThought(emitter, "已完成资料摘要");
-            }
+        if (isToolResultFinishedEvent(type)) {
+            sendRuntimeEvent(
+                    emitter,
+                    runtimeRequest,
+                    "TOOL_RESULT_FINISHED",
+                    "辅助资料完成",
+                    "已完成资料摘要",
+                    runtimeMetadata(event));
+            return;
+        }
+        if (isToolEvent(type)) {
             return;
         }
         String content = event.getContent();
         if (!StringUtils.hasText(content)) {
             return;
         }
-        if (type.contains("RESULT") || type.contains("FINAL")) {
+        if (isAnswerFinishedEvent(type)) {
             finalContent[0] = content;
+            if (!emittedDelta[0]) {
+                sendRuntimeEvent(
+                        emitter,
+                        runtimeRequest,
+                        "ANSWER_FINISHED",
+                        "回答完成",
+                        content,
+                        runtimeMetadata(event));
+            } else {
+                sendRuntimeEvent(
+                        emitter,
+                        runtimeRequest,
+                        "ANSWER_FINISHED",
+                        "回答完成",
+                        "",
+                        runtimeMetadata(event));
+            }
             return;
         }
+        if (!isAnswerDeltaEvent(type) && isNoiseEvent(type)) {
+            return;
+        }
+        emittedDelta[0] = true;
         streamContent.append(content);
-    }
-
-    private String cleanAssistantOutput(String output) {
-        if (!StringUtils.hasText(output)) {
-            return "";
-        }
-        String text = output.trim();
-        if (looksLikeRawKnowledgeResult(text)) {
-            return "";
-        }
-        text = removeAssistantProcessText(text);
-        return normalizeAssistantMarkdown(text);
-    }
-
-    private boolean looksLikeRawKnowledgeResult(String text) {
-        String value = text == null ? "" : text.toLowerCase();
-        return (value.contains("\"references\"") && value.contains("\"retrieval\""))
-                || (value.contains("\"hitcount\"") && value.contains("\"query\""));
-    }
-
-    private String removeAssistantProcessText(String text) {
-        if (!StringUtils.hasText(text)) {
-            return "";
-        }
-        String value = text.trim();
-        value = value.replaceFirst(
-                "^(好的|好|收到|可以)[，,。\\s]*(我)?(先|再)?(查一下|查询一下|检索一下|看一下)[^。！？!?\n]*[。！？!?\\s]*",
-                "");
-        value = value.replaceFirst(
-                "^(我)?(先|再)?(查一下|查询一下|检索一下|看一下)(知识库)?[^。！？!?\n]*[。！？!?\\s]*",
-                "");
-        value = value.replaceFirst(
-                "^(让我)?(先|再)?(查一份|查一下|检索一下|看一下)更详细的?资料[^。！？!?\n]*[。！？!?\\s]*",
-                "");
-        value = value.replaceFirst(
-                "^(好的|好)[，,。\\s]*以下是(知识库中)?关于[^\\n]{0,60}(完整介绍|详细介绍|资料)[：:\\s-]*",
-                "");
-        return value.trim();
-    }
-
-    private String normalizeAssistantMarkdown(String text) {
-        if (!StringUtils.hasText(text)) {
-            return "";
-        }
-        String value = text.trim();
-        value = value.replaceAll("([^\\n])\\s+---\\s*", "$1\n\n---\n\n");
-        value = value.replaceAll("([^\\n|])(\\|[^\\n|]+\\|[^\\n|]+\\|)", "$1\n\n$2");
-        value = value.replaceAll("(\\|[^\\n|]*\\|[^\\n|]*\\|)\\s+(?=\\|[^\\n|]*\\|[^\\n|]*\\|)", "$1\n");
-        value = value.replaceAll("\\n{3,}", "\n\n");
-        return value.trim();
+        sendRuntimeEvent(
+                emitter,
+                runtimeRequest,
+                "ANSWER_DELTA",
+                "回答增量",
+                content,
+                runtimeMetadata(event));
     }
 
     private String resolveToolThought(AgentRuntimeEvent event) {
@@ -304,21 +305,89 @@ public class MarketingAssistantChatService {
         return "";
     }
 
-    private void sendThought(SseEmitter emitter, String content) {
-        if (!StringUtils.hasText(content)) {
-            return;
-        }
-        Map<String, Object> payload = new LinkedHashMap<String, Object>();
-        payload.put("type", "thought");
-        payload.put("content", content);
-        sendSse(emitter, "thought", payload);
+    private boolean isToolCallStartedEvent(String type) {
+        return type.contains("TOOL_CALL_START") || type.contains("TOOL_CALL_STARTED");
     }
 
-    private void sendDone(SseEmitter emitter, MarketingAssistantChatResponse response) {
+    private boolean isToolResultFinishedEvent(String type) {
+        return type.contains("TOOL_RESULT_END") || type.contains("TOOL_RESULT_FINISHED");
+    }
+
+    private boolean isToolEvent(String type) {
+        return type.contains("TOOL_CALL") || type.contains("TOOL_RESULT");
+    }
+
+    private boolean isAnswerDeltaEvent(String type) {
+        return type.contains("TEXT_BLOCK_DELTA") || type.contains("ANSWER_DELTA");
+    }
+
+    private boolean isAnswerFinishedEvent(String type) {
+        return type.contains("AGENT_RESULT")
+                || type.contains("TEXT_BLOCK_END")
+                || type.contains("ANSWER_FINISHED")
+                || type.contains("FINAL");
+    }
+
+    private boolean isNoiseEvent(String type) {
+        return type.contains("MODEL_CALL")
+                || type.contains("THINKING")
+                || type.contains("AGENT_START")
+                || type.contains("AGENT_END")
+                || type.contains("WORKFLOW");
+    }
+
+    private void sendResponseAndComplete(
+            SseEmitter emitter,
+            AgentRuntimeRequest runtimeRequest,
+            MarketingAssistantChatResponse response) {
+        String reply = response == null ? "" : response.getReply();
+        sendRuntimeEvent(emitter, runtimeRequest, "ANSWER_FINISHED", "回答完成", reply, null);
+        Map<String, Object> metadata = new LinkedHashMap<String, Object>();
+        metadata.put("response", response);
+        sendRuntimeEvent(
+                emitter,
+                runtimeRequest,
+                "RUN_FINISHED",
+                "运行完成",
+                response == null ? "" : text(response.getMessage()),
+                metadata);
+        emitter.complete();
+    }
+
+    private void sendRuntimeEvent(
+            SseEmitter emitter,
+            AgentRuntimeRequest runtimeRequest,
+            String type,
+            String stage,
+            String content,
+            Map<String, Object> metadata) {
         Map<String, Object> payload = new LinkedHashMap<String, Object>();
-        payload.put("type", "done");
-        payload.put("response", response);
-        sendSse(emitter, "done", payload);
+        payload.put("eventId", UUID.randomUUID().toString());
+        payload.put("type", type);
+        payload.put("stage", stage);
+        payload.put("content", content);
+        payload.put("metadata", metadata == null ? new LinkedHashMap<String, Object>() : metadata);
+        if (runtimeRequest != null) {
+            payload.put("runId", runtimeRequest.getRunId());
+            payload.put("conversationId", runtimeRequest.getConversationId());
+        }
+        payload.put("createdAt", LocalDateTime.now().toString());
+        sendSse(emitter, type, payload);
+    }
+
+    private Map<String, Object> runtimeMetadata(AgentRuntimeEvent event) {
+        Map<String, Object> metadata = new LinkedHashMap<String, Object>();
+        if (event == null) {
+            return metadata;
+        }
+        metadata.put("rawType", event.getType());
+        if (StringUtils.hasText(event.getToolName())) {
+            metadata.put("toolName", event.getToolName());
+        }
+        if (event.getMetadata() != null) {
+            metadata.putAll(event.getMetadata());
+        }
+        return metadata;
     }
 
     private void sendSse(SseEmitter emitter, String eventName, Map<String, Object> payload) {
@@ -397,15 +466,15 @@ public class MarketingAssistantChatService {
         response.setAvailable(true);
         response.setRunId(runtimeRequest.getRunId());
         response.setConversationId(runtimeRequest.getConversationId());
-        String output = cleanAssistantOutput(resolveOutput(events));
+        String output = resolveOutput(events);
         if (!StringUtils.hasText(output)) {
             response.setSuccess(false);
-            response.setMessage("AI营销助手未返回内容，已返回真实数据规则建议");
+            response.setMessage("AI智能体助手未返回内容，已返回真实数据规则建议");
             response.setReply(fallback.getReply());
             return response;
         }
         response.setSuccess(true);
-        response.setMessage("AI营销助手回复完成");
+        response.setMessage("AI智能体助手回复完成");
         response.setReply(output.trim());
         return response;
     }

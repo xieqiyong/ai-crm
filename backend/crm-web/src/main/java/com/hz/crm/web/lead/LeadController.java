@@ -1,6 +1,7 @@
 package com.hz.crm.web.lead;
 
 import com.hz.crm.application.lead.LeadApplicationService;
+import com.hz.crm.application.lead.dto.LeadAssignRequest;
 import com.hz.crm.application.lead.dto.LeadConvertRequest;
 import com.hz.crm.application.lead.dto.LeadConvertResponse;
 import com.hz.crm.application.lead.dto.LeadQuery;
@@ -9,6 +10,7 @@ import com.hz.crm.application.lead.dto.LeadSaveRequest;
 import com.hz.crm.auth.security.JwtPrincipal;
 import com.hz.crm.common.api.ApiResult;
 import com.hz.crm.common.api.PageData;
+import com.hz.crm.common.audit.AuditOperation;
 import com.hz.crm.web.support.IdRequest;
 import jakarta.validation.Valid;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -43,6 +45,11 @@ public class LeadController {
     @PostMapping("/save")
     @PreAuthorize("hasAuthority('*') or hasAuthority('crm:lead:manage') "
             + "or (#request != null and #request.id == null and hasAuthority('crm:lead:create'))")
+    @AuditOperation(
+            module = "LEAD",
+            action = "SAVE",
+            description = "保存线索",
+            targetType = "LEAD")
     public ApiResult<LeadResponse> save(@Valid @RequestBody LeadSaveRequest request, JwtPrincipal principal) {
         return ApiResult.ok(leadApplicationService.save(
                 principal.getTenantId(), principal.getUserId(), principal.getDataScope(), request));
@@ -50,15 +57,39 @@ public class LeadController {
 
     @PostMapping("/delete")
     @PreAuthorize("hasAuthority('*') or hasAuthority('crm:lead:manage')")
+    @AuditOperation(
+            module = "LEAD",
+            action = "DELETE",
+            description = "删除线索",
+            targetType = "LEAD")
     public ApiResult<Void> delete(@RequestBody IdRequest request, JwtPrincipal principal) {
         leadApplicationService.delete(
                 principal.getTenantId(), principal.getUserId(), principal.getDataScope(), request.getId());
         return ApiResult.ok(null);
     }
 
+    @PostMapping("/assign")
+    @PreAuthorize("hasAuthority('*') or hasAuthority('crm:lead:assign')")
+    @AuditOperation(
+            module = "LEAD",
+            action = "ASSIGN",
+            description = "分配线索负责人",
+            targetType = "LEAD")
+    public ApiResult<LeadResponse> assign(
+            @Valid @RequestBody LeadAssignRequest request, JwtPrincipal principal) {
+        return ApiResult.ok(leadApplicationService.assign(
+                principal.getTenantId(), principal.getUserId(), principal.getDataScope(), request));
+    }
+
     @PostMapping("/convert-to-customer")
     @PreAuthorize("hasAuthority('*') or (hasAuthority('crm:lead:manage') "
             + "and (hasAuthority('crm:customer:manage') or hasAuthority('crm:customer:edit')))")
+    @AuditOperation(
+            module = "LEAD",
+            action = "CONVERT",
+            description = "线索转为客户",
+            targetType = "LEAD",
+            targetIdField = "leadId")
     public ApiResult<LeadConvertResponse> convertToCustomer(
             @Valid @RequestBody LeadConvertRequest request, JwtPrincipal principal) {
         return ApiResult.ok(leadApplicationService.convertToCustomer(

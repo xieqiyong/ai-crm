@@ -31,4 +31,11 @@
 - 遵循DDL领域模型
 - 引入中间件redis，配置中心nacos，MinIO，Elasticsearch
 - 使用fastjson，lombok等接入
-- 
+
+## 数据库结构变更约束
+
+- 禁止在应用启动阶段通过 `ApplicationRunner`、`CommandLineRunner`、监听器、初始化 Bean 或其他代码自动修改历史数据库结构。
+- 禁止使用 `JdbcTemplate`、MyBatis、JPA 原生 SQL 等方式在业务应用中执行 `ALTER TABLE`、`DROP CONSTRAINT`、字段类型转换等兼容操作。
+- 禁止为了兼容历史错误表结构，在业务代码中增加字段截断、旧字段兜底、双写或静默降级逻辑。
+- JPA 实体只负责描述当前目标表结构以及全新环境的 DDL 初始化，不负责自动修复存量数据库。
+- 存量数据库与当前实体结构不一致时，必须停止自动处理，明确告知开发人员问题原因、影响范围和需要手动执行的 SQL，由开发人员确认后自行处理。

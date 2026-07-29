@@ -9,6 +9,7 @@ import com.hz.crm.agent.runtime.dto.ModelConfigStatusResponse;
 import com.hz.crm.agent.runtime.service.ModelConfigService;
 import com.hz.crm.auth.security.JwtPrincipal;
 import com.hz.crm.common.api.ApiResult;
+import com.hz.crm.common.audit.AuditOperation;
 import java.util.List;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.security.access.prepost.PreAuthorize;
@@ -34,12 +35,22 @@ public class ModelConfigController {
 
     @PostMapping("/save")
     @PreAuthorize("hasAuthority('*') or hasAuthority('crm:model:manage')")
+    @AuditOperation(
+            module = "MODEL",
+            action = "CONFIG_SAVE",
+            description = "保存大模型配置",
+            targetType = "MODEL_CONFIG")
     public ApiResult<ModelConfigResponse> save(@RequestBody ModelConfigRequest request, JwtPrincipal principal) {
         return ApiResult.ok(modelConfigService.save(principal.getTenantId(), request));
     }
 
     @PostMapping("/delete")
     @PreAuthorize("hasAuthority('*') or hasAuthority('crm:model:manage')")
+    @AuditOperation(
+            module = "MODEL",
+            action = "CONFIG_DELETE",
+            description = "删除大模型配置",
+            targetType = "MODEL_CONFIG")
     public ApiResult<Void> delete(@RequestBody ModelConfigIdRequest request, JwtPrincipal principal) {
         modelConfigService.delete(principal.getTenantId(), request);
         return ApiResult.ok(null);
@@ -47,6 +58,11 @@ public class ModelConfigController {
 
     @PostMapping("/default")
     @PreAuthorize("hasAuthority('*') or hasAuthority('crm:model:manage')")
+    @AuditOperation(
+            module = "MODEL",
+            action = "CONFIG_DEFAULT",
+            description = "设置默认大模型",
+            targetType = "MODEL_CONFIG")
     public ApiResult<ModelConfigResponse> setDefault(@RequestBody ModelConfigIdRequest request, JwtPrincipal principal) {
         return ApiResult.ok(modelConfigService.setDefault(principal.getTenantId(), request));
     }
@@ -59,6 +75,12 @@ public class ModelConfigController {
 
     @PostMapping("/debug")
     @PreAuthorize("hasAuthority('*') or hasAuthority('crm:model:manage')")
+    @AuditOperation(
+            module = "MODEL",
+            action = "CONFIG_DEBUG",
+            description = "调试大模型配置",
+            targetType = "MODEL_CONFIG",
+            recordParameters = false)
     public ApiResult<ModelConfigDebugResponse> debug(
             @RequestBody ModelConfigDebugRequest request, JwtPrincipal principal) {
         return ApiResult.ok(modelConfigService.debug(principal.getTenantId(), request));

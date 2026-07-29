@@ -2,8 +2,10 @@ package com.hz.crm.agent.runtime.service;
 
 import com.hz.crm.agent.runtime.dto.AgentRuntimeEvent;
 import io.agentscope.core.event.AgentEvent;
+import io.agentscope.core.event.AgentResultEvent;
 import io.agentscope.core.event.TextBlockDeltaEvent;
 import io.agentscope.core.event.ToolCallStartEvent;
+import io.agentscope.core.event.ToolResultEndEvent;
 import io.agentscope.core.event.ToolResultTextDeltaEvent;
 import java.lang.reflect.Method;
 import org.springframework.stereotype.Service;
@@ -20,10 +22,14 @@ public class AgentRuntimeEventMapper {
         fillTokenUsage(runtimeEvent, event);
         if (event instanceof TextBlockDeltaEvent) {
             runtimeEvent.setContent(((TextBlockDeltaEvent) event).getDelta());
+        } else if (event instanceof AgentResultEvent && ((AgentResultEvent) event).getResult() != null) {
+            runtimeEvent.setContent(((AgentResultEvent) event).getResult().getTextContent());
         } else if (event instanceof ToolCallStartEvent) {
             runtimeEvent.setToolName(((ToolCallStartEvent) event).getToolCallName());
         } else if (event instanceof ToolResultTextDeltaEvent) {
             runtimeEvent.setContent(((ToolResultTextDeltaEvent) event).getDelta());
+        } else if (event instanceof ToolResultEndEvent) {
+            runtimeEvent.setToolName(((ToolResultEndEvent) event).getToolCallName());
         }
         return runtimeEvent;
     }

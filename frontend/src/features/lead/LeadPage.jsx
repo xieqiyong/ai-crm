@@ -23,6 +23,7 @@ import {
   Field,
   MarkdownText,
   Modal,
+  OwnerAssignModal,
   PageHeader,
   useConfirmDialog,
 } from '../../components'
@@ -288,6 +289,7 @@ function resolveConvertAdvice(analysis) {
 
 export function LeadPage({ can, notify, navigate }) {
   const canManage = can('crm:lead:manage')
+  const canAssign = can('crm:lead:assign')
   const canCreate = canManage || can('crm:lead:create')
   const canDelete = can('crm:lead:manage')
   const canConvert = canManage && (can('crm:customer:manage') || can('crm:customer:edit'))
@@ -303,6 +305,8 @@ export function LeadPage({ can, notify, navigate }) {
   const [loading, setLoading] = useState(true)
   const [selected, setSelected] = useState(null)
   const [editing, setEditing] = useState(null)
+  const [assigning, setAssigning] = useState(null)
+  const [assignSubmitting, setAssignSubmitting] = useState(false)
   const [converting, setConverting] = useState(null)
   const [aiAnalysis, setAiAnalysis] = useState(null)
   const [analyzingId, setAnalyzingId] = useState(null)
@@ -377,6 +381,27 @@ export function LeadPage({ can, notify, navigate }) {
       load({ ...query, pageNo: 1 })
     } catch (err) {
       notify(err.message || '线索删除失败', 'info')
+    }
+  }
+
+  const assignLead = async (ownerId) => {
+    if (!assigning?.id || !ownerId) {
+      notify('请选择负责人', 'info')
+      return
+    }
+    setAssignSubmitting(true)
+    try {
+      const assigned = await api.lead.assign({ id: assigning.id, ownerId })
+      notify('线索已分配', 'success')
+      setAssigning(null)
+      if (String(selected?.id || '') === String(assigned?.id || '')) {
+        setSelected(assigned)
+      }
+      load(query)
+    } catch (err) {
+      notify(err.message || '线索分配失败', 'info')
+    } finally {
+      setAssignSubmitting(false)
     }
   }
 
@@ -548,6 +573,15 @@ export function LeadPage({ can, notify, navigate }) {
                             编辑
                           </button>
                         )}
+                        {canAssign && (
+                          <button
+                            type="button"
+                            className="table-text-button"
+                            onClick={() => setAssigning(row)}
+                          >
+                            分配
+                          </button>
+                        )}
                         {canAnalyze && (
                           <button
                             type="button"
@@ -621,6 +655,7 @@ export function LeadPage({ can, notify, navigate }) {
         open={Boolean(selected)}
         data={selected}
         canWrite={canManage}
+        canAssign={canAssign}
         canDelete={canDelete}
         canConvert={canConvert}
         canAnalyze={canAnalyze}
@@ -632,6 +667,7 @@ export function LeadPage({ can, notify, navigate }) {
         onAnalyze={() => analyzeLead(selected)}
         onOpenCustomer={() => navigate(`customers/detail/${encodeURIComponent(selected.customerId)}`)}
         onEdit={() => setEditing(toForm(selected))}
+        onAssign={() => setAssigning(selected)}
         onDelete={() => deleteLead(selected)}
         onClose={() => setSelected(null)}
       />
@@ -643,6 +679,17 @@ export function LeadPage({ can, notify, navigate }) {
         onChange={setEditing}
         onClose={() => setEditing(null)}
         onSave={saveLead}
+      />
+      <OwnerAssignModal
+        open={Boolean(assigning)}
+        title="分配线索负责人"
+        recordName={assigning?.companyName || assigning?.name}
+        currentOwnerId={assigning?.ownerId}
+        currentOwnerName={assigning?.ownerId ? ownerName(assigning) : ''}
+        ownerOptions={ownerOptions}
+        submitting={assignSubmitting}
+        onClose={() => setAssigning(null)}
+        onConfirm={assignLead}
       />
       <LeadConvertModal
         open={Boolean(converting)}
@@ -671,6 +718,7 @@ function LeadDetailDrawer({
   open,
   data,
   canWrite,
+  canAssign,
   canDelete,
   canConvert,
   canAnalyze,
@@ -682,6 +730,7 @@ function LeadDetailDrawer({
   onAnalyze,
   onOpenCustomer,
   onEdit,
+  onAssign,
   onDelete,
   onClose,
 }) {
@@ -692,6 +741,7 @@ function LeadDetailDrawer({
       {canConvert && data.status !== 'CONVERTED' && <Button icon={UserPlus} onClick={onConvert}>转为客户</Button>}
       {data.status === 'CONVERTED' && data.customerId && <Button icon={ArrowUpRight} onClick={onOpenCustomer}>查看客户</Button>}
       {canWrite && <Button variant="secondary" icon={Edit2} onClick={onEdit}>编辑线索</Button>}
+      {canAssign && <Button variant="secondary" icon={UserPlus} onClick={onAssign}>分配负责人</Button>}
       {canDelete && <Button variant="ghost" icon={Trash2} onClick={onDelete}>删除</Button>}
     </div>
   )

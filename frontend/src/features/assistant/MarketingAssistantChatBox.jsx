@@ -91,6 +91,9 @@ export function MarketingAssistantChatBox({
   const [loading, setLoading] = useState(false)
   const [messages, setMessages] = useState([])
   const typingTimersRef = useRef({})
+  const streamTargetsRef = useRef({})
+  const streamDoneRef = useRef({})
+  const streamFinishPatchesRef = useRef({})
   const defaultSuggestions = useMemo(() => buildDefaultSuggestions(routeKey), [routeKey])
   const lastAssistant = [...messages].reverse().find((item) => item.role === 'assistant')
   const suggestions = lastAssistant?.suggestions?.length ? lastAssistant.suggestions : defaultSuggestions
@@ -98,6 +101,9 @@ export function MarketingAssistantChatBox({
   useEffect(() => () => {
     Object.values(typingTimersRef.current).forEach((timer) => window.clearTimeout(timer))
     typingTimersRef.current = {}
+    streamTargetsRef.current = {}
+    streamDoneRef.current = {}
+    streamFinishPatchesRef.current = {}
   }, [])
 
   const patchAssistantMessage = (messageId, updater) => {
@@ -116,38 +122,72 @@ export function MarketingAssistantChatBox({
       window.clearTimeout(timer)
       delete typingTimersRef.current[messageId]
     }
+    delete streamTargetsRef.current[messageId]
+    delete streamDoneRef.current[messageId]
+    delete streamFinishPatchesRef.current[messageId]
   }
 
-  const startTypewriter = (messageId, fullText, finishPatch) => {
-    clearTypewriter(messageId)
-    const text = String(fullText || '')
+  const ensureTypewriter = (messageId) => {
+    if (typingTimersRef.current[messageId]) return
     const interval = typewriterIntervalMs()
     const step = typewriterStep()
-    let cursor = 0
-    patchAssistantMessage(messageId, {
-      content: '',
-      typing: true,
-      streaming: true,
-      message: '正在输出结果',
-    })
     const tick = () => {
-      cursor = Math.min(cursor + step, text.length)
-      patchAssistantMessage(messageId, {
-        content: text.slice(0, cursor),
+      const target = String(streamTargetsRef.current[messageId] || '')
+      let reached = false
+      patchAssistantMessage(messageId, (message) => {
+        const current = String(message.content || '')
+        const nextContent = target.startsWith(current)
+          ? target.slice(0, Math.min(current.length + step, target.length))
+          : target
+        reached = nextContent.length >= target.length
+        const finished = reached && Boolean(streamDoneRef.current[messageId])
+        return {
+          content: nextContent,
+          typing: !finished,
+          streaming: !finished,
+          ...(finished ? (streamFinishPatchesRef.current[messageId] || {}) : {}),
+        }
       })
-      if (cursor >= text.length) {
+      if (reached) {
         delete typingTimersRef.current[messageId]
-        patchAssistantMessage(messageId, {
-          ...finishPatch,
-          typing: false,
-          streaming: false,
-        })
-        setLoading(false)
+        if (streamDoneRef.current[messageId]) {
+          delete streamTargetsRef.current[messageId]
+          delete streamDoneRef.current[messageId]
+          delete streamFinishPatchesRef.current[messageId]
+          setLoading(false)
+        }
         return
       }
       typingTimersRef.current[messageId] = window.setTimeout(tick, interval)
     }
     typingTimersRef.current[messageId] = window.setTimeout(tick, interval)
+  }
+
+  const updateAssistantTarget = (messageId, targetText) => {
+    streamTargetsRef.current[messageId] = String(targetText || '')
+    patchAssistantMessage(messageId, {
+      typing: true,
+      streaming: true,
+      statusText: '正在输出结果',
+    })
+    ensureTypewriter(messageId)
+  }
+
+  const appendAssistantDelta = (messageId, delta) => {
+    const content = String(delta || '')
+    if (!content) return
+    updateAssistantTarget(messageId, `${streamTargetsRef.current[messageId] || ''}${content}`)
+  }
+
+  const finishAssistantStream = (messageId, finishPatch, finalText) => {
+    const target = String(streamTargetsRef.current[messageId] || '')
+    const text = String(finalText || '')
+    if (text && (!target || text.length >= target.length)) {
+      streamTargetsRef.current[messageId] = text
+    }
+    streamDoneRef.current[messageId] = true
+    streamFinishPatchesRef.current[messageId] = finishPatch || {}
+    ensureTypewriter(messageId)
   }
 
   const sendMessage = async (preset) => {
@@ -166,7 +206,7 @@ export function MarketingAssistantChatBox({
         content: '',
         available: true,
         success: true,
-        message: '正在处理请求',
+        statusText: '正在处理请求',
         suggestions: [],
         quickActions: [],
         thoughts: [],
@@ -176,7 +216,62 @@ export function MarketingAssistantChatBox({
     setInput('')
     setLoading(true)
     let doneReceived = false
-    let typewriterStarted = false
+    let streamStarted = false
+    const patchProgress = (content) => {
+      const text = String(content || '').trim()
+      if (!text) return
+      patchAssistantMessage(assistantId, (message) => ({
+        thoughts: usefulThoughts([...(message.thoughts || []), text]),
+        statusText: text,
+      }))
+    }
+    const completeWithResponse = (response, finalText) => {
+      doneReceived = true
+      streamStarted = true
+      const available = Object.prototype.hasOwnProperty.call(response || {}, 'available')
+        ? Boolean(response?.available)
+        : true
+      finishAssistantStream(assistantId, {
+        title: response?.title || '营销建议',
+        available,
+        success: response?.success !== false,
+        statusText: response?.message || '回复完成',
+        suggestions: response?.suggestions || [],
+        quickActions: response?.quickActions || [],
+      }, finalText || response?.reply || '')
+    }
+    const handleRuntimeEvent = (payload) => {
+      if (!payload || typeof payload !== 'object') return
+      const type = String(payload.type || '').toUpperCase()
+      const content = String(payload.content || '')
+      if (type === 'ANSWER_DELTA') {
+        streamStarted = true
+        appendAssistantDelta(assistantId, content)
+        return
+      }
+      if (type === 'ANSWER_FINISHED') {
+        if (content) updateAssistantTarget(assistantId, content)
+        return
+      }
+      if (type === 'RUN_FINISHED' || type === 'DONE') {
+        const response = payload?.metadata?.response || payload?.response || {}
+        completeWithResponse(response, response?.reply || '')
+        return
+      }
+      if (type === 'RUN_ERROR') {
+        patchProgress(content || '智能体运行失败')
+        return
+      }
+      if (
+        type === 'THOUGHT'
+        || type === 'CONTEXT_LOADED'
+        || type === 'RUN_STATUS_CHANGED'
+        || type === 'TOOL_CALL_STARTED'
+        || type === 'TOOL_RESULT_FINISHED'
+      ) {
+        patchProgress(content || payload.stage)
+      }
+    }
     try {
       await api.assistant.chatStream({
         message: text,
@@ -185,55 +280,48 @@ export function MarketingAssistantChatBox({
           history,
         },
       }, {
-        onThought: (payload) => {
-          const content = String(payload?.content || '').trim()
-          if (!content) return
-          patchAssistantMessage(assistantId, (message) => ({
-            thoughts: usefulThoughts([...(message.thoughts || []), content]),
-            message: content,
-          }))
-        },
-        onDone: (payload) => {
-          doneReceived = true
-          const response = payload?.response || {}
-          typewriterStarted = true
-          startTypewriter(assistantId, response?.reply || '暂未生成建议。', {
-            title: response?.title || '营销建议',
-            available: Boolean(response?.available),
-            success: response?.success !== false,
-            message: response?.message || '',
-            suggestions: response?.suggestions || [],
-            quickActions: response?.quickActions || [],
-          })
-        },
+        onRuntimeEvent: handleRuntimeEvent,
       })
       if (!doneReceived) {
-        clearTypewriter(assistantId)
-        patchAssistantMessage(assistantId, {
-          content: '当前助手未返回完整结果，请稍后重试。',
-          success: false,
-          message: '流式响应异常结束',
-          suggestions: defaultSuggestions,
-          quickActions: [],
-          streaming: false,
-          typing: false,
-        })
+        const target = String(streamTargetsRef.current[assistantId] || '')
+        if (target.trim()) {
+          completeWithResponse({
+            title: '营销建议',
+            available: true,
+            success: true,
+            message: '回复完成',
+            suggestions: defaultSuggestions,
+            quickActions: [],
+          }, target)
+        } else {
+          clearTypewriter(assistantId)
+          patchAssistantMessage(assistantId, {
+            content: '当前助手未返回完整结果，请稍后重试。',
+            success: false,
+            statusText: '流式响应异常结束',
+            suggestions: defaultSuggestions,
+            quickActions: [],
+            streaming: false,
+            typing: false,
+          })
+        }
       }
     } catch (error) {
       clearTypewriter(assistantId)
-      onNotify(error.message || 'AI 营销助手请求失败', 'error')
+      onNotify(error.message || 'AI 智能体助手请求失败', 'error')
       patchAssistantMessage(assistantId, {
         title: '请求失败',
         content: '当前助手接口暂时不可用，请稍后重试。',
         success: false,
-        message: error.message || '接口请求失败',
+        statusText: error.message || '接口请求失败',
         suggestions: defaultSuggestions,
         quickActions: [],
         streaming: false,
         typing: false,
       })
+      setLoading(false)
     } finally {
-      if (!typewriterStarted) {
+      if (!streamStarted) {
         setLoading(false)
       }
     }
@@ -277,7 +365,7 @@ export function MarketingAssistantChatBox({
               {message.role === 'assistant' && (
                 <div className="assistant-message-meta">
                   <Badge tone={assistantSourceTone(message)}>{assistantSourceLabel(message)}</Badge>
-                  {message.message && <small>{message.message}</small>}
+                  {message.statusText && <small>{message.statusText}</small>}
                 </div>
               )}
               {message.role === 'assistant' && usefulThoughts(message.thoughts).length > 0 && (
@@ -319,7 +407,7 @@ export function MarketingAssistantChatBox({
       <div className="assistant-input">
         <input
           value={input}
-          placeholder="向 AI 营销助手提问…"
+          placeholder="向 AI 智能体助手提问…"
           onChange={(event) => setInput(event.target.value)}
           onKeyDown={(event) => {
             if (event.key === 'Enter' && !event.nativeEvent.isComposing) {

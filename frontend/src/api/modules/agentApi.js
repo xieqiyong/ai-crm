@@ -1,4 +1,4 @@
-import { request } from '../httpClient'
+import { request, streamRequest } from '../httpClient'
 
 export const agentApi = {
   page: (payload) => request('/api/agent/page', { method: 'POST', body: JSON.stringify(payload || {}) }),
@@ -14,4 +14,26 @@ export const agentApi = {
   tokenQuotaOverview: () => request('/api/agent/token/quota/overview', { method: 'POST' }),
   assignTokenQuota: (payload) => request('/api/agent/token/quota/assign', { method: 'POST', body: JSON.stringify(payload) }),
   clearTokenQuota: (userId) => request('/api/agent/token/quota/clear', { method: 'POST', body: JSON.stringify({ userId }) }),
+  assistantAgents: () => request('/api/agent-assistant/agents', { method: 'POST' }),
+  assistantConversations: (payload) => request('/api/agent-assistant/conversations', {
+    method: 'POST',
+    body: JSON.stringify(payload || {}),
+  }),
+  assistantMessages: (conversationId) => request('/api/agent-assistant/messages', {
+    method: 'POST',
+    body: JSON.stringify({ conversationId }),
+  }),
+  assistantDeleteConversation: (conversationId) => request('/api/agent-assistant/conversation/delete', {
+    method: 'POST',
+    body: JSON.stringify({ conversationId }),
+  }),
+  assistantStopRun: (requestId) => request('/api/agent-assistant/run/stop', {
+    method: 'POST',
+    body: JSON.stringify({ requestId }),
+  }),
+  assistantRunStream: (payload, handlers, options = {}) => streamRequest('/api/agent-assistant/run/stream', {
+    ...options,
+    method: 'POST',
+    body: JSON.stringify(payload || {}),
+  }, handlers),
 }

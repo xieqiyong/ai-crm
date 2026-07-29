@@ -1,3 +1,19 @@
+import ReactMarkdown from 'react-markdown'
+import remarkGfm from 'remark-gfm'
+
+const assistantMarkdownComponents = {
+  a({ children, node: _node, ...props }) {
+    return <a {...props} target="_blank" rel="noreferrer">{children}</a>
+  },
+  table({ children, node: _node }) {
+    return (
+      <div className="agent-markdown-table">
+        <table>{children}</table>
+      </div>
+    )
+  },
+}
+
 function renderInline(text, keyPrefix) {
   const value = String(text || '')
   const pattern = /(\*\*([^*]+)\*\*|~~([^~]+)~~|`([^`]+)`|\[([^\]]+)\]\((https?:\/\/[^\s)]+)\)|(https?:\/\/[^\s)]+)|\*([^*\n]+)\*)/g
@@ -73,7 +89,7 @@ function splitTableLine(line) {
 }
 
 function parseBlocks(value, variant) {
-  const lines = normalizeMarkdownValue(value).replace(/\r\n/g, '\n').split('\n')
+  const lines = normalizeMarkdownValue(value, variant).replace(/\r\n/g, '\n').split('\n')
   const blocks = []
   const paragraph = []
   let index = 0
@@ -124,7 +140,7 @@ function parseBlocks(value, variant) {
       continue
     }
 
-    const heading = /^(#{1,6})\s+(.+)$/.exec(trimmed)
+    const heading = (variant === 'assistant' ? /^(#{1,6})\s*(\S.*)$/ : /^(#{1,6})\s+(.+)$/).exec(trimmed)
     if (heading) {
       flushParagraph(blocks, paragraph)
       blocks.push({ type: 'heading', level: heading[1].length, text: heading[2] })
@@ -162,6 +178,27 @@ function parseBlocks(value, variant) {
         index += 1
       }
       blocks.push({ type: 'task', items })
+      continue
+    }
+
+    if (looksLikeAssistantListItem(trimmed, variant)) {
+      flushParagraph(blocks, paragraph)
+      const items = []
+      while (index < lines.length) {
+        const itemText = lines[index].trim()
+        if (/^[-*]\s+/.test(itemText)) {
+          items.push(itemText.replace(/^[-*]\s+/, ''))
+          index += 1
+          continue
+        }
+        if (looksLikeAssistantListItem(itemText, variant)) {
+          items.push(itemText)
+          index += 1
+          continue
+        }
+        break
+      }
+      blocks.push({ type: 'ul', items })
       continue
     }
 
@@ -209,11 +246,31 @@ function looksLikeAssistantHeading(value, variant) {
   if (/^[-*]\s+/.test(text) || /^\d+\.\s+/.test(text) || text.includes('|')) {
     return false
   }
+  if (/^[a-z][a-z0-9_-]{2,}$/i.test(text) && text.includes('-')) {
+    return true
+  }
   return /[？?]$/.test(text)
-    || /^(核心|产品|技术|能力|优势|特点|架构|方案|客户|知识库|部署|安全|总结|结论|建议|下一步|风险)/.test(text)
+    || /^(核心|产品|技术|能力|优势|特点|架构|方案|客户|知识库|部署|安全|总结|结论|建议|下一步|风险|说明|其他|已配置|可用|使用方式|适用场景|输出要求|注意事项)/.test(text)
 }
 
-function normalizeMarkdownValue(value) {
+function looksLikeAssistantListItem(value, variant) {
+  if (variant !== 'assistant') {
+    return false
+  }
+  const text = String(value || '').trim()
+  if (!text || text.length > 180) {
+    return false
+  }
+  if (/^[-*]\s+/.test(text)) {
+    return true
+  }
+  if (/^\d+\.\s+/.test(text) || text.includes('|')) {
+    return false
+  }
+  return /^[\u4e00-\u9fa5A-Za-z0-9][^。！？；\n]{1,42}\s*[—-]\s*\S+/.test(text)
+}
+
+function normalizeMarkdownValue(value, variant) {
   if (value === undefined || value === null) {
     return ''
   }
@@ -234,6 +291,9 @@ function normalizeMarkdownValue(value) {
   if (escapedLineCount > realLineCount) {
     text = text.replace(/\\r\\n/g, '\n').replace(/\\n/g, '\n')
   }
+  if (variant === 'assistant') {
+    text = normalizeAssistantMarkdown(text)
+  }
   text = normalizeCompactTables(text)
   text = text
     .replace(/([^\n|])(\|[^|\n]+\|[^|\n]+\|)/g, (match, before, tableText) => {
@@ -244,6 +304,13 @@ function normalizeMarkdownValue(value) {
     })
     .replace(/\n{3,}/g, '\n\n')
   return text
+}
+
+function normalizeAssistantMarkdown(text) {
+  return String(text || '')
+    .replace(/(^|\n)(#{1,6})([^\s#\n])/g, '$1$2 $3')
+    .replace(/([^\n])\s*-\s+(?=[\u4e00-\u9fa5A-Za-z0-9][^。\n]{0,48}\s*[—:：-])/g, '$1\n- ')
+    .replace(/(^|\n)(说明|其他能力(?:（[^）]*）)?|已配置的\s*Skill|可用能力|使用方式|适用场景|输出要求|注意事项)([:：]?)(?=\n|$)/g, '$1### $2$3')
 }
 
 function normalizeCompactTables(text) {
@@ -329,6 +396,18 @@ export function MarkdownText({ value, empty = '暂无内容', variant = 'default
   if (!value || !String(value).trim()) {
     return <p>{empty}</p>
   }
+  if (variant === 'assistant') {
+    return (
+      <div className="agent-markdown">
+        <ReactMarkdown
+          remarkPlugins={[remarkGfm]}
+          components={assistantMarkdownComponents}
+        >
+          {normalizeAssistantMarkdownSource(value)}
+        </ReactMarkdown>
+      </div>
+    )
+  }
   const blocks = parseBlocks(value, variant)
   const className = ['markdown-text', variant !== 'default' ? `markdown-text-${variant}` : '']
     .filter(Boolean)
@@ -337,7 +416,7 @@ export function MarkdownText({ value, empty = '暂无内容', variant = 'default
     <div className={className}>
       {blocks.map((block, index) => {
         if (block.type === 'heading') {
-          const HeadingTag = `h${Math.min(block.level + 2, 6)}`
+          const HeadingTag = `h${Math.min(block.level + (variant === 'assistant' ? 1 : 2), 6)}`
           return <HeadingTag key={index}>{renderInline(block.text, `h-${index}`)}</HeadingTag>
         }
         if (block.type === 'hr') {
@@ -401,6 +480,38 @@ export function MarkdownText({ value, empty = '暂无内容', variant = 'default
       })}
     </div>
   )
+}
+
+function normalizeAssistantMarkdownSource(value) {
+  let text = String(value || '')
+  const trimmed = text.trim()
+  if (trimmed.startsWith('"') && trimmed.endsWith('"')) {
+    try {
+      const parsed = JSON.parse(trimmed)
+      if (typeof parsed === 'string') {
+        text = parsed
+      }
+    } catch {
+      text = String(value || '')
+    }
+  }
+  const escapedLineCount = (text.match(/\\n/g) || []).length
+  const realLineCount = (text.match(/\n/g) || []).length
+  if (escapedLineCount > realLineCount) {
+    text = text.replace(/\\r\\n/g, '\n').replace(/\\n/g, '\n')
+  }
+  return text
+    .replace(/\r\n/g, '\n')
+    .replace(/([^#\n])(?=#{2,6}(?:\s|[^\s#]))/g, '$1\n\n')
+    .replace(/([^\n])-\s*(?=(?:\*\*|[\u4e00-\u9fa5]))/g, '$1\n- ')
+    .replace(/(^|\n)-\s*(?=(?:\*\*|[\u4e00-\u9fa5]))/g, '$1- ')
+    .replace(/([^\n])---(?=\s*(?:\n|$))/g, '$1\n\n---')
+    .replace(
+      /(^|\n)(#{2,6})\s*(结论|依据|下一步动作|风险提醒|建议)(?=\S)/g,
+      '$1$2 $3\n\n',
+    )
+    .replace(/(^|\n)(#{1,6})([^\s#\n])/g, '$1$2 $3')
+    .replace(/\n{3,}/g, '\n\n')
 }
 
 function joinParagraphLines(lines) {

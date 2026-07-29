@@ -17,6 +17,7 @@ import com.hz.crm.common.time.DateTimes;
 import java.time.Duration;
 import java.time.LocalDateTime;
 import java.util.concurrent.atomic.AtomicInteger;
+import java.util.concurrent.atomic.AtomicBoolean;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 import reactor.core.publisher.Flux;
@@ -55,20 +56,51 @@ public class AgentRuntimeFacade {
         request.setConversationId(conversation.getId());
         request.setRunId(run.getId());
         AtomicInteger sequence = new AtomicInteger(0);
-        StringBuilder output = new StringBuilder();
+        AtomicBoolean finished = new AtomicBoolean(false);
+        StringBuffer output = new StringBuffer();
         AgentTokenQuotaService.TokenUsageCounter tokenCounter = agentTokenQuotaService.newCounter();
         return agentRuntimeEngine
                 .run(request)
                 .doOnNext(event -> saveEvent(request, run, event, sequence.incrementAndGet(), output, tokenCounter))
-                .doOnComplete(() -> finishRunSuccess(
-                        request, run, output.toString(), conversation, tokenReservation, tokenCounter))
-                .doOnError(error -> finishRunFailed(request, run, error, conversation, tokenReservation));
+                .doOnComplete(() -> {
+                    if (finished.compareAndSet(false, true)) {
+                        finishRunSuccess(
+                                request, run, output.toString(), conversation, tokenReservation, tokenCounter);
+                    }
+                })
+                .doOnError(error -> {
+                    if (finished.compareAndSet(false, true)) {
+                        finishRunFailed(request, run, error, conversation, tokenReservation);
+                    }
+                })
+                .doOnCancel(() -> {
+                    if (finished.compareAndSet(false, true)) {
+                        finishRunStopped(
+                                request, run, output.toString(), conversation, tokenReservation);
+                    }
+                });
     }
 
     private ConversationEntity resolveConversation(AgentRuntimeRequest request) {
+        if (request.getConversationId() != null) {
+            ConversationEntity conversation = conversationMapper.selectOne(Wrappers.<ConversationEntity>lambdaQuery()
+                    .eq(ConversationEntity::getTenantId, request.getTenantId())
+                    .eq(ConversationEntity::getUserId, request.getUserId())
+                    .eq(ConversationEntity::getAgentId, request.getAgent().getId())
+                    .eq(ConversationEntity::getId, request.getConversationId())
+                    .eq(ConversationEntity::isDeleted, false)
+                    .last("limit 1"));
+            if (conversation == null) {
+                throw new BusinessException("AGENT_CONVERSATION_001", "会话不存在或无权访问");
+            }
+            touchConversationBeforeRun(request, conversation);
+            return conversation;
+        }
         String sessionId = resolveSessionId(request);
         ConversationEntity conversation = conversationMapper.selectOne(Wrappers.<ConversationEntity>lambdaQuery()
                 .eq(ConversationEntity::getTenantId, request.getTenantId())
+                .eq(ConversationEntity::getUserId, request.getUserId())
+                .eq(ConversationEntity::getAgentId, request.getAgent().getId())
                 .eq(ConversationEntity::getSessionId, sessionId)
                 .eq(ConversationEntity::isDeleted, false)
                 .orderByDesc(ConversationEntity::getUpdatedAt)
@@ -83,6 +115,7 @@ public class AgentRuntimeFacade {
             conversation.setAgentId(request.getAgent().getId());
             conversation.setSessionId(sessionId);
             conversation.setTitle(resolveConversationTitle(request));
+            conversation.setStatus("ACTIVE");
             conversation.setCreatedAt(now);
             conversation.setDeleted(false);
         }
@@ -90,6 +123,7 @@ public class AgentRuntimeFacade {
         conversation.setBusinessType(trimToNull(request.getBusinessType()));
         conversation.setBusinessId(trimToNull(request.getBusinessId()));
         conversation.setContextJson(Jsons.toJson(request.getContext()));
+        conversation.setStatus("ACTIVE");
         conversation.setLastMessageAt(now);
         conversation.setUpdatedAt(now);
         if (created) {
@@ -98,6 +132,18 @@ public class AgentRuntimeFacade {
             conversationMapper.updateById(conversation);
         }
         return conversation;
+    }
+
+    private void touchConversationBeforeRun(AgentRuntimeRequest request, ConversationEntity conversation) {
+        LocalDateTime now = DateTimes.now();
+        conversation.setAgentId(request.getAgent().getId());
+        conversation.setSceneCode(trimToNull(request.getSceneCode()));
+        conversation.setBusinessType(trimToNull(request.getBusinessType()));
+        conversation.setBusinessId(trimToNull(request.getBusinessId()));
+        conversation.setContextJson(Jsons.toJson(request.getContext()));
+        conversation.setLastMessageAt(now);
+        conversation.setUpdatedAt(now);
+        conversationMapper.updateById(conversation);
     }
 
     private AgentRunEntity createRun(
@@ -138,11 +184,10 @@ public class AgentRuntimeFacade {
             AgentRunEntity run,
             AgentRuntimeEvent event,
             int sequenceNo,
-            StringBuilder output,
+            StringBuffer output,
             AgentTokenQuotaService.TokenUsageCounter tokenCounter) {
-        if (!blank(event.getContent())) {
-            output.append(event.getContent());
-        }
+        enrichRuntimeEvent(run, event);
+        appendAnswerOutput(output, event);
         agentTokenQuotaService.collectEventUsage(tokenCounter, event);
         AgentEventEntity entity = new AgentEventEntity();
         entity.setId(snowflakeIdGenerator.nextId());
@@ -158,6 +203,14 @@ public class AgentRuntimeFacade {
         entity.setMetadataJson(Jsons.toJson(event.getMetadata()));
         entity.setCreatedAt(DateTimes.now());
         agentEventMapper.insert(entity);
+    }
+
+    private void enrichRuntimeEvent(AgentRunEntity run, AgentRuntimeEvent event) {
+        if (event == null || run == null || event.getMetadata() == null) {
+            return;
+        }
+        event.getMetadata().put("runId", run.getId());
+        event.getMetadata().put("conversationId", run.getConversationId());
     }
 
     private void finishRunSuccess(
@@ -189,6 +242,38 @@ public class AgentRuntimeFacade {
         fillTokenUsage(run, tokenUsage);
         finishRun(run);
         touchConversation(conversation);
+    }
+
+    private void finishRunStopped(
+            AgentRuntimeRequest request,
+            AgentRunEntity run,
+            String output,
+            ConversationEntity conversation,
+            AgentTokenQuotaService.TokenReservation tokenReservation) {
+        AgentTokenQuotaService.TokenUsageSnapshot tokenUsage =
+                agentTokenQuotaService.completeStopped(request, tokenReservation);
+        run.setStatus("STOPPED");
+        run.setOutputText(shrink(output, 6000));
+        fillTokenUsage(run, tokenUsage);
+        finishRun(run);
+        touchConversation(conversation);
+    }
+
+    private void appendAnswerOutput(StringBuffer output, AgentRuntimeEvent event) {
+        if (event == null || blank(event.getContent())) {
+            return;
+        }
+        String type = event.getType() == null ? "" : event.getType().toUpperCase();
+        if (type.contains("TOOL_RESULT") || type.contains("TOOL_CALL") || type.contains("WORKFLOW")) {
+            return;
+        }
+        if (type.contains("TEXT_BLOCK_DELTA")) {
+            output.append(event.getContent());
+            return;
+        }
+        if (type.contains("AGENT_RESULT") && output.length() == 0) {
+            output.append(event.getContent());
+        }
     }
 
     private void fillTokenUsage(AgentRunEntity run, AgentTokenQuotaService.TokenUsageSnapshot tokenUsage) {
@@ -225,6 +310,10 @@ public class AgentRuntimeFacade {
     }
 
     private String resolveConversationTitle(AgentRuntimeRequest request) {
+        Object title = request.getContext() == null ? null : request.getContext().get("conversationTitle");
+        if (!blank(title == null ? null : String.valueOf(title))) {
+            return shrink(String.valueOf(title).trim(), 200);
+        }
         if (!blank(request.getBusinessType()) && !blank(request.getBusinessId())) {
             return request.getBusinessType().trim() + "：" + request.getBusinessId().trim();
         }

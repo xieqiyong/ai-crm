@@ -31,6 +31,7 @@ export const leadApi = {
   page: (payload) => page('/api/lead', payload),
   detail: (id) => detail('/api/lead', id),
   save: (payload) => save('/api/lead', payload),
+  assign: (payload) => request('/api/lead/assign', { method: 'POST', body: JSON.stringify(payload) }),
   convertToCustomer: (payload) => request('/api/lead/convert-to-customer', { method: 'POST', body: JSON.stringify(payload) }),
   delete: (id) => remove('/api/lead', id),
 }
@@ -39,6 +40,7 @@ export const customerApi = {
   page: (payload) => page('/api/customer', payload),
   detail: (id) => detail('/api/customer', id),
   save: (payload) => save('/api/customer', payload),
+  assign: (payload) => request('/api/customer/assign', { method: 'POST', body: JSON.stringify(payload) }),
   delete: (id) => remove('/api/customer', id),
 }
 

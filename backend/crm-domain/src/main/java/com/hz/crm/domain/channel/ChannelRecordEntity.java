@@ -7,6 +7,7 @@ import jakarta.persistence.Entity;
 import jakarta.persistence.EnumType;
 import jakarta.persistence.Enumerated;
 import jakarta.persistence.Table;
+import java.time.LocalDateTime;
 import lombok.Getter;
 import lombok.Setter;
 
@@ -63,10 +64,17 @@ public class ChannelRecordEntity extends BaseEntity {
     @Column(columnDefinition = "text")
     private String usefulInfo;
 
+    @Column(columnDefinition = "text")
+    private String aiAnalysisJson;
+
+    private Long agentRunId;
+
+    private LocalDateTime aiAnalyzedAt;
+
     private Long leadId;
 
     private Long ownerId;
 
-    @Column(length = 512)
+    @Column(columnDefinition = "text")
     private String remark;
 }

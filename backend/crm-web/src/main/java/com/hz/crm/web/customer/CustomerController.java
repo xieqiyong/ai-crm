@@ -1,12 +1,14 @@
 package com.hz.crm.web.customer;
 
 import com.hz.crm.application.customer.CustomerApplicationService;
+import com.hz.crm.application.customer.dto.CustomerAssignRequest;
 import com.hz.crm.application.customer.dto.CustomerQuery;
 import com.hz.crm.application.customer.dto.CustomerResponse;
 import com.hz.crm.application.customer.dto.CustomerSaveRequest;
 import com.hz.crm.auth.security.JwtPrincipal;
 import com.hz.crm.common.api.ApiResult;
 import com.hz.crm.common.api.PageData;
+import com.hz.crm.common.audit.AuditOperation;
 import com.hz.crm.web.support.IdRequest;
 import jakarta.validation.Valid;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -40,6 +42,11 @@ public class CustomerController {
 
     @PostMapping("/save")
     @PreAuthorize("hasAuthority('*') or hasAuthority('crm:customer:manage') or hasAuthority('crm:customer:edit')")
+    @AuditOperation(
+            module = "CUSTOMER",
+            action = "SAVE",
+            description = "保存客户",
+            targetType = "CUSTOMER")
     public ApiResult<CustomerResponse> save(@Valid @RequestBody CustomerSaveRequest request, JwtPrincipal principal) {
         return ApiResult.ok(customerApplicationService.save(
                 principal.getTenantId(), principal.getUserId(), principal.getDataScope(), request));
@@ -47,9 +54,27 @@ public class CustomerController {
 
     @PostMapping("/delete")
     @PreAuthorize("hasAuthority('*') or hasAuthority('crm:customer:manage')")
+    @AuditOperation(
+            module = "CUSTOMER",
+            action = "DELETE",
+            description = "删除客户",
+            targetType = "CUSTOMER")
     public ApiResult<Void> delete(@RequestBody IdRequest request, JwtPrincipal principal) {
         customerApplicationService.delete(
                 principal.getTenantId(), principal.getUserId(), principal.getDataScope(), request.getId());
         return ApiResult.ok(null);
+    }
+
+    @PostMapping("/assign")
+    @PreAuthorize("hasAuthority('*') or hasAuthority('crm:customer:assign')")
+    @AuditOperation(
+            module = "CUSTOMER",
+            action = "ASSIGN",
+            description = "分配客户负责人",
+            targetType = "CUSTOMER")
+    public ApiResult<CustomerResponse> assign(
+            @Valid @RequestBody CustomerAssignRequest request, JwtPrincipal principal) {
+        return ApiResult.ok(customerApplicationService.assign(
+                principal.getTenantId(), principal.getUserId(), principal.getDataScope(), request));
     }
 }

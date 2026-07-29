@@ -121,6 +121,28 @@ public class AgentTokenQuotaService {
         return snapshot;
     }
 
+    @Transactional
+    public TokenUsageSnapshot completeStopped(
+            AgentRuntimeRequest request,
+            TokenReservation reservation) {
+        TokenUsageSnapshot snapshot = new TokenUsageSnapshot();
+        snapshot.setInputTokenCount(0L);
+        snapshot.setOutputTokenCount(0L);
+        snapshot.setTotalTokenCount(0L);
+        snapshot.setEstimatedTokenCount(0L);
+        snapshot.setUsageEstimated(true);
+        if (reservation == null) {
+            return snapshot;
+        }
+        withUsageLock(request, reservation.getUsageDate(), () -> {
+            AgentTokenUsageEntity usage = findOrCreateUsage(request, reservation.getUsageDate());
+            usage.setReservedTokenCount(subtract(usage.getReservedTokenCount(), reservation.getReservedTokenCount()));
+            saveUsage(usage);
+            return snapshot;
+        });
+        return snapshot;
+    }
+
     public TokenUsageCounter newCounter() {
         return new TokenUsageCounter();
     }

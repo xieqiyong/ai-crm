@@ -13,3 +13,5 @@ export {
   SecretInput,
 } from './base'
 export { ConfirmDialog, Toast, useConfirmDialog } from './feedback'
+export { OwnerAssignModal } from './OwnerAssignModal'
+export { Select } from './Select'

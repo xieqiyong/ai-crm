@@ -17,7 +17,17 @@ import {
   Upload,
 } from 'lucide-react'
 import { api } from '../../api'
-import { Badge, Button, Card, ConfirmDialog, Field, Modal, PageHeader, useConfirmDialog } from '../../components'
+import {
+  Badge,
+  Button,
+  Card,
+  ConfirmDialog,
+  Field,
+  MarkdownText,
+  Modal,
+  PageHeader,
+  useConfirmDialog,
+} from '../../components'
 import { ownerName } from '../../hooks/useOwnerOptions'
 
 const typeOptions = [
@@ -53,8 +63,8 @@ const statusOptions = [
   { value: 'NEW', label: '新渠道' },
   { value: 'WAITING_TRANSCRIPTION', label: '待转译' },
   { value: 'TRANSCRIBED', label: '已转译' },
-  { value: 'WAITING_AI_ANALYSIS', label: '待AI分析' },
-  { value: 'ANALYZED', label: '已分析' },
+  { value: 'WAITING_AI_ANALYSIS', label: '待AI整理' },
+  { value: 'ANALYZED', label: 'AI已整理' },
   { value: 'PROMOTED', label: '已晋升线索' },
 ]
 
@@ -62,8 +72,8 @@ const statusText = {
   NEW: '新渠道',
   WAITING_TRANSCRIPTION: '待转译',
   TRANSCRIBED: '已转译',
-  WAITING_AI_ANALYSIS: '待AI分析',
-  ANALYZED: '已分析',
+  WAITING_AI_ANALYSIS: '待AI整理',
+  ANALYZED: 'AI已整理',
   PROMOTED: '已晋升线索',
 }
 
@@ -103,7 +113,6 @@ const emptyImportForm = {
   companyName: '',
   phone: '',
   email: '',
-  remark: '',
 }
 
 const emptyMarketingForm = {
@@ -202,6 +211,32 @@ function isDocumentImport(channelType) {
   return channelType === 'DOCUMENT'
 }
 
+function isImportedMaterial(row) {
+  return Boolean(row?.mediaFileName)
+    && ['DOCUMENT', 'AUDIO', 'VIDEO'].includes(row?.channelType)
+}
+
+function isSameId(first, second) {
+  if (first === undefined || first === null || second === undefined || second === null) {
+    return false
+  }
+  return String(first) === String(second)
+}
+
+function channelStatusLabel(row) {
+  if (isImportedMaterial(row) && row?.status === 'ANALYZED' && !row?.promotionReady) {
+    return '待AI重整'
+  }
+  return statusText[row?.status] || row?.status
+}
+
+function channelStatusTone(row) {
+  if (isImportedMaterial(row) && row?.status === 'ANALYZED' && !row?.promotionReady) {
+    return 'warning'
+  }
+  return statusTone[row?.status] || 'neutral'
+}
+
 function compactPayload(query) {
   return {
     pageNo: query.pageNo || 1,
@@ -223,6 +258,7 @@ function toEditForm(row) {
     phone: row.phone || '',
     email: row.email || '',
     remark: row.remark || '',
+    importedMaterial: Boolean(row.importedMaterial) || isImportedMaterial(row),
   }
 }
 
@@ -246,6 +282,7 @@ function SourceSelect({ value, onChange }) {
 export function ChannelPage({ can, notify }) {
   const canManage = can('crm:channel:manage')
   const canMedia = can('crm:channel:media') || canManage
+  const canAnalyze = can('crm:channel:analyze') || canManage
   const canPromote = can('crm:channel:promote')
   const { confirm, dialogProps } = useConfirmDialog()
 
@@ -269,6 +306,7 @@ export function ChannelPage({ can, notify }) {
   const [marketingForms, setMarketingForms] = useState([])
   const [marketingFormsLoading, setMarketingFormsLoading] = useState(true)
   const [marketingFormEditing, setMarketingFormEditing] = useState(null)
+  const [analyzingId, setAnalyzingId] = useState(null)
 
   const load = async (nextQuery = query) => {
     setLoading(true)
@@ -348,13 +386,18 @@ export function ChannelPage({ can, notify }) {
   }
 
   const handlePrepareAnalysis = async (row) => {
+    setAnalyzingId(row.id)
     try {
-      await api.channel.prepareAnalysis(row.id)
-      notify('已标记为待AI分析，等待接入分析服务', 'success')
-      setSelected(null)
-      load()
+      const result = await api.channel.analyze(row.id)
+      notify('渠道智能体已完成整理，分析备注已回填', 'success')
+      if (isSameId(selected?.id, row.id)) {
+        setSelected(result)
+      }
+      await load()
     } catch (err) {
-      notify(err.message || 'AI分析状态更新失败', 'info')
+      notify(err.message || '渠道智能体分析失败', 'info')
+    } finally {
+      setAnalyzingId(null)
     }
   }
 
@@ -440,7 +483,7 @@ export function ChannelPage({ can, notify }) {
       <PageHeader
         eyebrow="渠道管理"
         title="渠道管理"
-        description="沉淀市场、电话、活动、文档和音视频渠道线索，确认有效后可直接晋升为线索"
+        description="统一沉淀渠道材料，先由渠道智能体整理销售备注，再将有效信息晋升为线索"
         actions={headerActions}
       />
 
@@ -475,7 +518,9 @@ export function ChannelPage({ can, notify }) {
           query={query}
           canManage={canManage}
           canMedia={canMedia}
+          canAnalyzePermission={canAnalyze}
           canPromote={canPromote}
+          analyzingId={analyzingId}
           currentPage={currentPage}
           totalPages={totalPages}
           onLoad={load}
@@ -513,7 +558,9 @@ export function ChannelPage({ can, notify }) {
         data={selected}
         canManage={canManage}
         canMedia={canMedia}
+        canAnalyzePermission={canAnalyze}
         canPromote={canPromote}
+        analyzing={isSameId(analyzingId, selected?.id)}
         onClose={() => setSelected(null)}
         onPrepareTranscription={handlePrepareTranscription}
         onPrepareAnalysis={handlePrepareAnalysis}
@@ -583,7 +630,9 @@ function ChannelTable({
   query,
   canManage,
   canMedia,
+  canAnalyzePermission,
   canPromote,
+  analyzingId,
   currentPage,
   totalPages,
   onLoad,
@@ -617,7 +666,9 @@ function ChannelTable({
                 key={row.id}
                 canManage={canManage}
                 canMedia={canMedia}
+                canAnalyzePermission={canAnalyzePermission}
                 canPromote={canPromote}
+                analyzing={isSameId(analyzingId, row.id)}
                 onEdit={onEdit}
                 onSelect={onSelect}
                 onPrepareTranscription={onPrepareTranscription}
@@ -671,7 +722,9 @@ function ChannelTableRow({
   row,
   canManage,
   canMedia,
+  canAnalyzePermission,
   canPromote,
+  analyzing,
   onEdit,
   onSelect,
   onPrepareTranscription,
@@ -681,6 +734,11 @@ function ChannelTableRow({
 }) {
   const promoted = Boolean(row.leadId)
   const documentImported = row.channelType === 'DOCUMENT'
+  const importedMaterial = isImportedMaterial(row)
+  const analysisReady = importedMaterial
+    && !promoted
+    && !row.promotionReady
+    && (documentImported || row.status === 'TRANSCRIBED' || row.status === 'WAITING_AI_ANALYSIS')
 
   return (
     <tr onClick={() => onSelect(row)}>
@@ -707,8 +765,8 @@ function ChannelTableRow({
         <small>{formatSize(row.mediaSize)}</small>
       </td>
       <td>
-        <Badge dot tone={statusTone[row.status] || 'neutral'}>
-          {statusText[row.status] || row.status}
+        <Badge dot tone={channelStatusTone(row)}>
+          {channelStatusLabel(row)}
         </Badge>
       </td>
       <td>{ownerName(row)}</td>
@@ -737,22 +795,24 @@ function ChannelTableRow({
               转译
             </button>
           )}
-          {!documentImported && (
+          {analysisReady && (
             <button
               className="text-action"
-              disabled={!canMedia || row.status === 'PROMOTED'}
+              disabled={!canAnalyzePermission || analyzing}
               onClick={() => onPrepareAnalysis(row)}
             >
-              AI分析
+              {analyzing ? 'AI整理中…' : 'AI整理'}
             </button>
           )}
-          <button
-            className="text-action strong"
-            disabled={!canPromote || promoted}
-            onClick={() => onPromote(row)}
-          >
-            晋升线索
-          </button>
+          {row.promotionReady && !promoted && (
+            <button
+              className="text-action strong"
+              disabled={!canPromote}
+              onClick={() => onPromote(row)}
+            >
+              晋升线索
+            </button>
+          )}
         </div>
       </td>
     </tr>
@@ -1014,7 +1074,9 @@ function ChannelEditModal({ open, data, onClose, notify, reload }) {
 
   const save = async () => {
     try {
-      await api.channel.save(form)
+      const payload = { ...form }
+      delete payload.importedMaterial
+      await api.channel.save(payload)
       notify('渠道已保存', 'success')
       onClose()
       reload()
@@ -1029,6 +1091,8 @@ function ChannelEditModal({ open, data, onClose, notify, reload }) {
       <Button onClick={save}>保存</Button>
     </>
   )
+
+  const aiManagedRemark = Boolean(form.importedMaterial)
 
   return (
     <Modal open={open} title={form.id ? '编辑渠道' : '新增渠道'} onClose={onClose} footer={footer}>
@@ -1078,14 +1142,24 @@ function ChannelEditModal({ open, data, onClose, notify, reload }) {
             onChange={(event) => setForm({ ...form, email: event.target.value })}
           />
         </Field>
-        <Field label="备注">
-          <textarea
-            rows="4"
-            value={form.remark || ''}
-            onChange={(event) => setForm({ ...form, remark: event.target.value })}
-            placeholder="记录真实已知信息，不需要补假数据"
-          />
-        </Field>
+        {aiManagedRemark ? (
+          <div className="channel-ai-note">
+            <Sparkles size={18} />
+            <div>
+              <b>备注由渠道智能体整理</b>
+              <span>当前备注来自渠道智能体，导入记录不能手动覆盖。</span>
+            </div>
+          </div>
+        ) : (
+          <Field label="备注">
+            <textarea
+              rows="4"
+              value={form.remark || ''}
+              onChange={(event) => setForm({ ...form, remark: event.target.value })}
+              placeholder="记录真实已知信息，不需要补假数据"
+            />
+          </Field>
+        )}
       </div>
     </Modal>
   )
@@ -1123,15 +1197,14 @@ function ChannelImportModal({ open, onClose, notify, reload }) {
     formData.append('companyName', form.companyName || '')
     formData.append('phone', form.phone || '')
     formData.append('email', form.email || '')
-    formData.append('remark', form.remark || '')
     try {
       if (isDocumentImport(form.channelType)) {
         await api.channel.importDocument(formData)
-        notify('文档已导入，关键信息已提取', 'success')
+        notify('文档已提取，请使用渠道智能体完成整理后再晋升线索', 'success')
       } else {
         formData.append('channelType', form.channelType || 'AUDIO')
         await api.channel.importMedia(formData)
-        notify('音视频已导入渠道池', 'success')
+        notify('音视频已导入，请先完成中文转译，再使用渠道智能体整理', 'success')
       }
       onClose()
       reload()
@@ -1191,13 +1264,13 @@ function ChannelImportModal({ open, onClose, notify, reload }) {
         <Field label="邮箱">
           <input value={form.email} onChange={(event) => setForm({ ...form, email: event.target.value })} />
         </Field>
-        <Field label="备注">
-          <textarea
-            rows="4"
-            value={form.remark}
-            onChange={(event) => setForm({ ...form, remark: event.target.value })}
-          />
-        </Field>
+        <div className="channel-ai-note">
+          <Sparkles size={18} />
+          <div>
+            <b>导入阶段不填写备注</b>
+            <span>材料提取后由渠道智能体生成产品定位、购买意向、基础信息和风险备注。</span>
+          </div>
+        </div>
       </div>
     </Modal>
   )
@@ -1208,7 +1281,9 @@ function ChannelDetailModal({
   data,
   canManage,
   canMedia,
+  canAnalyzePermission,
   canPromote,
+  analyzing,
   onClose,
   onPrepareTranscription,
   onPrepareAnalysis,
@@ -1218,6 +1293,11 @@ function ChannelDetailModal({
   if (!data) return null
   const promoted = Boolean(data.leadId)
   const documentImported = data.channelType === 'DOCUMENT'
+  const importedMaterial = isImportedMaterial(data)
+  const analysisReady = importedMaterial
+    && !promoted
+    && !data.promotionReady
+    && (documentImported || data.status === 'TRANSCRIBED' || data.status === 'WAITING_AI_ANALYSIS')
   const footer = (
     <>
       <Button variant="secondary" onClick={onClose}>关闭</Button>
@@ -1231,19 +1311,21 @@ function ChannelDetailModal({
           转译中文
         </Button>
       )}
-      {!documentImported && (
+      {analysisReady && (
         <Button
           variant="secondary"
-          disabled={!canMedia || promoted}
+          disabled={!canAnalyzePermission || analyzing}
           icon={Sparkles}
           onClick={() => onPrepareAnalysis(data)}
         >
-          AI分析
+          {analyzing ? 'AI整理中…' : 'AI整理'}
         </Button>
       )}
-      <Button disabled={!canPromote || promoted} icon={ArrowUpRight} onClick={() => onPromote(data)}>
-        晋升线索
-      </Button>
+      {data.promotionReady && !promoted && (
+        <Button disabled={!canPromote} icon={ArrowUpRight} onClick={() => onPromote(data)}>
+          晋升线索
+        </Button>
+      )}
       {canManage && (
         <Button variant="ghost" icon={Trash2} onClick={() => onDelete(data)}>
           删除
@@ -1258,7 +1340,7 @@ function ChannelDetailModal({
         <DetailItem label="渠道标题" value={data.title} />
         <DetailItem label="渠道来源" value={sourceText[data.source] || data.source} />
         <DetailItem label="渠道类型" value={typeText[data.channelType] || data.channelType} />
-        <DetailItem label="状态" value={statusText[data.status] || data.status} />
+        <DetailItem label="状态" value={channelStatusLabel(data)} />
         <DetailItem label="联系人" value={data.contactName} />
         <DetailItem label="公司名称" value={data.companyName} />
         <DetailItem label="手机号" value={data.phone} />
@@ -1268,8 +1350,18 @@ function ChannelDetailModal({
         <DetailItem label="线索ID" value={data.leadId} />
         <DetailItem label="负责人" value={ownerName(data)} />
         <DetailItem label="创建时间" value={formatDateTime(data.createdAt)} />
+        <DetailItem label="AI分析时间" value={formatDateTime(data.aiAnalyzedAt)} />
       </div>
-      <TextBlock label="备注" value={data.remark || '暂无备注'} />
+      {importedMaterial && !data.promotionReady && !promoted && (
+        <div className="channel-promotion-gate">
+          <Sparkles size={18} />
+          <div>
+            <b>完成 AI 整理后才能晋升线索</b>
+            <span>{data.promotionBlockReason || '渠道智能体会生成销售可用的结构化备注。'}</span>
+          </div>
+        </div>
+      )}
+      <TextBlock label="AI渠道备注" value={data.remark || '等待渠道智能体生成备注。'} markdown />
       <TextBlock label="提取文本" value={data.transcriptText || '暂无提取文本。'} />
       <TextBlock label="结构化摘要" value={data.aiSummary || '暂无结构化摘要。'} />
       <TextBlock label="有用信息" value={data.usefulInfo || '暂无有用信息。'} />
@@ -1286,11 +1378,11 @@ function DetailItem({ label, value }) {
   )
 }
 
-function TextBlock({ label, value }) {
+function TextBlock({ label, value, markdown = false }) {
   return (
     <div className="channel-text-block">
       <span>{label}</span>
-      <p>{value}</p>
+      {markdown ? <MarkdownText value={value} /> : <p>{value}</p>}
     </div>
   )
 }

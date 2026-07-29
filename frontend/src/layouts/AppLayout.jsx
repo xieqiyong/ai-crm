@@ -1,10 +1,9 @@
 import { useEffect, useState } from 'react'
 import {
-  Bell, ChevronDown, HelpCircle, LogOut, Menu, Search, Sparkles, Zap,
+  Bell, ChevronDown, HelpCircle, LogOut, Menu, Search, Zap,
 } from 'lucide-react'
 import { BrandLogo } from '../components'
 import { api } from '../api'
-import { MarketingAssistantDrawer } from '../features/assistant/MarketingAssistantDrawer'
 
 function formatUsage(user, tokenUsage) {
   if (tokenUsage?.dailyTokenLimit > 0) {
@@ -52,7 +51,6 @@ export function AppLayout({
 }) {
   const [mobileOpen, setMobileOpen] = useState(false)
   const [profileOpen, setProfileOpen] = useState(false)
-  const [assistantOpen, setAssistantOpen] = useState(false)
   const [tokenUsage, setTokenUsage] = useState(null)
 
   useEffect(() => {
@@ -139,11 +137,6 @@ export function AppLayout({
               <span className="usage-pill-label">AI用量</span>
               <span className="usage-pill-value">{usageText}</span>
             </span>
-            {can('crm:assistant:use') && (
-              <button className="ai-top-button" onClick={() => setAssistantOpen(true)}>
-                <Sparkles size={17} />AI 营销助手
-              </button>
-            )}
             <button
               className="icon-button notification-button"
               onClick={() => onNotify(unreadCount > 0 ? `有 ${unreadCount} 条未读消息` : '暂无未读消息', 'info')}
@@ -164,15 +157,6 @@ export function AppLayout({
         <main className="content">{children}</main>
       </div>
 
-      <MarketingAssistantDrawer
-        open={assistantOpen}
-        routeKey={routeKey}
-        routeGroups={routeGroups}
-        currentRole={currentRole}
-        onClose={() => setAssistantOpen(false)}
-        onNavigate={onNavigate}
-        onNotify={onNotify}
-      />
     </div>
   )
 }

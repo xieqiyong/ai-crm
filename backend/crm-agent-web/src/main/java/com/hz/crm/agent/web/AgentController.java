@@ -22,6 +22,7 @@ import com.hz.crm.auth.security.JwtPrincipal;
 import com.hz.crm.common.api.ApiResult;
 import com.hz.crm.common.api.PageData;
 import com.hz.crm.common.api.PageQuery;
+import com.hz.crm.common.audit.AuditOperation;
 import jakarta.validation.Valid;
 import java.io.IOException;
 import java.util.List;
@@ -67,6 +68,11 @@ public class AgentController {
 
     @PostMapping("/save")
     @PreAuthorize("hasAuthority('*') or hasAuthority('crm:agent:manage')")
+    @AuditOperation(
+            module = "AGENT",
+            action = "CONFIG_SAVE",
+            description = "保存智能体配置",
+            targetType = "AGENT")
     public ApiResult<AgentEntity> save(@Valid @RequestBody AgentSaveRequest request, JwtPrincipal principal) {
         return ApiResult.ok(agentDefinitionService.saveAgent(principal.getTenantId(), request));
     }
@@ -80,6 +86,11 @@ public class AgentController {
 
     @PostMapping("/mcp/save")
     @PreAuthorize("hasAuthority('*') or hasAuthority('crm:agent:manage')")
+    @AuditOperation(
+            module = "AGENT",
+            action = "MCP_SAVE",
+            description = "保存智能体MCP配置",
+            targetType = "AGENT_MCP")
     public ApiResult<AgentMcpEntity> saveMcp(
             @Valid @RequestBody AgentMcpSaveRequest request, JwtPrincipal principal) {
         return ApiResult.ok(agentDefinitionService.saveMcp(principal.getTenantId(), request));
@@ -87,6 +98,11 @@ public class AgentController {
 
     @PostMapping("/mcp/delete")
     @PreAuthorize("hasAuthority('*') or hasAuthority('crm:agent:manage')")
+    @AuditOperation(
+            module = "AGENT",
+            action = "MCP_DELETE",
+            description = "删除智能体MCP配置",
+            targetType = "AGENT_MCP")
     public ApiResult<Void> deleteMcp(
             @Valid @RequestBody AgentConfigIdRequest request, JwtPrincipal principal) {
         agentDefinitionService.deleteMcp(principal.getTenantId(), request.getId());
@@ -102,6 +118,11 @@ public class AgentController {
 
     @PostMapping("/skill/save")
     @PreAuthorize("hasAuthority('*') or hasAuthority('crm:agent:manage')")
+    @AuditOperation(
+            module = "AGENT",
+            action = "SKILL_SAVE",
+            description = "保存智能体技能配置",
+            targetType = "AGENT_SKILL")
     public ApiResult<AgentSkillEntity> saveSkill(
             @Valid @RequestBody AgentSkillSaveRequest request, JwtPrincipal principal) {
         return ApiResult.ok(agentDefinitionService.saveSkill(principal.getTenantId(), request));
@@ -109,6 +130,11 @@ public class AgentController {
 
     @PostMapping("/skill/delete")
     @PreAuthorize("hasAuthority('*') or hasAuthority('crm:agent:manage')")
+    @AuditOperation(
+            module = "AGENT",
+            action = "SKILL_DELETE",
+            description = "删除智能体技能配置",
+            targetType = "AGENT_SKILL")
     public ApiResult<Void> deleteSkill(
             @Valid @RequestBody AgentConfigIdRequest request, JwtPrincipal principal) {
         agentDefinitionService.deleteSkill(principal.getTenantId(), request.getId());
@@ -145,6 +171,11 @@ public class AgentController {
 
     @PostMapping("/token/quota/assign")
     @PreAuthorize("hasAuthority('*') or hasAuthority('crm:agent:manage')")
+    @AuditOperation(
+            module = "AGENT",
+            action = "TOKEN_QUOTA_ASSIGN",
+            description = "分配智能体用量额度",
+            targetType = "TOKEN_QUOTA")
     public ApiResult<AgentTokenQuotaOverviewResponse> assignTokenQuota(
             @RequestBody AgentTokenQuotaAssignRequest request, JwtPrincipal principal) {
         return ApiResult.ok(agentTokenQuotaManageService.assign(principal.getTenantId(), request));
@@ -152,6 +183,11 @@ public class AgentController {
 
     @PostMapping("/token/quota/clear")
     @PreAuthorize("hasAuthority('*') or hasAuthority('crm:agent:manage')")
+    @AuditOperation(
+            module = "AGENT",
+            action = "TOKEN_QUOTA_CLEAR",
+            description = "清除智能体用量额度",
+            targetType = "TOKEN_QUOTA")
     public ApiResult<AgentTokenQuotaOverviewResponse> clearTokenQuota(
             @RequestBody AgentTokenQuotaClearRequest request, JwtPrincipal principal) {
         return ApiResult.ok(agentTokenQuotaManageService.clear(principal.getTenantId(), request));

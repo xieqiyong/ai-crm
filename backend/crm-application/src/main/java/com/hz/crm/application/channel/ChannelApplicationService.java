@@ -101,7 +101,9 @@ public class ChannelApplicationService {
         entity.setCompanyName(trimToNull(request.getCompanyName()));
         entity.setPhone(trimToNull(request.getPhone()));
         entity.setEmail(trimToNull(request.getEmail()));
-        entity.setRemark(trimToNull(request.getRemark()));
+        if (!isImportedMaterial(entity)) {
+            entity.setRemark(trimToNull(request.getRemark()));
+        }
         if (request.getId() == null) {
             channelRecordMapper.insert(entity);
         } else {
@@ -145,7 +147,7 @@ public class ChannelApplicationService {
         entity.setMediaContentType(trimToNull(request.getMediaContentType()));
         entity.setMediaSize(request.getMediaSize());
         entity.setMediaStorageKey(trimToNull(request.getMediaStorageKey()));
-        entity.setRemark(trimToNull(request.getRemark()));
+        entity.setRemark(null);
         channelRecordMapper.insert(entity);
         ChannelResponse response = toResponse(entity);
         fillOwnerName(tenantId, response);
@@ -170,7 +172,7 @@ public class ChannelApplicationService {
         entity.setUpdatedAt(now);
         entity.setTitle(firstText(request.getTitle(), profile.getTitle(), request.getMediaFileName()));
         entity.setChannelType(ChannelType.DOCUMENT);
-        entity.setStatus(ChannelStatus.ANALYZED);
+        entity.setStatus(ChannelStatus.WAITING_AI_ANALYSIS);
         entity.setSource(normalizeSource(request.getSource()));
         entity.setContactName(firstText(request.getContactName(), profile.getContactName()));
         entity.setCompanyName(firstText(request.getCompanyName(), profile.getCompanyName()));
@@ -181,9 +183,12 @@ public class ChannelApplicationService {
         entity.setMediaSize(request.getMediaSize());
         entity.setMediaStorageKey(trimToNull(request.getMediaStorageKey()));
         entity.setTranscriptText(limitText(request.getDocumentText(), 12000));
-        entity.setAiSummary(profile.getSummary());
-        entity.setUsefulInfo(profile.getUsefulInfo());
-        entity.setRemark(limitText(firstText(request.getRemark(), profile.getRemark()), 512));
+        entity.setAiSummary(null);
+        entity.setUsefulInfo(null);
+        entity.setAiAnalysisJson(null);
+        entity.setAgentRunId(null);
+        entity.setAiAnalyzedAt(null);
+        entity.setRemark(null);
         channelRecordMapper.insert(entity);
         ChannelResponse response = toResponse(entity);
         fillOwnerName(tenantId, response);
@@ -208,7 +213,41 @@ public class ChannelApplicationService {
         ChannelRecordEntity entity = findOne(tenantId, id);
         checkDataScope(userId, dataScope, entity.getOwnerId());
         checkNotPromoted(entity);
+        if (isImportedMaterial(entity) && !StringUtils.hasText(entity.getTranscriptText())) {
+            throw new BusinessException("CHANNEL_014", "渠道材料尚未完成中文转译，不能进行AI分析");
+        }
         entity.setStatus(ChannelStatus.WAITING_AI_ANALYSIS);
+        entity.setUpdatedAt(DateTimes.now());
+        channelRecordMapper.updateById(entity);
+        ChannelResponse response = toResponse(entity);
+        fillOwnerName(tenantId, response);
+        return response;
+    }
+
+    @Transactional
+    public ChannelResponse completeAiAnalysis(
+            Long tenantId,
+            Long userId,
+            String dataScope,
+            Long id,
+            String summary,
+            String usefulInfo,
+            String remark,
+            String analysisJson,
+            Long agentRunId) {
+        if (!StringUtils.hasText(remark)) {
+            throw new BusinessException("CHANNEL_AI_009", "渠道智能体未生成有效备注");
+        }
+        ChannelRecordEntity entity = findOne(tenantId, id);
+        checkDataScope(userId, dataScope, entity.getOwnerId());
+        checkNotPromoted(entity);
+        entity.setAiSummary(trimToNull(summary));
+        entity.setUsefulInfo(trimToNull(usefulInfo));
+        entity.setRemark(trimToNull(remark));
+        entity.setAiAnalysisJson(trimToNull(analysisJson));
+        entity.setAgentRunId(agentRunId);
+        entity.setAiAnalyzedAt(DateTimes.now());
+        entity.setStatus(ChannelStatus.ANALYZED);
         entity.setUpdatedAt(DateTimes.now());
         channelRecordMapper.updateById(entity);
         ChannelResponse response = toResponse(entity);
@@ -226,6 +265,9 @@ public class ChannelApplicationService {
         checkDataScope(operatorId, dataScope, entity.getOwnerId());
         if (entity.getLeadId() != null) {
             throw new BusinessException("CHANNEL_004", "渠道已晋升为线索");
+        }
+        if (!isPromotionReady(entity)) {
+            throw new BusinessException("CHANNEL_015", resolvePromotionBlockReason(entity));
         }
         LeadSaveRequest leadRequest = new LeadSaveRequest();
         leadRequest.setName(resolveLeadName(entity));
@@ -309,6 +351,35 @@ public class ChannelApplicationService {
         }
     }
 
+    private boolean isImportedMaterial(ChannelRecordEntity entity) {
+        if (entity == null || !StringUtils.hasText(entity.getMediaFileName())) {
+            return false;
+        }
+        return ChannelType.DOCUMENT == entity.getChannelType()
+                || ChannelType.AUDIO == entity.getChannelType()
+                || ChannelType.VIDEO == entity.getChannelType();
+    }
+
+    private boolean isPromotionReady(ChannelRecordEntity entity) {
+        if (entity == null || entity.getLeadId() != null) {
+            return false;
+        }
+        if (!isImportedMaterial(entity)) {
+            return true;
+        }
+        return ChannelStatus.ANALYZED == entity.getStatus()
+                && StringUtils.hasText(entity.getRemark())
+                && entity.getAgentRunId() != null
+                && entity.getAiAnalyzedAt() != null;
+    }
+
+    private String resolvePromotionBlockReason(ChannelRecordEntity entity) {
+        if (entity != null && ChannelStatus.WAITING_TRANSCRIPTION == entity.getStatus()) {
+            return "请先完成渠道材料的中文转译";
+        }
+        return "请先使用渠道智能体完成AI整理并生成备注";
+    }
+
     private ChannelDocumentProfile extractDocumentProfile(String documentText) {
         String text = normalizeText(documentText);
         ChannelDocumentProfile profile = new ChannelDocumentProfile();
@@ -317,19 +388,21 @@ public class ChannelApplicationService {
         profile.setCompanyName(extractCompanyName(text));
         profile.setPhone(extractRegexGroup(text, "(?<!\\d)1[3-9]\\d{9}(?!\\d)", 0));
         profile.setEmail(extractRegexGroup(text, "[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\\.[A-Za-z]{2,}", 0));
-        profile.setSummary(buildDocumentSummary(text, profile));
-        profile.setUsefulInfo(buildDocumentUsefulInfo(text));
-        profile.setRemark(buildDocumentRemark(text, profile));
         return profile;
     }
 
     private String extractTitle(String text) {
-        String title = extractBetween(text, "用户电话沟通分析", "用户画像");
-        if (StringUtils.hasText(title)) {
-            return "用户电话沟通分析" + title;
+        if (!StringUtils.hasText(text)) {
+            return null;
         }
-        title = extractRegexGroup(text, "([^\\s]{2,80}(沟通|纪要|分析|记录)[^\\s]{0,40})", 1);
-        return trimToNull(title);
+        String[] lines = text.split("\\n");
+        for (String line : lines) {
+            String title = trimToNull(line);
+            if (title != null && title.length() >= 2 && title.length() <= 80) {
+                return title;
+            }
+        }
+        return null;
     }
 
     private String extractContactName(String text) {
@@ -353,133 +426,6 @@ public class ChannelApplicationService {
             return null;
         }
         return companyName.trim();
-    }
-
-    private String buildDocumentSummary(String text, ChannelDocumentProfile profile) {
-        StringBuilder builder = new StringBuilder();
-        builder.append("### 渠道材料提取摘要\n\n");
-        appendLine(builder, "材料标题", profile.getTitle());
-        appendLine(builder, "联系人", profile.getContactName());
-        appendLine(builder, "公司名称", profile.getCompanyName());
-        appendLine(builder, "联系电话", profile.getPhone());
-        appendLine(builder, "联系邮箱", profile.getEmail());
-        appendLine(builder, "客户分级", extractLevel(text));
-        appendLine(builder, "客户画像", extractAfter(text, "用户画像速览", "二、现有技术栈", 180));
-        appendLine(builder, "核心诉求", extractDemands(text));
-        appendLine(builder, "匹配判断", extractAfter(text, "总体判断：", "五、用户顾虑", 260));
-        appendLine(builder, "顾虑风险", extractConcerns(text));
-        appendLine(builder, "下一步动作", extractNextActions(text));
-        return builder.toString();
-    }
-
-    private String buildDocumentUsefulInfo(String text) {
-        StringBuilder builder = new StringBuilder();
-        appendLine(builder, "角色", extractAfter(text, "角色", "从业经验", 80));
-        appendLine(builder, "从业经验", extractAfter(text, "从业经验", "态度", 80));
-        appendLine(builder, "组织形态", extractAfter(text, "组织形态", "团队定位", 100));
-        appendLine(builder, "技术现状", extractTechStack(text));
-        appendLine(builder, "明确需求", extractDemands(text));
-        appendLine(builder, "隐含需求", extractAfter(text, "3.2 隐含需求", "四、与", 260));
-        appendLine(builder, "内部协同", extractAfter(text, "需内部协同", "九、表单跟进记录", 260));
-        return builder.toString();
-    }
-
-    private String buildDocumentRemark(String text, ChannelDocumentProfile profile) {
-        String copyRecord = extractAfter(text, "复制以下内容至", "用户电话沟通分析", 420);
-        if (StringUtils.hasText(copyRecord)) {
-            return copyRecord;
-        }
-        StringBuilder builder = new StringBuilder();
-        appendLine(builder, "联系人", profile.getContactName());
-        appendLine(builder, "核心诉求", extractDemands(text));
-        appendLine(builder, "下一步", extractNextActions(text));
-        return builder.toString();
-    }
-
-    private String extractLevel(String text) {
-        if (text.contains("A 类线索")) {
-            return "A 类线索";
-        }
-        if (text.contains("B 类线索")) {
-            return "B 类线索";
-        }
-        if (text.contains("C 类线索")) {
-            return "C 类线索";
-        }
-        String stars = extractRegexGroup(text, "★{1,5}", 0);
-        return trimToNull(stars);
-    }
-
-    private String extractTechStack(String text) {
-        List<String> values = new ArrayList<String>();
-        addIfContains(values, text, "Zabbix", "Zabbix 监控");
-        addIfContains(values, text, "华为 APM", "华为 APM");
-        addIfContains(values, text, "ELK", "ELK 生产日志");
-        addIfContains(values, text, "私有云", "私有云核心业务");
-        addIfContains(values, text, "华为公有云", "华为公有云");
-        addIfContains(values, text, "算力卡", "算力卡 + 小模型");
-        return joinValues(values);
-    }
-
-    private String extractDemands(String text) {
-        List<String> values = new ArrayList<String>();
-        addIfContains(values, text, "商业 APM", "私有云核心业务采购商业 APM");
-        addIfContains(values, text, "统一智能管控", "统一智能管控平台");
-        addIfContains(values, text, "ELK 日志", "ELK 日志 + 大模型智能分析");
-        addIfContains(values, text, "下级公司赋能", "集团对下级公司赋能");
-        addIfContains(values, text, "OEM", "OEM / 合作模式");
-        addIfContains(values, text, "Mythos", "安全 AI / Mythos");
-        return joinValues(values);
-    }
-
-    private String extractConcerns(String text) {
-        List<String> values = new ArrayList<String>();
-        addIfContains(values, text, "预算不确定", "预算不确定");
-        addIfContains(values, text, "采购流程长", "采购流程长，需要 ROI 论证");
-        addIfContains(values, text, "团队已饱和", "团队已饱和，难承担新平台建设");
-        addIfContains(values, text, "下级赋能 ROI", "下级赋能 ROI 需要证明");
-        return joinValues(values);
-    }
-
-    private String extractNextActions(String text) {
-        List<String> values = new ArrayList<String>();
-        addIfContains(values, text, "确认ELK/Zabbix规模", "确认 ELK / Zabbix 规模");
-        addIfContains(values, text, "ELK问数", "安排 ELK 问数 + 巡检 Demo");
-        addIfContains(values, text, "商务联合回访", "内部确认 OEM 政策后商务联合回访");
-        addIfContains(values, text, "3–5 个工作日", "建议 3–5 个工作日内二次沟通");
-        return joinValues(values);
-    }
-
-    private void addIfContains(List<String> values, String text, String keyword, String value) {
-        if (text.contains(keyword) && !values.contains(value)) {
-            values.add(value);
-        }
-    }
-
-    private String joinValues(List<String> values) {
-        if (values.isEmpty()) {
-            return null;
-        }
-        return String.join("；", values);
-    }
-
-    private String extractAfter(String text, String start, String end, int limit) {
-        String value = extractBetween(text, start, end);
-        return limitText(value, limit);
-    }
-
-    private String extractBetween(String text, String start, String end) {
-        if (!StringUtils.hasText(text) || !StringUtils.hasText(start)) {
-            return null;
-        }
-        int startIndex = text.indexOf(start);
-        if (startIndex < 0) {
-            return null;
-        }
-        int valueStart = startIndex + start.length();
-        int endIndex = StringUtils.hasText(end) ? text.indexOf(end, valueStart) : -1;
-        String value = endIndex < 0 ? text.substring(valueStart) : text.substring(valueStart, endIndex);
-        return trimToNull(value);
     }
 
     private String extractRegexGroup(String text, String regex, int groupIndex) {
@@ -509,7 +455,9 @@ public class ChannelApplicationService {
         if (!StringUtils.hasText(value)) {
             return "";
         }
-        return value.replace('\u00A0', ' ').replaceAll("\\s+", " ").trim();
+        String text = value.replace('\u00A0', ' ').replace("\r\n", "\n").replace('\r', '\n');
+        text = text.replaceAll("[ \\t\\x0B\\f]+", " ");
+        return text.replaceAll("\\n\\s*\\n+", "\n").trim();
     }
 
     private String firstText(String first, String second) {
@@ -623,9 +571,17 @@ public class ChannelApplicationService {
         response.setTranscriptText(entity.getTranscriptText());
         response.setAiSummary(entity.getAiSummary());
         response.setUsefulInfo(entity.getUsefulInfo());
+        response.setAiAnalysisJson(entity.getAiAnalysisJson());
+        response.setAgentRunId(entity.getAgentRunId());
+        response.setAiAnalyzedAt(entity.getAiAnalyzedAt());
         response.setLeadId(entity.getLeadId());
         response.setOwnerId(entity.getOwnerId());
         response.setRemark(entity.getRemark());
+        response.setPromotionReady(isPromotionReady(entity));
+        response.setPromotionBlockReason(
+                response.isPromotionReady() || entity.getLeadId() != null
+                        ? null
+                        : resolvePromotionBlockReason(entity));
         response.setCreatedAt(entity.getCreatedAt());
         response.setUpdatedAt(entity.getUpdatedAt());
         return response;
@@ -670,12 +626,6 @@ public class ChannelApplicationService {
 
         private String email;
 
-        private String summary;
-
-        private String usefulInfo;
-
-        private String remark;
-
         public String getTitle() {
             return title;
         }
@@ -716,28 +666,5 @@ public class ChannelApplicationService {
             this.email = email;
         }
 
-        public String getSummary() {
-            return summary;
-        }
-
-        public void setSummary(String summary) {
-            this.summary = summary;
-        }
-
-        public String getUsefulInfo() {
-            return usefulInfo;
-        }
-
-        public void setUsefulInfo(String usefulInfo) {
-            this.usefulInfo = usefulInfo;
-        }
-
-        public String getRemark() {
-            return remark;
-        }
-
-        public void setRemark(String remark) {
-            this.remark = remark;
-        }
     }
 }

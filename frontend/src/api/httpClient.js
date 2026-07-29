@@ -90,23 +90,30 @@ export async function streamRequest(path, options = {}, handlers = {}) {
       const event = parseSseEvent(part)
       if (!event) continue
       lastPayload = event.payload
-      handlers.onEvent?.(event.name, event.payload)
-      if (event.name === 'thought') handlers.onThought?.(event.payload)
-      if (event.name === 'delta') handlers.onDelta?.(event.payload)
-      if (event.name === 'done') handlers.onDone?.(event.payload)
+      dispatchStreamEvent(event, handlers)
     }
   }
   if (buffer.trim()) {
     const event = parseSseEvent(buffer)
     if (event) {
       lastPayload = event.payload
-      handlers.onEvent?.(event.name, event.payload)
-      if (event.name === 'thought') handlers.onThought?.(event.payload)
-      if (event.name === 'delta') handlers.onDelta?.(event.payload)
-      if (event.name === 'done') handlers.onDone?.(event.payload)
+      dispatchStreamEvent(event, handlers)
     }
   }
   return lastPayload
+}
+
+function dispatchStreamEvent(event, handlers) {
+  const payload = event?.payload
+  const name = event?.name || 'message'
+  const type = String(payload?.type || name || '').toUpperCase()
+  handlers.onEvent?.(name, payload)
+  handlers.onRuntimeEvent?.(payload)
+  if (name === 'thought' || type === 'THOUGHT') handlers.onThought?.(payload)
+  if (name === 'delta' || type === 'ANSWER_DELTA') handlers.onDelta?.(payload)
+  if (name === 'done' || type === 'RUN_FINISHED') handlers.onDone?.(payload)
+  if (type === 'ANSWER_FINISHED') handlers.onAnswerFinished?.(payload)
+  if (type === 'RUN_ERROR') handlers.onErrorEvent?.(payload)
 }
 
 function parseMaybeJson(text) {

@@ -13,7 +13,7 @@ const moduleConfig = {
     icon: CheckCircle2,
   },
   assistant: {
-    title: 'AI 营销助手',
+    title: 'AI 智能体助手',
     desc: '围绕客户、线索与商机数据进行智能问答与内容生成',
     icon: Bot,
   },

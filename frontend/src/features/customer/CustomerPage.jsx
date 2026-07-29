@@ -6,7 +6,17 @@ import {
   Search,
 } from 'lucide-react'
 import { api } from '../../api'
-import { Badge, Button, Card, ConfirmDialog, Field, Modal, PageHeader, useConfirmDialog } from '../../components'
+import {
+  Badge,
+  Button,
+  Card,
+  ConfirmDialog,
+  Field,
+  Modal,
+  OwnerAssignModal,
+  PageHeader,
+  useConfirmDialog,
+} from '../../components'
 import {
   customerLevelText,
   customerLevelTone,
@@ -84,6 +94,7 @@ function toPayload(form) {
 
 export function CustomerPage({ can, notify, navigate }) {
   const canWrite = can('crm:customer:manage') || can('crm:customer:edit')
+  const canAssign = can('crm:customer:assign')
   const canDelete = can('crm:customer:manage')
   const ownerOptions = useOwnerOptions(notify)
   const { confirm, dialogProps } = useConfirmDialog()
@@ -91,6 +102,8 @@ export function CustomerPage({ can, notify, navigate }) {
   const [page, setPage] = useState(emptyPage)
   const [loading, setLoading] = useState(true)
   const [editing, setEditing] = useState(null)
+  const [assigning, setAssigning] = useState(null)
+  const [assignSubmitting, setAssignSubmitting] = useState(false)
 
   const load = async (nextQuery = query) => {
     setLoading(true)
@@ -143,6 +156,24 @@ export function CustomerPage({ can, notify, navigate }) {
       load({ ...query, pageNo: 1 })
     } catch (err) {
       notify(err.message || '客户删除失败', 'info')
+    }
+  }
+
+  const assignCustomer = async (ownerId) => {
+    if (!assigning?.id || !ownerId) {
+      notify('请选择负责人', 'info')
+      return
+    }
+    setAssignSubmitting(true)
+    try {
+      await api.customer.assign({ id: assigning.id, ownerId })
+      notify('客户已分配', 'success')
+      setAssigning(null)
+      load(query)
+    } catch (err) {
+      notify(err.message || '客户分配失败', 'info')
+    } finally {
+      setAssignSubmitting(false)
     }
   }
 
@@ -240,6 +271,15 @@ export function CustomerPage({ can, notify, navigate }) {
                             编辑
                           </button>
                         )}
+                        {canAssign && (
+                          <button
+                            type="button"
+                            className="table-text-button"
+                            onClick={() => setAssigning(row)}
+                          >
+                            分配
+                          </button>
+                        )}
                         {canDelete && (
                           <button
                             type="button"
@@ -289,6 +329,17 @@ export function CustomerPage({ can, notify, navigate }) {
         onChange={setEditing}
         onClose={() => setEditing(null)}
         onSave={saveCustomer}
+      />
+      <OwnerAssignModal
+        open={Boolean(assigning)}
+        title="分配客户负责人"
+        recordName={assigning?.name}
+        currentOwnerId={assigning?.ownerId}
+        currentOwnerName={assigning?.ownerId ? ownerName(assigning) : ''}
+        ownerOptions={ownerOptions}
+        submitting={assignSubmitting}
+        onClose={() => setAssigning(null)}
+        onConfirm={assignCustomer}
       />
       <ConfirmDialog {...dialogProps} />
     </div>

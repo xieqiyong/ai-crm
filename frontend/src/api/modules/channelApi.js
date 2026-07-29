@@ -11,7 +11,7 @@ export const channelApi = {
     method: 'POST',
     body: JSON.stringify({ id }),
   }),
-  prepareAnalysis: (id) => request('/api/channel/analysis/prepare', { method: 'POST', body: JSON.stringify({ id }) }),
+  analyze: (id) => request('/api/channel/analysis/run', { method: 'POST', body: JSON.stringify({ id }) }),
   promote: (payload) => request('/api/channel/promote', { method: 'POST', body: JSON.stringify(payload) }),
   formPage: (payload) => request('/api/channel/marketing-form/page', {
     method: 'POST',

@@ -1,5 +1,6 @@
 package com.hz.crm.auth.security;
 
+import com.hz.crm.common.audit.AuditPrincipal;
 import java.util.ArrayList;
 import java.util.List;
 import lombok.Getter;
@@ -7,7 +8,7 @@ import lombok.Setter;
 
 @Getter
 @Setter
-public class JwtPrincipal {
+public class JwtPrincipal implements AuditPrincipal {
 
     private Long userId;
 

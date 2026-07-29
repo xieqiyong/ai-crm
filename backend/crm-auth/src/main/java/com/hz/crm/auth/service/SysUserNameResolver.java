@@ -1,7 +1,8 @@
 package com.hz.crm.auth.service;
 
+import com.baomidou.mybatisplus.core.toolkit.Wrappers;
 import com.hz.crm.auth.domain.SysUserEntity;
-import com.hz.crm.auth.repository.SysUserRepository;
+import com.hz.crm.auth.mapper.SysUserMapper;
 import com.hz.crm.common.user.UserNameResolver;
 import java.util.ArrayList;
 import java.util.Collection;
@@ -17,7 +18,7 @@ import org.springframework.stereotype.Service;
 public class SysUserNameResolver implements UserNameResolver {
 
     @Autowired
-    private SysUserRepository userRepository;
+    private SysUserMapper userMapper;
 
     @Override
     public Map<Long, String> resolve(Long tenantId, Collection<Long> userIds) {
@@ -35,7 +36,10 @@ public class SysUserNameResolver implements UserNameResolver {
             return result;
         }
         List<Long> ids = new ArrayList<Long>(idSet);
-        List<SysUserEntity> users = userRepository.findByTenantIdAndIdInAndDeletedFalse(tenantId, ids);
+        List<SysUserEntity> users = userMapper.selectList(Wrappers.<SysUserEntity>lambdaQuery()
+                .eq(SysUserEntity::getTenantId, tenantId)
+                .eq(SysUserEntity::isDeleted, false)
+                .in(SysUserEntity::getId, ids));
         for (SysUserEntity user : users) {
             result.put(user.getId(), displayName(user));
         }

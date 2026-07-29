@@ -29,6 +29,4 @@ public class ChannelMediaImportRequest {
     private Long mediaSize;
 
     private String mediaStorageKey;
-
-    private String remark;
 }

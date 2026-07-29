@@ -1,5 +1,8 @@
 package com.hz.crm.auth.domain;
 
+import com.baomidou.mybatisplus.annotation.IdType;
+import com.baomidou.mybatisplus.annotation.TableId;
+import com.baomidou.mybatisplus.annotation.TableName;
 import com.hz.crm.common.time.DateTimes;
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
@@ -15,9 +18,11 @@ import lombok.Setter;
 @Setter
 @Entity
 @Table(name = "sys_department")
+@TableName("sys_department")
 public class SysDepartmentEntity {
 
     @Id
+    @TableId(type = IdType.INPUT)
     private Long id;
 
     @Column(nullable = false, columnDefinition = "bigint")

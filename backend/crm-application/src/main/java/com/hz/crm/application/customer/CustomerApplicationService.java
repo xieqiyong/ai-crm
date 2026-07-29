@@ -1,16 +1,23 @@
 package com.hz.crm.application.customer;
 
+import com.baomidou.mybatisplus.core.toolkit.Wrappers;
+import com.hz.crm.application.customer.dto.CustomerAssignRequest;
 import com.hz.crm.application.customer.dto.CustomerQuery;
 import com.hz.crm.application.customer.dto.CustomerResponse;
 import com.hz.crm.application.customer.dto.CustomerSaveRequest;
 import com.hz.crm.common.api.PageData;
 import com.hz.crm.common.exception.BusinessException;
 import com.hz.crm.common.id.SnowflakeIdGenerator;
+import com.hz.crm.common.time.DateTimes;
+import com.hz.crm.common.user.AssignableUserResolver;
+import com.hz.crm.common.user.UserDataScopeValidator;
 import com.hz.crm.common.user.UserNameResolver;
 import com.hz.crm.domain.customer.CustomerEntity;
 import com.hz.crm.domain.customer.CustomerLevel;
 import com.hz.crm.domain.customer.CustomerStatus;
+import com.hz.crm.domain.customer.mapper.CustomerMapper;
 import com.hz.crm.domain.customer.repository.CustomerJpaRepository;
+import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.HashSet;
 import java.util.List;
@@ -35,6 +42,15 @@ public class CustomerApplicationService {
 
     @Autowired(required = false)
     private UserNameResolver userNameResolver;
+
+    @Autowired
+    private AssignableUserResolver assignableUserResolver;
+
+    @Autowired
+    private CustomerMapper customerMapper;
+
+    @Autowired
+    private UserDataScopeValidator userDataScopeValidator;
 
     @Transactional(readOnly = true)
     public PageData<CustomerResponse> page(Long tenantId, Long userId, String dataScope, CustomerQuery query) {
@@ -96,6 +112,39 @@ public class CustomerApplicationService {
     }
 
     @Transactional
+    public CustomerResponse assign(
+            Long tenantId, Long operatorId, String dataScope, CustomerAssignRequest request) {
+        if (request == null || request.getId() == null) {
+            throw new BusinessException("CUSTOMER_ASSIGN_001", "客户编号不能为空");
+        }
+        if (request.getOwnerId() == null) {
+            throw new BusinessException("CUSTOMER_ASSIGN_002", "负责人不能为空");
+        }
+        CustomerEntity entity = findOneForAssignment(tenantId, request.getId());
+        userDataScopeValidator.checkOwnerAccess(tenantId, operatorId, dataScope, entity.getOwnerId());
+        checkOwnerScope(operatorId, dataScope, request.getOwnerId());
+        String ownerName = assignableUserResolver.resolveAssignableName(
+                tenantId, operatorId, dataScope, request.getOwnerId());
+        if (!request.getOwnerId().equals(entity.getOwnerId())) {
+            LocalDateTime updatedAt = DateTimes.now();
+            int updated = customerMapper.update(null, Wrappers.<CustomerEntity>lambdaUpdate()
+                    .eq(CustomerEntity::getId, entity.getId())
+                    .eq(CustomerEntity::getTenantId, tenantId)
+                    .eq(CustomerEntity::isDeleted, false)
+                    .set(CustomerEntity::getOwnerId, request.getOwnerId())
+                    .set(CustomerEntity::getUpdatedAt, updatedAt));
+            if (updated != 1) {
+                throw new BusinessException("CUSTOMER_ASSIGN_004", "客户分配失败，请刷新后重试");
+            }
+            entity.setOwnerId(request.getOwnerId());
+            entity.setUpdatedAt(updatedAt);
+        }
+        CustomerResponse response = toResponse(entity);
+        response.setOwnerName(ownerName);
+        return response;
+    }
+
+    @Transactional
     public void delete(Long tenantId, Long userId, String dataScope, Long id) {
         CustomerEntity entity = findOne(tenantId, id);
         checkDataScope(userId, dataScope, entity.getOwnerId());
@@ -110,6 +159,17 @@ public class CustomerApplicationService {
         return customerRepository
                 .findByIdAndTenantIdAndDeletedFalse(id, tenantId)
                 .orElseThrow(() -> new BusinessException("CUSTOMER_002", "客户不存在"));
+    }
+
+    private CustomerEntity findOneForAssignment(Long tenantId, Long id) {
+        CustomerEntity entity = customerMapper.selectOne(Wrappers.<CustomerEntity>lambdaQuery()
+                .eq(CustomerEntity::getId, id)
+                .eq(CustomerEntity::getTenantId, tenantId)
+                .eq(CustomerEntity::isDeleted, false));
+        if (entity == null) {
+            throw new BusinessException("CUSTOMER_ASSIGN_003", "客户不存在");
+        }
+        return entity;
     }
 
     private void checkDataScope(Long userId, String dataScope, Long ownerId) {

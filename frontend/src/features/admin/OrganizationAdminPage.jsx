@@ -45,7 +45,7 @@ const MODULE_DEFINITIONS = [
   { key: 'opportunities', label: '商机管理', menuCodes: ['menu.opportunities'], actionPrefixes: ['crm:opportunity:'] },
   { key: 'followups', label: '跟进记录', menuCodes: ['menu.followups'] },
   { key: 'tasks', label: '销售任务', menuCodes: ['menu.tasks'] },
-  { key: 'assistant', label: 'AI营销助手', menuCodes: ['menu.assistant'], actionPrefixes: ['crm:assistant:'] },
+  { key: 'assistant', label: 'AI智能体助手', menuCodes: ['menu.assistant'], actionPrefixes: ['crm:assistant:'] },
   { key: 'agent_config', label: '智能体配置', menuCodes: ['menu.agent_config'], actionPrefixes: ['crm:agent:'] },
   { key: 'knowledge', label: '知识库', menuCodes: ['menu.knowledge'], actionPrefixes: ['crm:knowledge:'] },
   { key: 'model_configs', label: '大模型配置', menuCodes: ['menu.model_configs'], actionPrefixes: ['crm:model:'] },

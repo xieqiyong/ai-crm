@@ -17,6 +17,8 @@ public class AgentRunRequest {
     @NotBlank(message = "消息内容不能为空")
     private String message;
 
+    private Long conversationId;
+
     private String sessionId;
 
     private String injectedPrompt;

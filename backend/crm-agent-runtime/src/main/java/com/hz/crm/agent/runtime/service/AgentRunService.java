@@ -31,6 +31,7 @@ public class AgentRunService {
         runtimeRequest.setUserId(userId);
         runtimeRequest.setAgent(agent);
         runtimeRequest.setMessage(request.getMessage());
+        runtimeRequest.setConversationId(request.getConversationId());
         runtimeRequest.setSessionId(request.getSessionId());
         runtimeRequest.setInjectedPrompt(request.getInjectedPrompt());
         runtimeRequest.setSceneCode(resolveSceneCode(agent, request));

@@ -7,6 +7,7 @@ import com.hz.crm.application.followup.dto.FollowupSaveRequest;
 import com.hz.crm.auth.security.JwtPrincipal;
 import com.hz.crm.common.api.ApiResult;
 import com.hz.crm.common.api.PageData;
+import com.hz.crm.common.audit.AuditOperation;
 import com.hz.crm.web.support.IdRequest;
 import jakarta.validation.Valid;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -41,6 +42,11 @@ public class FollowupController {
     @PostMapping("/save")
     @PreAuthorize("hasAuthority('*') or hasAuthority('crm:followup:manage') "
             + "or (#request != null and #request.id == null and hasAuthority('crm:followup:create'))")
+    @AuditOperation(
+            module = "FOLLOWUP",
+            action = "SAVE",
+            description = "保存跟进记录",
+            targetType = "FOLLOWUP")
     public ApiResult<FollowupResponse> save(@Valid @RequestBody FollowupSaveRequest request, JwtPrincipal principal) {
         return ApiResult.ok(followupApplicationService.save(
                 principal.getTenantId(), principal.getUserId(), principal.getDataScope(), request));
@@ -48,6 +54,11 @@ public class FollowupController {
 
     @PostMapping("/delete")
     @PreAuthorize("hasAuthority('*') or hasAuthority('crm:followup:manage')")
+    @AuditOperation(
+            module = "FOLLOWUP",
+            action = "DELETE",
+            description = "删除跟进记录",
+            targetType = "FOLLOWUP")
     public ApiResult<Void> delete(@RequestBody IdRequest request, JwtPrincipal principal) {
         followupApplicationService.delete(
                 principal.getTenantId(), principal.getUserId(), principal.getDataScope(), request.getId());

@@ -28,6 +28,4 @@ public class ChannelDocumentImportRequest {
     private String mediaStorageKey;
 
     private String documentText;
-
-    private String remark;
 }
