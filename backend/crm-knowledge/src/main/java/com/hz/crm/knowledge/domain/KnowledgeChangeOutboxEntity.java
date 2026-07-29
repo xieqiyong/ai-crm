@@ -19,14 +19,13 @@ import lombok.Setter;
 @Setter
 @Entity
 @Table(
-        name = "kb_ingest_task",
+        name = "kb_change_outbox",
         indexes = {
-                @Index(
-                        name = "idx_kb_ingest_task_idempotency",
-                        columnList = "tenant_id, document_id, idempotency_key, status")
+                @Index(name = "idx_kb_change_outbox_publish", columnList = "published, created_at"),
+                @Index(name = "idx_kb_change_outbox_tenant", columnList = "tenant_id, id")
         })
-@TableName("kb_ingest_task")
-public class KnowledgeIngestTaskEntity {
+@TableName("kb_change_outbox")
+public class KnowledgeChangeOutboxEntity {
 
     @Id
     @TableId(type = IdType.INPUT)
@@ -42,46 +41,26 @@ public class KnowledgeIngestTaskEntity {
     private Long documentVersionId;
 
     @Column(columnDefinition = "bigint")
-    private Long indexGenerationId;
-
-    @Column(length = 64)
-    private String idempotencyKey;
-
-    @Column(nullable = false)
-    private Boolean force;
+    private Long sourceIndexGenerationId;
 
     @Column(nullable = false, length = 32)
-    private String status;
+    private String eventType;
 
-    @Column(length = 64)
-    private String stage;
+    @Column(nullable = false, length = 64)
+    private String eventKey;
 
-    private Integer progress;
-
-    @Column(length = 512)
-    private String message;
-
-    @Column(length = 1024)
-    private String errorMessage;
-
-    private Integer indexVersion;
-
-    @Column(length = 64)
-    private String indexHash;
-
-    private Integer chunkCount;
-
-    private Integer vectorDimension;
-
-    @Column(length = 128)
-    private String embeddingModel;
-
-    private LocalDateTime startedAt;
-
-    private LocalDateTime finishedAt;
+    @Column(nullable = false, columnDefinition = "text")
+    private String payloadJson;
 
     @Column(nullable = false)
-    private Boolean deleted;
+    private boolean published;
+
+    private Integer publishAttempts;
+
+    @Column(length = 512)
+    private String errorMessage;
+
+    private LocalDateTime publishedAt;
 
     @Column(nullable = false)
     private LocalDateTime createdAt;
@@ -97,6 +76,9 @@ public class KnowledgeIngestTaskEntity {
         }
         if (updatedAt == null) {
             updatedAt = now;
+        }
+        if (publishAttempts == null) {
+            publishAttempts = 0;
         }
     }
 

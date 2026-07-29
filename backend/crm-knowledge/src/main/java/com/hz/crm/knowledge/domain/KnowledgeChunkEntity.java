@@ -7,6 +7,7 @@ import com.hz.crm.common.time.DateTimes;
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
 import jakarta.persistence.Id;
+import jakarta.persistence.Index;
 import jakarta.persistence.PrePersist;
 import jakarta.persistence.PreUpdate;
 import jakarta.persistence.Table;
@@ -17,7 +18,13 @@ import lombok.Setter;
 @Getter
 @Setter
 @Entity
-@Table(name = "kb_chunk")
+@Table(
+        name = "kb_chunk",
+        indexes = {
+                @Index(
+                        name = "idx_kb_chunk_active_search",
+                        columnList = "tenant_id, index_generation_id, document_id, document_version_id, deleted")
+        })
 @TableName("kb_chunk")
 public class KnowledgeChunkEntity {
 
@@ -30,6 +37,12 @@ public class KnowledgeChunkEntity {
 
     @Column(nullable = false, columnDefinition = "bigint")
     private Long documentId;
+
+    @Column(nullable = false, columnDefinition = "bigint")
+    private Long documentVersionId;
+
+    @Column(nullable = false, columnDefinition = "bigint")
+    private Long indexGenerationId;
 
     @Column(nullable = false)
     private Integer chunkIndex;

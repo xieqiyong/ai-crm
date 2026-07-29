@@ -3,6 +3,7 @@ package com.hz.crm.knowledge.service;
 import com.alibaba.fastjson2.JSONObject;
 import com.baomidou.mybatisplus.core.conditions.query.QueryWrapper;
 import com.baomidou.mybatisplus.core.conditions.update.UpdateWrapper;
+import com.baomidou.mybatisplus.core.toolkit.Wrappers;
 import com.hz.crm.common.api.PageData;
 import com.hz.crm.common.exception.BusinessException;
 import com.hz.crm.common.id.SnowflakeIdGenerator;
@@ -14,6 +15,9 @@ import com.hz.crm.knowledge.config.KnowledgeHybridSearchProperties;
 import com.hz.crm.knowledge.domain.KnowledgeChunkEntity;
 import com.hz.crm.knowledge.domain.KnowledgeDocumentEntity;
 import com.hz.crm.knowledge.domain.KnowledgeDocumentStatus;
+import com.hz.crm.knowledge.domain.KnowledgeDocumentVersionEntity;
+import com.hz.crm.knowledge.domain.KnowledgeDocumentVersionStatus;
+import com.hz.crm.knowledge.domain.KnowledgeIndexGenerationEntity;
 import com.hz.crm.knowledge.domain.KnowledgeIngestEventEntity;
 import com.hz.crm.knowledge.domain.KnowledgeIngestTaskEntity;
 import com.hz.crm.knowledge.domain.KnowledgeVectorStatus;
@@ -29,12 +33,13 @@ import com.hz.crm.knowledge.dto.KnowledgeSearchRequest;
 import com.hz.crm.knowledge.dto.KnowledgeSearchResponse;
 import com.hz.crm.knowledge.mapper.KnowledgeChunkMapper;
 import com.hz.crm.knowledge.mapper.KnowledgeDocumentMapper;
+import com.hz.crm.knowledge.mapper.KnowledgeDocumentVersionMapper;
 import com.hz.crm.knowledge.mapper.KnowledgeIngestEventMapper;
 import com.hz.crm.knowledge.mapper.KnowledgeIngestTaskMapper;
+import com.hz.crm.knowledge.support.KnowledgeFingerprintService;
+import com.hz.crm.knowledge.support.KnowledgeIngestPreparation;
 import com.hz.crm.knowledge.support.KnowledgeTextChunk;
 import com.hz.crm.knowledge.support.KnowledgeTextSplitter;
-import java.nio.charset.StandardCharsets;
-import java.security.MessageDigest;
 import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.Collections;
@@ -55,8 +60,6 @@ import org.springframework.util.StringUtils;
 public class KnowledgeDocumentService {
 
     private static final Logger log = LoggerFactory.getLogger(KnowledgeDocumentService.class);
-
-    private static final String TASK_PENDING = "PENDING";
 
     private static final String TASK_RUNNING = "RUNNING";
 
@@ -83,6 +86,9 @@ public class KnowledgeDocumentService {
     private KnowledgeChunkMapper chunkMapper;
 
     @Autowired
+    private KnowledgeDocumentVersionMapper documentVersionMapper;
+
+    @Autowired
     private KnowledgeIngestTaskMapper ingestTaskMapper;
 
     @Autowired
@@ -105,6 +111,18 @@ public class KnowledgeDocumentService {
 
     @Autowired
     private KnowledgeHybridSearchProperties hybridSearchProperties;
+
+    @Autowired
+    private KnowledgeFingerprintService knowledgeFingerprintService;
+
+    @Autowired
+    private KnowledgeIngestTaskCoordinator knowledgeIngestTaskCoordinator;
+
+    @Autowired
+    private KnowledgeIndexGenerationService knowledgeIndexGenerationService;
+
+    @Autowired
+    private KnowledgeVersionSwitchService knowledgeVersionSwitchService;
 
     @Autowired
     @Qualifier("knowledgeIngestTaskExecutor")
@@ -138,21 +156,33 @@ public class KnowledgeDocumentService {
             throw new BusinessException("KB_001", "知识标题不能为空");
         }
         KnowledgeDocumentEntity entity;
-        String oldIndexHash = null;
+        String normalizedContent = knowledgeFingerprintService.normalizeContent(request.getContent());
+        String normalizedContentHash = knowledgeFingerprintService.normalizedContentHash(normalizedContent);
         LocalDateTime now = DateTimes.now();
         if (request.getId() == null) {
-            entity = new KnowledgeDocumentEntity();
-            entity.setId(snowflakeIdGenerator.nextId());
-            entity.setTenantId(tenantId);
-            entity.setStatus(KnowledgeDocumentStatus.DRAFT.name());
-            entity.setVectorStatus(KnowledgeVectorStatus.WAITING.name());
-            entity.setChunkCount(0);
-            entity.setIndexVersion(0);
-            entity.setCreatedAt(now);
+            Long documentId = snowflakeIdGenerator.nextId();
+            String sourceKey = knowledgeFingerprintService.resolveSourceKey(request, documentId);
+            entity = findDocumentBySourceKey(tenantId, sourceKey);
+            if (entity == null) {
+                entity = new KnowledgeDocumentEntity();
+                entity.setId(documentId);
+                entity.setTenantId(tenantId);
+                entity.setSourceKey(sourceKey);
+                entity.setStatus(KnowledgeDocumentStatus.DRAFT.name());
+                entity.setVectorStatus(KnowledgeVectorStatus.WAITING.name());
+                entity.setChunkCount(0);
+                entity.setIndexVersion(0);
+                entity.setCreatedAt(now);
+            }
         } else {
             entity = findDocument(tenantId, request.getId());
-            oldIndexHash = entity.getIndexHash();
+            String sourceKey = hasSourceIdentity(request)
+                    ? knowledgeFingerprintService.resolveSourceKey(request, entity.getId())
+                    : entity.getSourceKey();
+            validateSourceKeyOwner(tenantId, entity.getId(), sourceKey);
+            entity.setSourceKey(sourceKey);
         }
+        String oldContentHash = entity.getNormalizedContentHash();
         entity.setUpdatedAt(now);
         entity.setTitle(request.getTitle().trim());
         entity.setSourceType(trimToNull(request.getSourceType()));
@@ -160,10 +190,18 @@ public class KnowledgeDocumentService {
         entity.setTags(trimToNull(request.getTags()));
         entity.setSourceUrl(trimToNull(request.getSourceUrl()));
         entity.setObjectKey(trimToNull(request.getObjectKey()));
-        entity.setContent(trimToNull(request.getContent()));
+        entity.setRawFileHash(trimToNull(request.getRawFileHash()));
+        entity.setNormalizedContentHash(normalizedContentHash);
+        entity.setContent(trimToNull(normalizedContent));
         entity.setErrorMessage(null);
-        markWaitingIfIndexChanged(entity, oldIndexHash);
-        if (request.getId() == null) {
+        if (StringUtils.hasText(oldContentHash) && !oldContentHash.equals(normalizedContentHash)) {
+            entity.setPendingVersionId(null);
+        }
+        if (entity.getActiveVersionId() == null) {
+            entity.setStatus(KnowledgeDocumentStatus.DRAFT.name());
+            entity.setVectorStatus(KnowledgeVectorStatus.WAITING.name());
+        }
+        if (documentMapper.selectById(entity.getId()) == null) {
             documentMapper.insert(entity);
         } else {
             documentMapper.updateById(entity);
@@ -172,10 +210,35 @@ public class KnowledgeDocumentService {
     }
 
     @Transactional
+    public KnowledgeDocumentResponse reuseImportWhenRawUnchanged(
+            Long tenantId, KnowledgeDocumentRequest request) {
+        if (request == null
+                || !StringUtils.hasText(request.getRawFileHash())
+                || (!StringUtils.hasText(request.getSourceKey())
+                        && !StringUtils.hasText(request.getSourceUrl())
+                        && !StringUtils.hasText(request.getObjectKey()))) {
+            return null;
+        }
+        String sourceKey = knowledgeFingerprintService.resolveSourceKey(request, Long.valueOf(0L));
+        KnowledgeDocumentEntity existing = findDocumentBySourceKey(tenantId, sourceKey);
+        if (existing == null
+                || existing.getActiveVersionId() == null
+                || !request.getRawFileHash().equals(existing.getRawFileHash())) {
+            return null;
+        }
+        request.setId(existing.getId());
+        request.setSourceKey(existing.getSourceKey());
+        request.setContent(existing.getContent());
+        return save(tenantId, request);
+    }
+
+    @Transactional
     public void delete(Long tenantId, Long id) {
         KnowledgeDocumentEntity entity = findDocument(tenantId, id);
+        KnowledgeIndexGenerationEntity generation = knowledgeIndexGenerationService.findActive(tenantId);
         LocalDateTime now = DateTimes.now();
         entity.setDeleted(true);
+        entity.setPendingVersionId(null);
         entity.setUpdatedAt(now);
         documentMapper.updateById(entity);
         UpdateWrapper<KnowledgeChunkEntity> wrapper = new UpdateWrapper<KnowledgeChunkEntity>();
@@ -184,6 +247,8 @@ public class KnowledgeDocumentService {
         wrapper.set("deleted", true);
         wrapper.set("updated_at", now);
         chunkMapper.update(null, wrapper);
+        knowledgeVersionSwitchService.appendDelete(
+                tenantId, id, generation == null ? null : generation.getId());
         cleanupExternalIndex(tenantId, id);
     }
 
@@ -200,29 +265,45 @@ public class KnowledgeDocumentService {
     }
 
     public KnowledgeIngestResponse ingest(Long tenantId, Long id, boolean force) {
+        KnowledgeIngestPreparation preparation = knowledgeIngestTaskCoordinator.prepare(tenantId, id, force);
+        KnowledgeIngestTaskEntity task = preparation.getTask();
         KnowledgeDocumentEntity document = findDocument(tenantId, id);
-        if (!StringUtils.hasText(document.getContent())) {
-            throw new BusinessException("KB_002", "知识内容不能为空");
+        if (preparation.isScheduled()) {
+            appendEvent(task.getId(), tenantId, id, "排队中", EVENT_START, task.getMessage(), null, null);
+        } else if (preparation.isSkipped()) {
+            appendEvent(task.getId(), tenantId, id, "跳过入库", EVENT_SKIPPED, task.getMessage(), null, null);
         }
-        KnowledgeIngestTaskEntity task = createIngestTask(tenantId, document, force);
         try {
-            knowledgeIngestTaskExecutor.execute(new Runnable() {
-                @Override
-                public void run() {
-                    runIngestTask(task.getId(), tenantId, id, force);
-                }
-            });
+            if (preparation.isScheduled()) {
+                knowledgeIngestTaskExecutor.execute(new Runnable() {
+                    @Override
+                    public void run() {
+                        runIngestTask(task.getId(), tenantId, id);
+                    }
+                });
+            }
         } catch (RuntimeException ex) {
-            failTaskSubmit(task, ex);
+            markTaskFailed(
+                    task.getId(),
+                    tenantId,
+                    id,
+                    task.getDocumentVersionId(),
+                    task.getIndexGenerationId(),
+                    ex,
+                    System.currentTimeMillis());
         }
+        KnowledgeIngestTaskEntity currentTask = findTask(tenantId, task.getId());
         KnowledgeIngestResponse response = toIngestResponse(document);
-        response.setTaskId(String.valueOf(task.getId()));
-        response.setAsyncTask(true);
-        response.setStatus(task.getStatus());
-        response.setStage(task.getStage());
-        response.setProgress(task.getProgress());
-        response.setSkipped(false);
-        response.setMessage(task.getMessage());
+        response.setTaskId(String.valueOf(currentTask.getId()));
+        response.setAsyncTask(Boolean.valueOf(
+                preparation.isScheduled()
+                        || "PENDING".equals(currentTask.getStatus())
+                        || TASK_RUNNING.equals(currentTask.getStatus())));
+        response.setStatus(currentTask.getStatus());
+        response.setStage(currentTask.getStage());
+        response.setProgress(currentTask.getProgress());
+        response.setSkipped(Boolean.valueOf(preparation.isSkipped()));
+        response.setMessage(currentTask.getMessage());
         return response;
     }
 
@@ -260,13 +341,21 @@ public class KnowledgeDocumentService {
         response.setDatabaseWeight(tune.databaseWeight);
         response.setMinScore(tune.minScore);
 
-        List<KnowledgeSearchHit> vectorHits = collectMilvusHits(tenantId, request, tune.vectorCandidates);
+        KnowledgeIndexGenerationEntity generation = knowledgeIndexGenerationService.findActive(tenantId);
+        if (generation == null) {
+            response.setDatabaseFallbackUsed(false);
+            response.setHits(new ArrayList<KnowledgeSearchHit>());
+            response.setMessage("当前租户尚未建立可用知识索引");
+            return response;
+        }
+        List<KnowledgeSearchHit> vectorHits =
+                collectMilvusHits(tenantId, generation, request, tune.vectorCandidates);
         List<KnowledgeSearchHit> keywordHits =
-                collectElasticsearchHits(tenantId, request, tune.keywordCandidates);
+                collectElasticsearchHits(tenantId, generation, request, tune.keywordCandidates);
         List<KnowledgeSearchHit> databaseHits = new ArrayList<KnowledgeSearchHit>();
         boolean shouldUseDatabase = !tune.databaseFallbackOnly || (vectorHits.isEmpty() && keywordHits.isEmpty());
         if (shouldUseDatabase) {
-            databaseHits = collectDatabaseHits(tenantId, request, tune.databaseCandidates);
+            databaseHits = collectDatabaseHits(tenantId, generation, request, tune.databaseCandidates);
         }
         response.setDatabaseFallbackUsed(shouldUseDatabase);
         response.setHits(mergeHybridHits(vectorHits, keywordHits, databaseHits, tune, topK));
@@ -274,65 +363,91 @@ public class KnowledgeDocumentService {
         return response;
     }
 
-    private KnowledgeIngestTaskEntity createIngestTask(
-            Long tenantId, KnowledgeDocumentEntity document, boolean force) {
-        LocalDateTime now = DateTimes.now();
-        KnowledgeIngestTaskEntity task = new KnowledgeIngestTaskEntity();
-        task.setId(snowflakeIdGenerator.nextId());
-        task.setTenantId(tenantId);
-        task.setDocumentId(document.getId());
-        task.setForce(Boolean.valueOf(force));
-        task.setStatus(TASK_PENDING);
-        task.setStage("排队中");
-        task.setProgress(0);
-        task.setMessage("知识入库任务已提交，等待后台执行");
-        task.setDeleted(Boolean.FALSE);
-        task.setCreatedAt(now);
-        task.setUpdatedAt(now);
-        ingestTaskMapper.insert(task);
-        appendEvent(task.getId(), tenantId, document.getId(), "排队中", EVENT_START, task.getMessage(), null, null);
-        return task;
+    public void rebuildDocumentVersionIntoGeneration(
+            Long tenantId,
+            Long documentId,
+            Long documentVersionId,
+            Long generationId) {
+        KnowledgeIndexGenerationEntity generation =
+                knowledgeIndexGenerationService.requireGeneration(tenantId, generationId);
+        cleanupGenerationDocument(tenantId, documentId, generation);
+        KnowledgeDocumentEntity document = documentMapper.selectById(documentId);
+        if (document == null
+                || !tenantId.equals(document.getTenantId())
+                || document.isDeleted()
+                || documentVersionId == null) {
+            return;
+        }
+        KnowledgeDocumentVersionEntity version = findVersion(tenantId, documentId, documentVersionId);
+        List<KnowledgeTextChunk> chunks = knowledgeTextSplitter.split(version.getContentSnapshot());
+        if (chunks.isEmpty()) {
+            throw new BusinessException("KB_REBUILD_004", "知识版本内容无法切分");
+        }
+        int indexVersion = version.getVersionNo().intValue();
+        String indexHash = version.getBuildFingerprint();
+        for (KnowledgeTextChunk textChunk : chunks) {
+            KnowledgeChunkEntity chunk = buildChunk(
+                    tenantId, document, version, generation, textChunk, indexVersion, indexHash);
+            List<Float> embedding = null;
+            if (shouldBuildVector()) {
+                embedding = knowledgeEmbeddingClient.embed(textChunk.getContent());
+                chunk.setVectorStatus(KnowledgeVectorStatus.READY.name());
+                chunk.setVectorDimension(Integer.valueOf(embedding.size()));
+                chunk.setEmbeddingModel(knowledgeEmbeddingClient.model());
+            }
+            chunkMapper.insert(chunk);
+            if (knowledgeElasticsearchClient.enabled()) {
+                knowledgeElasticsearchClient.index(chunk, generation.getElasticsearchIndex());
+                chunk.setEsIndexed(true);
+            }
+            if (embedding != null) {
+                knowledgeMilvusClient.index(chunk, embedding, generation.getMilvusCollection());
+                chunk.setMilvusIndexed(true);
+            }
+            chunk.setUpdatedAt(DateTimes.now());
+            chunkMapper.updateById(chunk);
+        }
     }
 
-    private void failTaskSubmit(KnowledgeIngestTaskEntity task, RuntimeException ex) {
-        log.warn("知识入库任务提交失败，taskId={}，documentId={}", task.getId(), task.getDocumentId(), ex);
-        LocalDateTime now = DateTimes.now();
-        task.setStatus(TASK_FAILED);
-        task.setStage("提交失败");
-        task.setProgress(100);
-        task.setMessage("知识入库任务提交失败");
-        task.setErrorMessage(shrink(ex.getMessage(), 1000));
-        task.setFinishedAt(now);
-        task.setUpdatedAt(now);
-        ingestTaskMapper.updateById(task);
-        appendEvent(
-                task.getId(),
-                task.getTenantId(),
-                task.getDocumentId(),
-                "提交失败",
-                EVENT_FAILED,
-                task.getErrorMessage(),
-                null,
-                null);
+    public void deleteDocumentFromGeneration(
+            Long tenantId, Long documentId, Long generationId) {
+        KnowledgeIndexGenerationEntity generation =
+                knowledgeIndexGenerationService.requireGeneration(tenantId, generationId);
+        cleanupGenerationDocument(tenantId, documentId, generation);
     }
 
-    private void runIngestTask(Long taskId, Long tenantId, Long documentId, boolean force) {
+    private void runIngestTask(Long taskId, Long tenantId, Long documentId) {
         long startMillis = System.currentTimeMillis();
         markTaskRunning(taskId, tenantId, documentId, startMillis);
         try {
             KnowledgeDocumentEntity document = findDocument(tenantId, documentId);
+            KnowledgeIngestTaskEntity task = findTask(tenantId, taskId);
+            KnowledgeDocumentVersionEntity version = findVersion(
+                    tenantId, documentId, task.getDocumentVersionId());
+            KnowledgeIndexGenerationEntity generation = knowledgeIndexGenerationService.requireActive(tenantId);
+            task.setIndexGenerationId(generation.getId());
+            task.setUpdatedAt(DateTimes.now());
+            ingestTaskMapper.updateById(task);
             updateTaskProgress(taskId, tenantId, documentId, "读取文档", 8, "已读取知识文档", startMillis);
-            List<KnowledgeTextChunk> chunks = splitDocument(taskId, tenantId, document, startMillis);
-            String indexHash = buildIndexHash(document, chunks);
-            if (!force && canSkipIngest(tenantId, document, indexHash)) {
-                markTaskSkipped(taskId, tenantId, document, startMillis);
+            List<KnowledgeTextChunk> chunks =
+                    splitDocument(taskId, tenantId, document, version, startMillis);
+            prepareDocumentForIngest(taskId, tenantId, document, version, startMillis);
+            KnowledgeIngestResponse response =
+                    doIngest(taskId, tenantId, document, version, generation, chunks, startMillis);
+            if (TASK_SKIPPED.equals(response.getStatus())) {
+                markTaskSuperseded(taskId, tenantId, document, response, startMillis);
                 return;
             }
-            prepareDocumentForIngest(taskId, tenantId, document, startMillis);
-            KnowledgeIngestResponse response = doIngest(taskId, tenantId, document, chunks, indexHash, startMillis);
             markTaskSuccess(taskId, tenantId, document, response, startMillis);
         } catch (RuntimeException ex) {
-            markTaskFailed(taskId, tenantId, documentId, ex, startMillis);
+            markTaskFailed(
+                    taskId,
+                    tenantId,
+                    documentId,
+                    findTaskVersionId(tenantId, taskId),
+                    findTaskGenerationId(tenantId, taskId),
+                    ex,
+                    startMillis);
         }
     }
 
@@ -351,9 +466,14 @@ public class KnowledgeDocumentService {
     }
 
     private List<KnowledgeTextChunk> splitDocument(
-            Long taskId, Long tenantId, KnowledgeDocumentEntity document, long startMillis) {
+            Long taskId,
+            Long tenantId,
+            KnowledgeDocumentEntity document,
+            KnowledgeDocumentVersionEntity version,
+            long startMillis) {
         updateTaskProgress(taskId, tenantId, document.getId(), "文档切分", 15, "开始切分知识文档", startMillis);
-        List<KnowledgeTextChunk> chunks = knowledgeTextSplitter.split(document.getContent());
+        updateVersionStatus(version, KnowledgeDocumentVersionStatus.CHUNKING, null);
+        List<KnowledgeTextChunk> chunks = knowledgeTextSplitter.split(version.getContentSnapshot());
         if (chunks.isEmpty()) {
             throw new BusinessException("KB_003", "知识内容无法切分");
         }
@@ -373,34 +493,39 @@ public class KnowledgeDocumentService {
     }
 
     private void prepareDocumentForIngest(
-            Long taskId, Long tenantId, KnowledgeDocumentEntity document, long startMillis) {
-        updateTaskProgress(taskId, tenantId, document.getId(), "准备索引", 30, "开始准备索引重建", startMillis);
+            Long taskId,
+            Long tenantId,
+            KnowledgeDocumentEntity document,
+            KnowledgeDocumentVersionEntity version,
+            long startMillis) {
+        updateTaskProgress(taskId, tenantId, document.getId(), "准备索引", 30, "开始构建候选版本", startMillis);
         LocalDateTime now = DateTimes.now();
-        document.setStatus(KnowledgeDocumentStatus.INDEXING.name());
-        document.setVectorStatus(KnowledgeVectorStatus.WAITING.name());
-        document.setErrorMessage(null);
-        document.setUpdatedAt(now);
-        documentMapper.updateById(document);
+        version.setStatus(KnowledgeDocumentVersionStatus.INDEXING.name());
+        version.setErrorMessage(null);
+        version.setUpdatedAt(now);
+        documentVersionMapper.updateById(version);
     }
 
     private KnowledgeIngestResponse doIngest(
             Long taskId,
             Long tenantId,
             KnowledgeDocumentEntity document,
+            KnowledgeDocumentVersionEntity version,
+            KnowledgeIndexGenerationEntity generation,
             List<KnowledgeTextChunk> chunks,
-            String indexHash,
             long startMillis) {
-        int indexVersion = nextIndexVersion(document);
-        updateTaskProgress(taskId, tenantId, document.getId(), "清理旧索引", 35, "开始清理旧分片和外部索引", startMillis);
-        cleanupOldChunks(tenantId, document.getId());
-        cleanupExternalIndex(tenantId, document.getId());
+        int indexVersion = version.getVersionNo().intValue();
+        String indexHash = version.getBuildFingerprint();
+        updateTaskProgress(taskId, tenantId, document.getId(), "构建候选版本", 35, "旧版本继续提供检索，开始写入候选版本", startMillis);
+        cleanupVersionIndex(tenantId, document.getId(), version.getId(), generation);
         boolean hasRetrievalIndex = false;
         boolean hasVectorIndex = false;
         Integer vectorDimension = null;
         int total = chunks.size();
         for (KnowledgeTextChunk textChunk : chunks) {
             int current = textChunk.getChunkIndex().intValue() + 1;
-            KnowledgeChunkEntity chunk = buildChunk(tenantId, document, textChunk, indexVersion, indexHash);
+            KnowledgeChunkEntity chunk = buildChunk(
+                    tenantId, document, version, generation, textChunk, indexVersion, indexHash);
             List<Float> embedding = null;
             if (shouldBuildVector()) {
                 updateChunkProgress(
@@ -415,14 +540,14 @@ public class KnowledgeDocumentService {
             if (knowledgeElasticsearchClient.enabled()) {
                 updateChunkProgress(
                         taskId, tenantId, document.getId(), "写入ES", current, total, "写入ES索引", startMillis);
-                knowledgeElasticsearchClient.index(chunk);
+                knowledgeElasticsearchClient.index(chunk, generation.getElasticsearchIndex());
                 chunk.setEsIndexed(true);
                 hasRetrievalIndex = true;
             }
             if (embedding != null) {
                 updateChunkProgress(
                         taskId, tenantId, document.getId(), "写入Milvus", current, total, "写入Milvus向量库", startMillis);
-                knowledgeMilvusClient.index(chunk, embedding);
+                knowledgeMilvusClient.index(chunk, embedding, generation.getMilvusCollection());
                 chunk.setMilvusIndexed(true);
                 hasRetrievalIndex = true;
                 hasVectorIndex = true;
@@ -431,9 +556,33 @@ public class KnowledgeDocumentService {
             chunkMapper.updateById(chunk);
             appendChunkEvent(taskId, tenantId, document.getId(), chunk, current, total, startMillis);
         }
-        fillDocumentIndexedStatus(
-                document, chunks.size(), hasRetrievalIndex, hasVectorIndex, vectorDimension, indexVersion, indexHash);
-        documentMapper.updateById(document);
+        version.setStatus(KnowledgeDocumentVersionStatus.READY.name());
+        version.setChunkCount(Integer.valueOf(chunks.size()));
+        version.setVectorDimension(hasVectorIndex ? vectorDimension : null);
+        version.setEmbeddingModel(hasVectorIndex ? knowledgeEmbeddingClient.model() : null);
+        version.setReadyAt(DateTimes.now());
+        version.setUpdatedAt(DateTimes.now());
+        documentVersionMapper.updateById(version);
+        boolean activated = knowledgeVersionSwitchService.activate(
+                tenantId,
+                document.getId(),
+                version.getId(),
+                generation.getId(),
+                hasRetrievalIndex,
+                hasVectorIndex,
+                vectorDimension,
+                Integer.valueOf(chunks.size()));
+        if (!activated) {
+            cleanupVersionIndex(tenantId, document.getId(), version.getId(), generation);
+            KnowledgeIngestResponse skipped = toIngestResponse(findDocument(tenantId, document.getId()));
+            skipped.setSkipped(true);
+            skipped.setStatus(TASK_SKIPPED);
+            skipped.setMessage("文档内容在构建期间已更新，本次候选版本不再切换");
+            return skipped;
+        }
+        scheduleRetiredVersionCleanup(
+                tenantId, document.getId(), version.getId(), generation);
+        document = findDocument(tenantId, document.getId());
         KnowledgeIngestResponse response = toIngestResponse(document);
         response.setSkipped(false);
         response.setMessage(resolveIngestMessage(hasRetrievalIndex, hasVectorIndex));
@@ -516,20 +665,19 @@ public class KnowledgeDocumentService {
                 startMillis);
     }
 
-    private void markTaskSkipped(
-            Long taskId, Long tenantId, KnowledgeDocumentEntity document, long startMillis) {
+    private void markTaskSuperseded(
+            Long taskId,
+            Long tenantId,
+            KnowledgeDocumentEntity document,
+            KnowledgeIngestResponse response,
+            long startMillis) {
         LocalDateTime now = DateTimes.now();
         KnowledgeIngestTaskEntity task = new KnowledgeIngestTaskEntity();
         task.setId(taskId);
         task.setStatus(TASK_SKIPPED);
-        task.setStage("跳过入库");
+        task.setStage("版本已过期");
         task.setProgress(100);
-        task.setMessage("知识内容和索引配置未变化，已跳过重复入库");
-        task.setIndexVersion(document.getIndexVersion());
-        task.setIndexHash(document.getIndexHash());
-        task.setChunkCount(document.getChunkCount());
-        task.setVectorDimension(document.getVectorDimension());
-        task.setEmbeddingModel(document.getEmbeddingModel());
+        task.setMessage(response.getMessage());
         task.setFinishedAt(now);
         task.setUpdatedAt(now);
         ingestTaskMapper.updateById(task);
@@ -537,7 +685,7 @@ public class KnowledgeDocumentService {
                 taskId,
                 tenantId,
                 document.getId(),
-                "跳过入库",
+                "版本已过期",
                 EVENT_SKIPPED,
                 task.getMessage(),
                 null,
@@ -568,13 +716,33 @@ public class KnowledgeDocumentService {
         appendEvent(taskId, tenantId, document.getId(), "完成", EVENT_SUCCESS, response.getMessage(), null, startMillis);
     }
 
-    private void markTaskFailed(Long taskId, Long tenantId, Long documentId, RuntimeException ex, long startMillis) {
+    private void markTaskFailed(
+            Long taskId,
+            Long tenantId,
+            Long documentId,
+            Long documentVersionId,
+            Long indexGenerationId,
+            RuntimeException ex,
+            long startMillis) {
         log.warn("知识入库任务执行失败，taskId={}，documentId={}", taskId, documentId, ex);
         LocalDateTime now = DateTimes.now();
         try {
             KnowledgeDocumentEntity document = findDocument(tenantId, documentId);
-            document.setStatus(KnowledgeDocumentStatus.FAILED.name());
-            document.setVectorStatus(KnowledgeVectorStatus.FAILED.name());
+            if (documentVersionId != null) {
+                KnowledgeDocumentVersionEntity version = findVersion(tenantId, documentId, documentVersionId);
+                updateVersionStatus(version, KnowledgeDocumentVersionStatus.FAILED, shrink(ex.getMessage(), 500));
+                KnowledgeIndexGenerationEntity generation = indexGenerationId == null
+                        ? knowledgeIndexGenerationService.requireActive(tenantId)
+                        : knowledgeIndexGenerationService.requireGeneration(tenantId, indexGenerationId);
+                cleanupVersionIndex(tenantId, documentId, documentVersionId, generation);
+            }
+            if (documentVersionId != null && documentVersionId.equals(document.getPendingVersionId())) {
+                document.setPendingVersionId(null);
+            }
+            if (document.getActiveVersionId() == null) {
+                document.setStatus(KnowledgeDocumentStatus.FAILED.name());
+                document.setVectorStatus(KnowledgeVectorStatus.FAILED.name());
+            }
             document.setErrorMessage(shrink(ex.getMessage(), 500));
             document.setUpdatedAt(now);
             documentMapper.updateById(document);
@@ -652,83 +820,6 @@ public class KnowledgeDocumentService {
         return wrapper;
     }
 
-    private void markWaitingIfIndexChanged(KnowledgeDocumentEntity entity, String oldIndexHash) {
-        if (!StringUtils.hasText(oldIndexHash)) {
-            return;
-        }
-        List<KnowledgeTextChunk> chunks = knowledgeTextSplitter.split(entity.getContent());
-        String newIndexHash = buildIndexHash(entity, chunks);
-        if (oldIndexHash.equals(newIndexHash)) {
-            return;
-        }
-        entity.setStatus(KnowledgeDocumentStatus.DRAFT.name());
-        entity.setVectorStatus(KnowledgeVectorStatus.WAITING.name());
-        entity.setErrorMessage(null);
-    }
-
-    private boolean canSkipIngest(Long tenantId, KnowledgeDocumentEntity document, String indexHash) {
-        if (!StringUtils.hasText(document.getIndexHash()) || !document.getIndexHash().equals(indexHash)) {
-            return false;
-        }
-        if (document.getIndexVersion() == null || document.getIndexVersion().intValue() <= 0) {
-            return false;
-        }
-        if (!KnowledgeDocumentStatus.READY.name().equals(document.getStatus())) {
-            return false;
-        }
-        return hasActiveChunks(tenantId, document.getId(), document.getIndexVersion());
-    }
-
-    private boolean hasActiveChunks(Long tenantId, Long documentId, Integer indexVersion) {
-        QueryWrapper<KnowledgeChunkEntity> wrapper = new QueryWrapper<KnowledgeChunkEntity>();
-        wrapper.eq("tenant_id", tenantId);
-        wrapper.eq("document_id", documentId);
-        wrapper.eq("index_version", indexVersion);
-        wrapper.eq("deleted", false);
-        Long count = chunkMapper.selectCount(wrapper);
-        return count != null && count.longValue() > 0L;
-    }
-
-    private int nextIndexVersion(KnowledgeDocumentEntity document) {
-        Integer value = document.getIndexVersion();
-        if (value == null || value.intValue() < 0) {
-            return 1;
-        }
-        return value.intValue() + 1;
-    }
-
-    private String buildIndexHash(KnowledgeDocumentEntity document, List<KnowledgeTextChunk> chunks) {
-        StringBuilder builder = new StringBuilder();
-        appendHashValue(builder, "title", document.getTitle());
-        appendHashValue(builder, "sourceType", document.getSourceType());
-        appendHashValue(builder, "category", document.getCategory());
-        appendHashValue(builder, "tags", document.getTags());
-        appendHashValue(builder, "sourceUrl", document.getSourceUrl());
-        appendHashValue(builder, "objectKey", document.getObjectKey());
-        appendHashValue(builder, "content", document.getContent());
-        appendHashValue(builder, "splitter", knowledgeTextSplitter.profile());
-        appendHashValue(builder, "embeddingEnabled", knowledgeEmbeddingClient.enabled());
-        appendHashValue(
-                builder, "embeddingModel", knowledgeEmbeddingClient.enabled() ? knowledgeEmbeddingClient.model() : "");
-        appendHashValue(builder, "embeddingDimensions", knowledgeEmbeddingClient.dimensions());
-        appendHashValue(builder, "milvusEnabled", knowledgeMilvusClient.enabled());
-        appendHashValue(builder, "elasticsearchEnabled", knowledgeElasticsearchClient.enabled());
-        if (chunks != null) {
-            for (KnowledgeTextChunk chunk : chunks) {
-                appendHashValue(builder, "chunkIndex", chunk.getChunkIndex());
-                appendHashValue(builder, "chunkHash", sha256(chunk.getContent()));
-            }
-        }
-        return sha256(builder.toString());
-    }
-
-    private void appendHashValue(StringBuilder builder, String key, Object value) {
-        builder.append(key);
-        builder.append('=');
-        builder.append(value == null ? "" : String.valueOf(value));
-        builder.append('\n');
-    }
-
     private KnowledgeDocumentEntity findDocument(Long tenantId, Long id) {
         if (id == null) {
             throw new BusinessException("KB_004", "知识文档编号不能为空");
@@ -742,6 +833,32 @@ public class KnowledgeDocumentService {
             throw new BusinessException("KB_005", "知识文档不存在");
         }
         return entity;
+    }
+
+    private KnowledgeDocumentEntity findDocumentBySourceKey(Long tenantId, String sourceKey) {
+        if (!StringUtils.hasText(sourceKey)) {
+            return null;
+        }
+        return documentMapper.selectOne(
+                Wrappers.<KnowledgeDocumentEntity>lambdaQuery()
+                        .eq(KnowledgeDocumentEntity::getTenantId, tenantId)
+                        .eq(KnowledgeDocumentEntity::getSourceKey, sourceKey)
+                        .eq(KnowledgeDocumentEntity::isDeleted, false)
+                        .last("limit 1"));
+    }
+
+    private boolean hasSourceIdentity(KnowledgeDocumentRequest request) {
+        return request != null
+                && (StringUtils.hasText(request.getSourceKey())
+                        || StringUtils.hasText(request.getSourceUrl())
+                        || StringUtils.hasText(request.getObjectKey()));
+    }
+
+    private void validateSourceKeyOwner(Long tenantId, Long documentId, String sourceKey) {
+        KnowledgeDocumentEntity owner = findDocumentBySourceKey(tenantId, sourceKey);
+        if (owner != null && !documentId.equals(owner.getId())) {
+            throw new BusinessException("KB_SOURCE_001", "同一来源已存在知识文档");
+        }
     }
 
     private KnowledgeIngestTaskEntity findTask(Long tenantId, Long id) {
@@ -759,9 +876,54 @@ public class KnowledgeDocumentService {
         return task;
     }
 
+    private Long findTaskVersionId(Long tenantId, Long taskId) {
+        try {
+            return findTask(tenantId, taskId).getDocumentVersionId();
+        } catch (RuntimeException ex) {
+            return null;
+        }
+    }
+
+    private Long findTaskGenerationId(Long tenantId, Long taskId) {
+        try {
+            return findTask(tenantId, taskId).getIndexGenerationId();
+        } catch (RuntimeException ex) {
+            return null;
+        }
+    }
+
+    private KnowledgeDocumentVersionEntity findVersion(
+            Long tenantId, Long documentId, Long versionId) {
+        if (versionId == null) {
+            throw new BusinessException("KB_VERSION_001", "知识文档版本不能为空");
+        }
+        KnowledgeDocumentVersionEntity version = documentVersionMapper.selectOne(
+                Wrappers.<KnowledgeDocumentVersionEntity>lambdaQuery()
+                        .eq(KnowledgeDocumentVersionEntity::getTenantId, tenantId)
+                        .eq(KnowledgeDocumentVersionEntity::getDocumentId, documentId)
+                        .eq(KnowledgeDocumentVersionEntity::getId, versionId)
+                        .last("limit 1"));
+        if (version == null) {
+            throw new BusinessException("KB_VERSION_002", "知识文档版本不存在");
+        }
+        return version;
+    }
+
+    private void updateVersionStatus(
+            KnowledgeDocumentVersionEntity version,
+            KnowledgeDocumentVersionStatus status,
+            String errorMessage) {
+        version.setStatus(status.name());
+        version.setErrorMessage(errorMessage);
+        version.setUpdatedAt(DateTimes.now());
+        documentVersionMapper.updateById(version);
+    }
+
     private KnowledgeChunkEntity buildChunk(
             Long tenantId,
             KnowledgeDocumentEntity document,
+            KnowledgeDocumentVersionEntity version,
+            KnowledgeIndexGenerationEntity generation,
             KnowledgeTextChunk textChunk,
             int indexVersion,
             String indexHash) {
@@ -770,92 +932,162 @@ public class KnowledgeDocumentService {
         chunk.setId(snowflakeIdGenerator.nextId());
         chunk.setTenantId(tenantId);
         chunk.setDocumentId(document.getId());
+        chunk.setDocumentVersionId(version.getId());
+        chunk.setIndexGenerationId(generation.getId());
         chunk.setChunkIndex(textChunk.getChunkIndex());
-        chunk.setTitle(document.getTitle());
-        chunk.setSourceType(document.getSourceType());
-        chunk.setCategory(document.getCategory());
-        chunk.setTags(document.getTags());
-        chunk.setSourceUrl(document.getSourceUrl());
+        chunk.setTitle(version.getTitle());
+        chunk.setSourceType(version.getSourceType());
+        chunk.setCategory(version.getCategory());
+        chunk.setTags(version.getTags());
+        chunk.setSourceUrl(version.getSourceUrl());
         chunk.setContent(textChunk.getContent());
-        chunk.setContentHash(sha256(textChunk.getContent()));
+        chunk.setContentHash(knowledgeFingerprintService.normalizedContentHash(textChunk.getContent()));
         chunk.setIndexHash(indexHash);
         chunk.setIndexVersion(indexVersion);
         chunk.setTokenEstimate(textChunk.getTokenEstimate());
         chunk.setVectorStatus(KnowledgeVectorStatus.WAITING.name());
         chunk.setEsIndexed(false);
         chunk.setMilvusIndexed(false);
-        chunk.setMetadataJson(buildMetadataJson(document, textChunk, indexVersion, indexHash));
+        chunk.setMetadataJson(buildMetadataJson(
+                document, version, generation, textChunk, indexVersion, indexHash));
         chunk.setCreatedAt(now);
         chunk.setUpdatedAt(now);
         return chunk;
     }
 
     private String buildMetadataJson(
-            KnowledgeDocumentEntity document, KnowledgeTextChunk textChunk, int indexVersion, String indexHash) {
+            KnowledgeDocumentEntity document,
+            KnowledgeDocumentVersionEntity version,
+            KnowledgeIndexGenerationEntity generation,
+            KnowledgeTextChunk textChunk,
+            int indexVersion,
+            String indexHash) {
         JSONObject metadata = new JSONObject();
         metadata.put("documentId", String.valueOf(document.getId()));
-        metadata.put("title", document.getTitle());
-        metadata.put("category", document.getCategory());
-        metadata.put("sourceType", document.getSourceType());
-        metadata.put("sourceUrl", document.getSourceUrl());
+        metadata.put("documentVersionId", String.valueOf(version.getId()));
+        metadata.put("indexGenerationId", String.valueOf(generation.getId()));
+        metadata.put("title", version.getTitle());
+        metadata.put("category", version.getCategory());
+        metadata.put("sourceType", version.getSourceType());
+        metadata.put("sourceUrl", version.getSourceUrl());
         metadata.put("chunkIndex", textChunk.getChunkIndex());
         metadata.put("indexVersion", indexVersion);
         metadata.put("indexHash", indexHash);
         return metadata.toJSONString();
     }
 
-    private void cleanupOldChunks(Long tenantId, Long documentId) {
+    private void cleanupRetiredVersions(
+            Long tenantId,
+            Long documentId,
+            Long activeVersionId,
+            KnowledgeIndexGenerationEntity generation) {
         QueryWrapper<KnowledgeChunkEntity> queryWrapper = new QueryWrapper<KnowledgeChunkEntity>();
         queryWrapper.eq("tenant_id", tenantId);
         queryWrapper.eq("document_id", documentId);
+        queryWrapper.eq("index_generation_id", generation.getId());
+        queryWrapper.ne("document_version_id", activeVersionId);
         queryWrapper.eq("deleted", false);
-        Long oldCount = chunkMapper.selectCount(queryWrapper);
-        if (oldCount == null || oldCount.longValue() == 0L) {
-            return;
+        List<KnowledgeChunkEntity> oldChunks = chunkMapper.selectList(queryWrapper);
+        List<Long> versionIds = new ArrayList<Long>();
+        for (KnowledgeChunkEntity chunk : oldChunks) {
+            if (!versionIds.contains(chunk.getDocumentVersionId())) {
+                versionIds.add(chunk.getDocumentVersionId());
+            }
         }
+        for (Long versionId : versionIds) {
+            cleanupVersionIndex(tenantId, documentId, versionId, generation);
+        }
+    }
+
+    private void scheduleRetiredVersionCleanup(
+            Long tenantId,
+            Long documentId,
+            Long activeVersionId,
+            KnowledgeIndexGenerationEntity generation) {
+        try {
+            knowledgeIngestTaskExecutor.execute(new Runnable() {
+                @Override
+                public void run() {
+                    cleanupRetiredVersions(
+                            tenantId, documentId, activeVersionId, generation);
+                }
+            });
+        } catch (RuntimeException ex) {
+            log.warn("知识旧版本异步清理任务提交失败，documentId={}", documentId, ex);
+        }
+    }
+
+    private void cleanupVersionIndex(
+            Long tenantId,
+            Long documentId,
+            Long documentVersionId,
+            KnowledgeIndexGenerationEntity generation) {
         UpdateWrapper<KnowledgeChunkEntity> wrapper = new UpdateWrapper<KnowledgeChunkEntity>();
         wrapper.eq("tenant_id", tenantId);
         wrapper.eq("document_id", documentId);
+        wrapper.eq("document_version_id", documentVersionId);
+        wrapper.eq("index_generation_id", generation.getId());
         wrapper.set("deleted", true);
         wrapper.set("updated_at", DateTimes.now());
         chunkMapper.update(null, wrapper);
+        try {
+            knowledgeElasticsearchClient.deleteByDocumentVersion(
+                    tenantId, documentId, documentVersionId, generation.getElasticsearchIndex());
+        } catch (RuntimeException ex) {
+            log.warn("知识版本分片清理ES失败，documentId={}，versionId={}", documentId, documentVersionId, ex);
+        }
+        try {
+            knowledgeMilvusClient.deleteByDocumentVersion(
+                    documentId, documentVersionId, generation.getMilvusCollection());
+        } catch (RuntimeException ex) {
+            log.warn("知识版本分片清理Milvus失败，documentId={}，versionId={}", documentId, documentVersionId, ex);
+        }
+    }
+
+    private void cleanupGenerationDocument(
+            Long tenantId,
+            Long documentId,
+            KnowledgeIndexGenerationEntity generation) {
+        UpdateWrapper<KnowledgeChunkEntity> wrapper = new UpdateWrapper<KnowledgeChunkEntity>();
+        wrapper.eq("tenant_id", tenantId);
+        wrapper.eq("document_id", documentId);
+        wrapper.eq("index_generation_id", generation.getId());
+        wrapper.eq("deleted", false);
+        wrapper.set("deleted", true);
+        wrapper.set("updated_at", DateTimes.now());
+        chunkMapper.update(null, wrapper);
+        try {
+            knowledgeElasticsearchClient.deleteByDocumentId(
+                    tenantId, documentId, generation.getElasticsearchIndex());
+        } catch (RuntimeException ex) {
+            log.warn("索引代次清理ES文档失败，documentId={}，generationId={}",
+                    documentId, generation.getId(), ex);
+        }
+        try {
+            knowledgeMilvusClient.deleteByDocumentId(
+                    documentId, generation.getMilvusCollection());
+        } catch (RuntimeException ex) {
+            log.warn("索引代次清理Milvus文档失败，documentId={}，generationId={}",
+                    documentId, generation.getId(), ex);
+        }
     }
 
     private void cleanupExternalIndex(Long tenantId, Long documentId) {
+        KnowledgeIndexGenerationEntity generation = knowledgeIndexGenerationService.findActive(tenantId);
+        if (generation == null) {
+            return;
+        }
         try {
-            knowledgeElasticsearchClient.deleteByDocumentId(tenantId, documentId);
+            knowledgeElasticsearchClient.deleteByDocumentId(
+                    tenantId, documentId, generation.getElasticsearchIndex());
         } catch (RuntimeException ex) {
             log.warn("知识分片清理ES失败，documentId={}", documentId, ex);
         }
         try {
-            knowledgeMilvusClient.deleteByDocumentId(documentId);
+            knowledgeMilvusClient.deleteByDocumentId(documentId, generation.getMilvusCollection());
         } catch (RuntimeException ex) {
             log.warn("知识分片清理Milvus失败，documentId={}", documentId, ex);
         }
-    }
-
-    private void fillDocumentIndexedStatus(
-            KnowledgeDocumentEntity document,
-            int chunkCount,
-            boolean hasRetrievalIndex,
-            boolean hasVectorIndex,
-            Integer vectorDimension,
-            int indexVersion,
-            String indexHash) {
-        document.setChunkCount(chunkCount);
-        document.setVectorStatus(
-                hasVectorIndex ? KnowledgeVectorStatus.READY.name() : KnowledgeVectorStatus.WAITING.name());
-        String status = hasRetrievalIndex
-                ? KnowledgeDocumentStatus.READY.name()
-                : KnowledgeDocumentStatus.WAITING_VECTOR.name();
-        document.setStatus(status);
-        document.setVectorDimension(hasVectorIndex ? vectorDimension : null);
-        document.setEmbeddingModel(hasVectorIndex ? knowledgeEmbeddingClient.model() : null);
-        document.setIndexVersion(indexVersion);
-        document.setIndexHash(indexHash);
-        document.setIndexedAt(DateTimes.now());
-        document.setErrorMessage(null);
-        document.setUpdatedAt(DateTimes.now());
     }
 
     private SearchTune resolveSearchTune(KnowledgeSearchRequest request, int topK) {
@@ -886,7 +1118,10 @@ public class KnowledgeDocumentService {
     }
 
     private List<KnowledgeSearchHit> collectMilvusHits(
-            Long tenantId, KnowledgeSearchRequest request, int candidateCount) {
+            Long tenantId,
+            KnowledgeIndexGenerationEntity generation,
+            KnowledgeSearchRequest request,
+            int candidateCount) {
         List<KnowledgeSearchHit> result = new ArrayList<KnowledgeSearchHit>();
         if (!knowledgeEmbeddingClient.enabled() || !knowledgeMilvusClient.enabled()) {
             return result;
@@ -894,7 +1129,8 @@ public class KnowledgeDocumentService {
         List<KnowledgeSearchHit> hits;
         try {
             List<Float> embedding = knowledgeEmbeddingClient.embed(request.getQuery().trim());
-            hits = knowledgeMilvusClient.search(tenantId, embedding, candidateCount);
+            hits = knowledgeMilvusClient.search(
+                    generation.getMilvusCollection(), tenantId, embedding, candidateCount);
         } catch (RuntimeException ex) {
             log.warn("知识库向量检索失败，tenantId={}", tenantId, ex);
             return result;
@@ -903,7 +1139,7 @@ public class KnowledgeDocumentService {
             if (!matchFilter(hit, request)) {
                 continue;
             }
-            KnowledgeSearchHit filledHit = fillHitFromDatabase(tenantId, hit);
+            KnowledgeSearchHit filledHit = fillHitFromDatabase(tenantId, generation.getId(), hit);
             if (filledHit != null) {
                 result.add(filledHit);
             }
@@ -912,7 +1148,10 @@ public class KnowledgeDocumentService {
     }
 
     private List<KnowledgeSearchHit> collectElasticsearchHits(
-            Long tenantId, KnowledgeSearchRequest request, int candidateCount) {
+            Long tenantId,
+            KnowledgeIndexGenerationEntity generation,
+            KnowledgeSearchRequest request,
+            int candidateCount) {
         List<KnowledgeSearchHit> result = new ArrayList<KnowledgeSearchHit>();
         if (!knowledgeElasticsearchClient.enabled()) {
             return result;
@@ -920,24 +1159,34 @@ public class KnowledgeDocumentService {
         List<KnowledgeSearchHit> hits;
         try {
             hits = knowledgeElasticsearchClient.search(
-                    tenantId, request.getQuery(), request.getCategory(), request.getSourceType(), candidateCount);
+                    generation.getElasticsearchIndex(),
+                    tenantId,
+                    request.getQuery(),
+                    request.getCategory(),
+                    request.getSourceType(),
+                    candidateCount);
         } catch (RuntimeException ex) {
             log.warn("知识库ES检索失败，tenantId={}", tenantId, ex);
             return result;
         }
         for (KnowledgeSearchHit hit : hits) {
-            if (hit != null && StringUtils.hasText(hit.getChunkId())) {
-                result.add(hit);
+            KnowledgeSearchHit filledHit = fillHitFromDatabase(tenantId, generation.getId(), hit);
+            if (filledHit != null) {
+                result.add(filledHit);
             }
         }
         return result;
     }
 
     private List<KnowledgeSearchHit> collectDatabaseHits(
-            Long tenantId, KnowledgeSearchRequest request, int candidateCount) {
+            Long tenantId,
+            KnowledgeIndexGenerationEntity generation,
+            KnowledgeSearchRequest request,
+            int candidateCount) {
         List<KnowledgeSearchHit> result = new ArrayList<KnowledgeSearchHit>();
         QueryWrapper<KnowledgeChunkEntity> wrapper = new QueryWrapper<KnowledgeChunkEntity>();
         wrapper.eq("tenant_id", tenantId);
+        wrapper.eq("index_generation_id", generation.getId());
         wrapper.eq("deleted", false);
         if (StringUtils.hasText(request.getCategory())) {
             wrapper.eq("category", request.getCategory().trim());
@@ -955,17 +1204,16 @@ public class KnowledgeDocumentService {
         wrapper.orderByDesc("updated_at").last("limit " + candidateCount);
         List<KnowledgeChunkEntity> chunks = chunkMapper.selectList(wrapper);
         for (KnowledgeChunkEntity chunk : chunks) {
-            KnowledgeSearchHit hit = toHit(chunk, "PG", 0D);
-            result.add(hit);
+            if (isActiveChunk(tenantId, generation.getId(), chunk)) {
+                result.add(toHit(chunk, "PG", 0D));
+            }
         }
         return result;
     }
 
-    private KnowledgeSearchHit fillHitFromDatabase(Long tenantId, KnowledgeSearchHit hit) {
+    private KnowledgeSearchHit fillHitFromDatabase(
+            Long tenantId, Long generationId, KnowledgeSearchHit hit) {
         if (hit == null || !StringUtils.hasText(hit.getChunkId())) {
-            return hit;
-        }
-        if (StringUtils.hasText(hit.getContent()) && StringUtils.hasText(hit.getTitle())) {
             return hit;
         }
         Long chunkId = parseLong(hit.getChunkId());
@@ -978,10 +1226,27 @@ public class KnowledgeDocumentService {
         wrapper.eq("deleted", false);
         KnowledgeChunkEntity chunk = chunkMapper.selectOne(wrapper);
         if (chunk == null) {
-            return hit;
+            return null;
         }
-        KnowledgeSearchHit value = toHit(chunk, hit.getMatchType(), hit.getScore());
-        return value;
+        if (!isActiveChunk(tenantId, generationId, chunk)) {
+            return null;
+        }
+        return toHit(chunk, hit.getMatchType(), hit.getScore());
+    }
+
+    private boolean isActiveChunk(Long tenantId, Long generationId, KnowledgeChunkEntity chunk) {
+        if (chunk == null || !generationId.equals(chunk.getIndexGenerationId())) {
+            return false;
+        }
+        KnowledgeDocumentEntity document = documentMapper.selectOne(
+                Wrappers.<KnowledgeDocumentEntity>lambdaQuery()
+                        .eq(KnowledgeDocumentEntity::getTenantId, tenantId)
+                        .eq(KnowledgeDocumentEntity::getId, chunk.getDocumentId())
+                        .eq(KnowledgeDocumentEntity::isDeleted, false)
+                        .last("limit 1"));
+        return document != null
+                && document.getActiveVersionId() != null
+                && document.getActiveVersionId().equals(chunk.getDocumentVersionId());
     }
 
     private KnowledgeSearchHit toHit(KnowledgeChunkEntity chunk, String matchType, Double score) {
@@ -1119,6 +1384,10 @@ public class KnowledgeDocumentService {
         KnowledgeIngestTaskResponse response = new KnowledgeIngestTaskResponse();
         response.setId(String.valueOf(task.getId()));
         response.setDocumentId(String.valueOf(task.getDocumentId()));
+        response.setDocumentVersionId(
+                task.getDocumentVersionId() == null ? null : String.valueOf(task.getDocumentVersionId()));
+        response.setIndexGenerationId(
+                task.getIndexGenerationId() == null ? null : String.valueOf(task.getIndexGenerationId()));
         response.setForce(Boolean.valueOf(Boolean.TRUE.equals(task.getForce())));
         response.setStatus(task.getStatus());
         response.setStage(task.getStage());
@@ -1161,6 +1430,13 @@ public class KnowledgeDocumentService {
     private KnowledgeDocumentResponse toResponse(KnowledgeDocumentEntity entity, boolean includeContent) {
         KnowledgeDocumentResponse response = new KnowledgeDocumentResponse();
         response.setId(String.valueOf(entity.getId()));
+        response.setSourceKey(entity.getSourceKey());
+        response.setRawFileHash(entity.getRawFileHash());
+        response.setNormalizedContentHash(entity.getNormalizedContentHash());
+        response.setActiveVersionId(
+                entity.getActiveVersionId() == null ? null : String.valueOf(entity.getActiveVersionId()));
+        response.setPendingVersionId(
+                entity.getPendingVersionId() == null ? null : String.valueOf(entity.getPendingVersionId()));
         response.setTitle(entity.getTitle());
         response.setSourceType(entity.getSourceType());
         response.setCategory(entity.getCategory());
@@ -1227,20 +1503,6 @@ public class KnowledgeDocumentService {
             return null;
         }
         return value.trim();
-    }
-
-    private String sha256(String value) {
-        try {
-            MessageDigest digest = MessageDigest.getInstance("SHA-256");
-            byte[] bytes = digest.digest((value == null ? "" : value).getBytes(StandardCharsets.UTF_8));
-            StringBuilder builder = new StringBuilder();
-            for (byte item : bytes) {
-                builder.append(String.format("%02x", item));
-            }
-            return builder.toString();
-        } catch (Exception ex) {
-            return null;
-        }
     }
 
     private Long parseLong(String value) {

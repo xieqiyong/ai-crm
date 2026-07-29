@@ -38,6 +38,21 @@ spring:
       port: ${CRM_REDIS_PORT:6379}
       password: ${CRM_REDIS_PASSWORD:}
       database: ${CRM_REDIS_DATABASE:1}
+  kafka:
+    bootstrap-servers: ${CRM_KAFKA_BOOTSTRAP_SERVERS:localhost:9092}
+    producer:
+      acks: all
+      key-serializer: org.apache.kafka.common.serialization.StringSerializer
+      value-serializer: org.apache.kafka.common.serialization.StringSerializer
+      properties:
+        enable.idempotence: true
+    consumer:
+      auto-offset-reset: earliest
+      enable-auto-commit: false
+      key-deserializer: org.apache.kafka.common.serialization.StringDeserializer
+      value-deserializer: org.apache.kafka.common.serialization.StringDeserializer
+    listener:
+      ack-mode: record
 
 mybatis-plus:
   configuration:
@@ -87,6 +102,17 @@ crm:
       username: ${CRM_ES_USERNAME:}
       password: ${CRM_ES_PASSWORD:}
   knowledge:
+    change:
+      reconcile-delay-ms: ${CRM_KB_CHANGE_RECONCILE_DELAY_MS:3000}
+      reconcile-initial-delay-ms: ${CRM_KB_CHANGE_RECONCILE_INITIAL_DELAY_MS:10000}
+      kafka:
+        enabled: ${CRM_KB_KAFKA_ENABLED:false}
+        topic: ${CRM_KB_KAFKA_TOPIC:crm-knowledge-change}
+        group-id: ${CRM_KB_KAFKA_GROUP_ID:crm-knowledge-indexer}
+        publish-batch-size: ${CRM_KB_KAFKA_PUBLISH_BATCH_SIZE:100}
+        publish-delay-ms: ${CRM_KB_KAFKA_PUBLISH_DELAY_MS:1000}
+        publish-initial-delay-ms: ${CRM_KB_KAFKA_PUBLISH_INITIAL_DELAY_MS:5000}
+        send-timeout-ms: ${CRM_KB_KAFKA_SEND_TIMEOUT_MS:10000}
     search:
       hybrid:
         vector-candidates: ${CRM_KB_SEARCH_VECTOR_CANDIDATES:20}
@@ -99,6 +125,7 @@ crm:
         min-score: ${CRM_KB_SEARCH_MIN_SCORE:0}
         database-fallback-only: ${CRM_KB_SEARCH_DATABASE_FALLBACK_ONLY:true}
     ingest:
+      stale-task-minutes: ${CRM_KB_INGEST_STALE_TASK_MINUTES:120}
       executor:
         core-size: ${CRM_KB_INGEST_CORE_SIZE:2}
         max-size: ${CRM_KB_INGEST_MAX_SIZE:4}

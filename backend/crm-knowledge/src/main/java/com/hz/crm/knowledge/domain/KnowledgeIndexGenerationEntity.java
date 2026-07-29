@@ -19,14 +19,12 @@ import lombok.Setter;
 @Setter
 @Entity
 @Table(
-        name = "kb_ingest_task",
+        name = "kb_index_generation",
         indexes = {
-                @Index(
-                        name = "idx_kb_ingest_task_idempotency",
-                        columnList = "tenant_id, document_id, idempotency_key, status")
+                @Index(name = "idx_kb_index_generation_status", columnList = "tenant_id, status")
         })
-@TableName("kb_ingest_task")
-public class KnowledgeIngestTaskEntity {
+@TableName("kb_index_generation")
+public class KnowledgeIndexGenerationEntity {
 
     @Id
     @TableId(type = IdType.INPUT)
@@ -35,26 +33,30 @@ public class KnowledgeIngestTaskEntity {
     @Column(nullable = false, columnDefinition = "bigint")
     private Long tenantId;
 
-    @Column(nullable = false, columnDefinition = "bigint")
-    private Long documentId;
-
-    @Column(columnDefinition = "bigint")
-    private Long documentVersionId;
-
-    @Column(columnDefinition = "bigint")
-    private Long indexGenerationId;
-
-    @Column(length = 64)
-    private String idempotencyKey;
-
-    @Column(nullable = false)
-    private Boolean force;
-
     @Column(nullable = false, length = 32)
     private String status;
 
-    @Column(length = 64)
-    private String stage;
+    @Column(nullable = false, length = 128)
+    private String elasticsearchIndex;
+
+    @Column(nullable = false, length = 128)
+    private String milvusCollection;
+
+    @Column(nullable = false, length = 128)
+    private String embeddingModel;
+
+    private Integer vectorDimension;
+
+    @Column(nullable = false, length = 64)
+    private String chunkProfileHash;
+
+    private Long snapshotOutboxId;
+
+    private Long replayedOutboxId;
+
+    private Integer documentCount;
+
+    private Integer completedDocumentCount;
 
     private Integer progress;
 
@@ -64,24 +66,9 @@ public class KnowledgeIngestTaskEntity {
     @Column(length = 1024)
     private String errorMessage;
 
-    private Integer indexVersion;
-
-    @Column(length = 64)
-    private String indexHash;
-
-    private Integer chunkCount;
-
-    private Integer vectorDimension;
-
-    @Column(length = 128)
-    private String embeddingModel;
-
-    private LocalDateTime startedAt;
+    private LocalDateTime activatedAt;
 
     private LocalDateTime finishedAt;
-
-    @Column(nullable = false)
-    private Boolean deleted;
 
     @Column(nullable = false)
     private LocalDateTime createdAt;

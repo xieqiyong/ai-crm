@@ -29,6 +29,13 @@ const emptyOverview = {
   channelStatusCounts: [],
 }
 
+const emptyAssistantStatus = {
+  loading: false,
+  available: false,
+  agentCount: 0,
+  failed: false,
+}
+
 function formatNumber(value) {
   return Number(value || 0).toLocaleString('zh-CN')
 }
@@ -48,12 +55,41 @@ function maxCount(items) {
   return Math.max(1, ...items.map((item) => Number(item.count || 0)))
 }
 
-export function DashboardPage({ navigate, currentRole, notify }) {
+export function DashboardPage({ navigate, currentRole, notify, can }) {
   const [overview, setOverview] = useState(emptyOverview)
+  const [assistantStatus, setAssistantStatus] = useState(emptyAssistantStatus)
   const [loading, setLoading] = useState(true)
+  const canUseAssistant = can('crm:assistant:use')
+  const canManageAgents = can('menu.agent_config') || can('crm:agent:manage')
+
+  const loadAssistantStatus = async () => {
+    if (!canUseAssistant) {
+      setAssistantStatus(emptyAssistantStatus)
+      return
+    }
+    setAssistantStatus({ ...emptyAssistantStatus, loading: true })
+    try {
+      const agents = await api.agent.assistantAgents()
+      const agentCount = Array.isArray(agents) ? agents.length : 0
+      setAssistantStatus({
+        loading: false,
+        available: agentCount > 0,
+        agentCount,
+        failed: false,
+      })
+    } catch (err) {
+      setAssistantStatus({
+        loading: false,
+        available: false,
+        agentCount: 0,
+        failed: true,
+      })
+    }
+  }
 
   const load = async () => {
     setLoading(true)
+    const assistantPromise = loadAssistantStatus()
     try {
       setOverview(await api.dashboard.overview() || emptyOverview)
     } catch (err) {
@@ -61,6 +97,7 @@ export function DashboardPage({ navigate, currentRole, notify }) {
     } finally {
       setLoading(false)
     }
+    await assistantPromise
   }
 
   useEffect(() => {
@@ -195,18 +232,42 @@ export function DashboardPage({ navigate, currentRole, notify }) {
             <div className="ai-card-title">
               <span><Bot size={18} /></span>
               <div>
-                <h2>AI 能力接入位</h2>
-                <small>等待模型配置和业务数据沉淀</small>
+                <h2>AI 智能体助手</h2>
+                <small>
+                  {!canUseAssistant && '当前账号未开通使用权限'}
+                  {canUseAssistant && assistantStatus.loading && '正在检查可用智能体'}
+                  {canUseAssistant && assistantStatus.failed && 'AI 服务状态暂时不可用'}
+                  {canUseAssistant && !assistantStatus.loading && !assistantStatus.failed
+                    && (assistantStatus.available
+                      ? `已连接 ${formatNumber(assistantStatus.agentCount)} 个可用智能体`
+                      : '尚未配置可用智能体')}
+                </small>
               </div>
             </div>
             <div className="ai-mini-insight">
               <Sparkles size={17} />
               <div>
-                <b>当前不生成模拟洞察</b>
-                <p>后续接入大模型后，可基于客户、线索、渠道和商机真实数据生成建议。</p>
+                <b>基于真实业务与知识库辅助销售</b>
+                <p>支持产品问答、销售话术、线索判断和客户跟进建议，回答内容由当前可用智能体生成。</p>
               </div>
             </div>
-            <Button onClick={() => navigate('model-configs')}>配置大模型</Button>
+            {canUseAssistant && assistantStatus.available && (
+              <Button icon={ArrowRight} onClick={() => navigate('assistant')}>进入智能体助手</Button>
+            )}
+            {canUseAssistant && !assistantStatus.available && !assistantStatus.loading
+              && !assistantStatus.failed && canManageAgents && (
+              <Button variant="secondary" onClick={() => navigate('agent-config')}>配置智能体</Button>
+            )}
+            {canUseAssistant && assistantStatus.failed && (
+              <Button variant="secondary" icon={RefreshCw} onClick={loadAssistantStatus}>重新检查</Button>
+            )}
+            {!canUseAssistant && (
+              <Button variant="secondary" disabled>未开通使用权限</Button>
+            )}
+            {canUseAssistant && !assistantStatus.available && !assistantStatus.loading
+              && !assistantStatus.failed && !canManageAgents && (
+                <Button variant="secondary" disabled>暂无可用智能体</Button>
+              )}
           </Card>
           <Card className="goal-card">
             <div className="card-heading">

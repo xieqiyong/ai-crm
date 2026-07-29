@@ -11,6 +11,7 @@ import jakarta.persistence.Index;
 import jakarta.persistence.PrePersist;
 import jakarta.persistence.PreUpdate;
 import jakarta.persistence.Table;
+import jakarta.persistence.UniqueConstraint;
 import java.time.LocalDateTime;
 import lombok.Getter;
 import lombok.Setter;
@@ -19,14 +20,18 @@ import lombok.Setter;
 @Setter
 @Entity
 @Table(
-        name = "kb_ingest_task",
+        name = "kb_document_version",
+        uniqueConstraints = {
+                @UniqueConstraint(
+                        name = "uk_kb_document_version_no",
+                        columnNames = {"tenant_id", "document_id", "version_no"})
+        },
         indexes = {
-                @Index(
-                        name = "idx_kb_ingest_task_idempotency",
-                        columnList = "tenant_id, document_id, idempotency_key, status")
+                @Index(name = "idx_kb_document_version_document", columnList = "tenant_id, document_id"),
+                @Index(name = "idx_kb_document_version_status", columnList = "tenant_id, status")
         })
-@TableName("kb_ingest_task")
-public class KnowledgeIngestTaskEntity {
+@TableName("kb_document_version")
+public class KnowledgeDocumentVersionEntity {
 
     @Id
     @TableId(type = IdType.INPUT)
@@ -38,36 +43,44 @@ public class KnowledgeIngestTaskEntity {
     @Column(nullable = false, columnDefinition = "bigint")
     private Long documentId;
 
-    @Column(columnDefinition = "bigint")
-    private Long documentVersionId;
+    @Column(nullable = false)
+    private Integer versionNo;
 
-    @Column(columnDefinition = "bigint")
-    private Long indexGenerationId;
+    @Column(nullable = false, length = 512)
+    private String sourceKey;
 
     @Column(length = 64)
-    private String idempotencyKey;
+    private String rawFileHash;
 
-    @Column(nullable = false)
-    private Boolean force;
+    @Column(nullable = false, length = 64)
+    private String normalizedContentHash;
+
+    @Column(nullable = false, length = 64)
+    private String buildFingerprint;
 
     @Column(nullable = false, length = 32)
     private String status;
 
-    @Column(length = 64)
-    private String stage;
+    @Column(nullable = false, length = 128)
+    private String title;
 
-    private Integer progress;
+    @Column(length = 128)
+    private String sourceType;
+
+    @Column(length = 128)
+    private String category;
 
     @Column(length = 512)
-    private String message;
+    private String tags;
 
-    @Column(length = 1024)
-    private String errorMessage;
+    @Column(length = 512)
+    private String sourceUrl;
 
-    private Integer indexVersion;
+    @Column(length = 512)
+    private String objectKey;
 
-    @Column(length = 64)
-    private String indexHash;
+    @Column(nullable = false, columnDefinition = "text")
+    private String contentSnapshot;
 
     private Integer chunkCount;
 
@@ -76,12 +89,12 @@ public class KnowledgeIngestTaskEntity {
     @Column(length = 128)
     private String embeddingModel;
 
-    private LocalDateTime startedAt;
+    @Column(length = 512)
+    private String errorMessage;
 
-    private LocalDateTime finishedAt;
+    private LocalDateTime readyAt;
 
-    @Column(nullable = false)
-    private Boolean deleted;
+    private LocalDateTime activatedAt;
 
     @Column(nullable = false)
     private LocalDateTime createdAt;

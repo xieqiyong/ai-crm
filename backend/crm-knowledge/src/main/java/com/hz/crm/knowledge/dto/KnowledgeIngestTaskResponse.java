@@ -14,6 +14,10 @@ public class KnowledgeIngestTaskResponse {
 
     private String documentId;
 
+    private String documentVersionId;
+
+    private String indexGenerationId;
+
     private Boolean force;
 
     private String status;

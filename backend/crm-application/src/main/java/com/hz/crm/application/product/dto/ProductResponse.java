@@ -1,5 +1,6 @@
 package com.hz.crm.application.product.dto;
 
+import com.hz.crm.domain.product.ProductCategory;
 import com.hz.crm.domain.product.ProductType;
 import java.math.BigDecimal;
 import java.time.LocalDateTime;
@@ -18,7 +19,7 @@ public class ProductResponse {
 
     private String name;
 
-    private String category;
+    private ProductCategory category;
 
     private ProductType productType;
 

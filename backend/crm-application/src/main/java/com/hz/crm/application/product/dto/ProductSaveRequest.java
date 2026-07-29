@@ -1,5 +1,6 @@
 package com.hz.crm.application.product.dto;
 
+import com.hz.crm.domain.product.ProductCategory;
 import com.hz.crm.domain.product.ProductType;
 import jakarta.validation.constraints.NotBlank;
 import java.math.BigDecimal;
@@ -15,7 +16,7 @@ public class ProductSaveRequest {
     @NotBlank(message = "产品名称不能为空")
     private String name;
 
-    private String category;
+    private ProductCategory category;
 
     private ProductType productType;
 

@@ -1,7 +1,17 @@
 import { useEffect, useState } from 'react'
 import { Edit2, Package, Plus, RefreshCw, Search, Trash2 } from 'lucide-react'
 import { api } from '../../api'
-import { Badge, Button, Card, ConfirmDialog, Field, Modal, PageHeader, useConfirmDialog } from '../../components'
+import {
+  Badge,
+  Button,
+  Card,
+  ConfirmDialog,
+  Field,
+  Modal,
+  PageHeader,
+  Select,
+  useConfirmDialog,
+} from '../../components'
 
 const productTypeText = {
   STANDARD: '标准产品',
@@ -15,6 +25,20 @@ const productTypeTone = {
   SERVICE: 'success',
 }
 
+const productCategoryText = {
+  AI_AGENT_PLATFORM: '智能体平台',
+  INTELLIGENT_MARKETING: '智能营销',
+  DATA_KNOWLEDGE: '数据与知识库',
+  INDUSTRY_SOLUTION: '行业解决方案',
+  IMPLEMENTATION_SERVICE: '实施与技术服务',
+  OTHER: '其他',
+}
+
+const productCategoryOptions = Object.entries(productCategoryText).map(([value, label]) => ({
+  value,
+  label,
+}))
+
 const emptyPage = {
   total: 0,
   pageNo: 1,
@@ -24,7 +48,7 @@ const emptyPage = {
 
 const emptyForm = {
   name: '',
-  category: '',
+  category: 'OTHER',
   productType: 'STANDARD',
   price: '',
   unit: '',
@@ -43,6 +67,7 @@ function compactQuery(query) {
     pageNo: query.pageNo || 1,
     pageSize: query.pageSize || 20,
     keyword: query.keyword || undefined,
+    category: query.category || undefined,
     productType: query.productType || undefined,
     enabled: query.enabled === '' ? undefined : query.enabled === 'true',
   }
@@ -52,7 +77,7 @@ function toForm(row) {
   return {
     id: row.id,
     name: row.name || '',
-    category: row.category || '',
+    category: row.category || 'OTHER',
     productType: row.productType || 'STANDARD',
     price: row.price == null ? '' : row.price,
     unit: row.unit || '',
@@ -66,7 +91,7 @@ function toPayload(form) {
   return {
     ...form,
     name: form.name.trim(),
-    category: form.category || null,
+    category: form.category || 'OTHER',
     productType: form.productType || 'STANDARD',
     price: form.price === '' ? null : form.price,
     unit: form.unit || null,
@@ -81,7 +106,14 @@ export function ProductPage({ can, notify }) {
   const canCreate = canManage || can('crm:product:create')
   const canDelete = canManage
   const { confirm, dialogProps } = useConfirmDialog()
-  const [query, setQuery] = useState({ keyword: '', productType: '', enabled: '', pageNo: 1, pageSize: 20 })
+  const [query, setQuery] = useState({
+    keyword: '',
+    category: '',
+    productType: '',
+    enabled: '',
+    pageNo: 1,
+    pageSize: 20,
+  })
   const [page, setPage] = useState(emptyPage)
   const [loading, setLoading] = useState(true)
   const [editing, setEditing] = useState(null)
@@ -164,9 +196,20 @@ export function ProductPage({ can, notify }) {
           <input
             value={query.keyword}
             onChange={(event) => setQuery({ ...query, keyword: event.target.value })}
-            placeholder="搜索产品名称、编码、分类或说明"
+            placeholder="搜索产品名称、编码或说明"
           />
         </div>
+        <label>
+          <span>分类</span>
+          <Select
+            value={query.category}
+            options={[
+              { value: '', label: '全部分类' },
+              ...productCategoryOptions,
+            ]}
+            onChange={(value) => setQuery({ ...query, category: value })}
+          />
+        </label>
         <label>
           <span>类型</span>
           <select
@@ -209,7 +252,7 @@ export function ProductPage({ can, notify }) {
               {records.map((row) => (
                 <tr key={row.id}>
                   <td><strong>{row.name}</strong><small>{row.code}</small></td>
-                  <td>{row.category || '-'}</td>
+                  <td>{productCategoryText[row.category] || row.category || '-'}</td>
                   <td>
                     <Badge tone={productTypeTone[row.productType] || 'neutral'}>
                       {productTypeText[row.productType] || row.productType || '-'}
@@ -299,7 +342,11 @@ function ProductFormModal({ open, form, onChange, onClose, onSave }) {
           </select>
         </Field>
         <Field label="产品分类">
-          <input value={form.category || ''} onChange={(event) => update({ category: event.target.value })} />
+          <Select
+            value={form.category || 'OTHER'}
+            options={productCategoryOptions}
+            onChange={(value) => update({ category: value })}
+          />
         </Field>
         <Field label="标准价格">
           <input

@@ -10,7 +10,6 @@ export function BrandLogo({ logo, compact = false, inverse = false }) {
       {!compact && (
         <span className="brand-copy">
           <strong>{APP_NAME}</strong>
-          <small>AI MARKETING CRM</small>
         </span>
       )}
     </div>

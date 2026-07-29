@@ -45,18 +45,30 @@ public class KnowledgeElasticsearchClient {
         return enabled && StringUtils.hasText(uris);
     }
 
+    public String generationIndexName(Long generationId) {
+        return safeIndexName(indexName) + "_g_" + generationId;
+    }
+
     public void index(KnowledgeChunkEntity chunk) {
+        index(chunk, indexName);
+    }
+
+    public void index(KnowledgeChunkEntity chunk, String targetIndex) {
         if (!enabled()) {
             return;
         }
         try {
-            request("PUT", baseUri() + "/" + indexName + "/_doc/" + chunk.getId(), buildDocument(chunk));
+            request("PUT", baseUri() + "/" + safeIndexName(targetIndex) + "/_doc/" + chunk.getId(), buildDocument(chunk));
         } catch (Exception ex) {
             throw new BusinessException("KB_ES_001", "知识分片写入ES失败：" + ex.getMessage());
         }
     }
 
     public void deleteByDocumentId(Long tenantId, Long documentId) {
+        deleteByDocumentId(tenantId, documentId, indexName);
+    }
+
+    public void deleteByDocumentId(Long tenantId, Long documentId, String targetIndex) {
         if (!enabled() || tenantId == null || documentId == null) {
             return;
         }
@@ -70,20 +82,64 @@ public class KnowledgeElasticsearchClient {
             JSONObject query = new JSONObject();
             query.put("bool", bool);
             body.put("query", query);
-            request("POST", baseUri() + "/" + indexName + "/_delete_by_query", body);
+            request("POST", baseUri() + "/" + safeIndexName(targetIndex) + "/_delete_by_query", body);
         } catch (Exception ex) {
             throw new BusinessException("KB_ES_004", "知识分片清理ES失败：" + ex.getMessage());
         }
     }
 
+    public void deleteByDocumentVersion(
+            Long tenantId, Long documentId, Long documentVersionId, String targetIndex) {
+        if (!enabled() || tenantId == null || documentId == null || documentVersionId == null) {
+            return;
+        }
+        try {
+            JSONObject body = new JSONObject();
+            JSONObject bool = new JSONObject();
+            JSONArray filter = new JSONArray();
+            filter.add(term("tenantId", tenantId));
+            filter.add(term("documentId", String.valueOf(documentId)));
+            filter.add(term("documentVersionId", String.valueOf(documentVersionId)));
+            bool.put("filter", filter);
+            JSONObject query = new JSONObject();
+            query.put("bool", bool);
+            body.put("query", query);
+            request("POST", baseUri() + "/" + safeIndexName(targetIndex) + "/_delete_by_query", body);
+        } catch (Exception ex) {
+            throw new BusinessException("KB_ES_004", "知识版本分片清理ES失败：" + ex.getMessage());
+        }
+    }
+
+    public void deleteIndex(String targetIndex) {
+        if (!enabled()) {
+            return;
+        }
+        try {
+            request("DELETE", baseUri() + "/" + safeIndexName(targetIndex), null);
+        } catch (Exception ex) {
+            throw new BusinessException("KB_ES_006", "ES索引删除失败：" + ex.getMessage());
+        }
+    }
+
     public List<KnowledgeSearchHit> search(Long tenantId, String query, String category, String sourceType, int topK) {
+        return search(indexName, tenantId, query, category, sourceType, topK);
+    }
+
+    public List<KnowledgeSearchHit> search(
+            String targetIndex,
+            Long tenantId,
+            String query,
+            String category,
+            String sourceType,
+            int topK) {
         List<KnowledgeSearchHit> hits = new ArrayList<KnowledgeSearchHit>();
         if (!enabled() || !StringUtils.hasText(query)) {
             return hits;
         }
         try {
             JSONObject body = buildSearchBody(tenantId, query, category, sourceType, topK);
-            String responseText = request("POST", baseUri() + "/" + indexName + "/_search", body);
+            String responseText =
+                    request("POST", baseUri() + "/" + safeIndexName(targetIndex) + "/_search", body);
             JSONObject response = JSON.parseObject(responseText);
             JSONObject hitsObject = response.getJSONObject("hits");
             JSONArray sourceHits = hitsObject == null ? null : hitsObject.getJSONArray("hits");
@@ -108,6 +164,8 @@ public class KnowledgeElasticsearchClient {
         JSONObject document = new JSONObject();
         document.put("tenantId", chunk.getTenantId());
         document.put("documentId", String.valueOf(chunk.getDocumentId()));
+        document.put("documentVersionId", String.valueOf(chunk.getDocumentVersionId()));
+        document.put("indexGenerationId", String.valueOf(chunk.getIndexGenerationId()));
         document.put("chunkId", String.valueOf(chunk.getId()));
         document.put("title", chunk.getTitle());
         document.put("sourceType", chunk.getSourceType());
@@ -236,6 +294,17 @@ public class KnowledgeElasticsearchClient {
             value = value.substring(0, value.length() - 1);
         }
         return value;
+    }
+
+    private String safeIndexName(String value) {
+        if (!StringUtils.hasText(value)) {
+            throw new BusinessException("KB_ES_005", "ES索引名称不能为空");
+        }
+        String text = value.trim().toLowerCase();
+        if (!text.matches("[a-z0-9._-]+")) {
+            throw new BusinessException("KB_ES_005", "ES索引名称不合法");
+        }
+        return text;
     }
 
     private String shrink(String value) {

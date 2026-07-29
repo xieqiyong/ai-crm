@@ -44,7 +44,16 @@ public class KnowledgeMilvusClient {
         return enabled && StringUtils.hasText(endpoint) && StringUtils.hasText(collection);
     }
 
+    public String generationCollectionName(Long generationId) {
+        return safeCollectionName(collection) + "_g_" + generationId;
+    }
+
     public void index(KnowledgeChunkEntity chunk, List<Float> embedding) {
+        index(chunk, embedding, collection);
+    }
+
+    public void index(
+            KnowledgeChunkEntity chunk, List<Float> embedding, String targetCollection) {
         if (!enabled()) {
             return;
         }
@@ -53,21 +62,27 @@ public class KnowledgeMilvusClient {
         }
         try {
             ensureDatabase();
-            ensureCollection(embedding.size());
-            request("POST", "/v2/vectordb/entities/insert", buildInsertBody(chunk, embedding));
+            ensureCollection(targetCollection, embedding.size());
+            request("POST", "/v2/vectordb/entities/insert",
+                    buildInsertBody(chunk, embedding, targetCollection));
         } catch (Exception ex) {
             throw new BusinessException("KB_MILVUS_002", "知识分片写入Milvus失败：" + ex.getMessage());
         }
     }
 
     public List<KnowledgeSearchHit> search(Long tenantId, List<Float> embedding, int topK) {
+        return search(collection, tenantId, embedding, topK);
+    }
+
+    public List<KnowledgeSearchHit> search(
+            String targetCollection, Long tenantId, List<Float> embedding, int topK) {
         List<KnowledgeSearchHit> hits = new ArrayList<KnowledgeSearchHit>();
         if (!enabled() || embedding == null || embedding.isEmpty()) {
             return hits;
         }
         try {
             String responseText = request("POST", "/v2/vectordb/entities/search",
-                    buildSearchBody(tenantId, embedding, topK));
+                    buildSearchBody(targetCollection, tenantId, embedding, topK));
             JSONObject response = JSON.parseObject(responseText);
             JSONArray data = response.getJSONArray("data");
             if (data == null) {
@@ -81,16 +96,20 @@ public class KnowledgeMilvusClient {
     }
 
     public void deleteByDocumentId(Long documentId) {
+        deleteByDocumentId(documentId, collection);
+    }
+
+    public void deleteByDocumentId(Long documentId, String targetCollection) {
         if (!enabled() || documentId == null) {
             return;
         }
         try {
             ensureDatabase();
-            if (!hasCollection()) {
+            if (!hasCollection(targetCollection)) {
                 return;
             }
             JSONObject body = new JSONObject();
-            body.put("collectionName", collection);
+            body.put("collectionName", safeCollectionName(targetCollection));
             body.put("filter", "document_id == \"" + documentId + "\"");
             fillDatabase(body);
             request("POST", "/v2/vectordb/entities/delete", body);
@@ -99,9 +118,48 @@ public class KnowledgeMilvusClient {
         }
     }
 
-    private boolean hasCollection() throws Exception {
+    public void deleteByDocumentVersion(
+            Long documentId, Long documentVersionId, String targetCollection) {
+        if (!enabled() || documentId == null || documentVersionId == null) {
+            return;
+        }
+        try {
+            ensureDatabase();
+            if (!hasCollection(targetCollection)) {
+                return;
+            }
+            JSONObject body = new JSONObject();
+            body.put("collectionName", safeCollectionName(targetCollection));
+            body.put("filter", "document_id == \"" + documentId
+                    + "\" and document_version_id == \"" + documentVersionId + "\"");
+            fillDatabase(body);
+            request("POST", "/v2/vectordb/entities/delete", body);
+        } catch (Exception ex) {
+            throw new BusinessException("KB_MILVUS_005", "知识版本分片清理Milvus失败：" + ex.getMessage());
+        }
+    }
+
+    public void dropCollection(String targetCollection) {
+        if (!enabled()) {
+            return;
+        }
+        try {
+            ensureDatabase();
+            if (!hasCollection(targetCollection)) {
+                return;
+            }
+            JSONObject body = new JSONObject();
+            body.put("collectionName", safeCollectionName(targetCollection));
+            fillDatabase(body);
+            request("POST", "/v2/vectordb/collections/drop", body);
+        } catch (Exception ex) {
+            throw new BusinessException("KB_MILVUS_007", "Milvus集合删除失败：" + ex.getMessage());
+        }
+    }
+
+    private boolean hasCollection(String targetCollection) throws Exception {
         JSONObject body = new JSONObject();
-        body.put("collectionName", collection);
+        body.put("collectionName", safeCollectionName(targetCollection));
         fillDatabase(body);
         String responseText = request("POST", "/v2/vectordb/collections/has", body);
         JSONObject response = JSON.parseObject(responseText);
@@ -124,9 +182,10 @@ public class KnowledgeMilvusClient {
         request("POST", "/v2/vectordb/databases/create", createBody);
     }
 
-    private void ensureCollection(int dimension) throws Exception {
+    private void ensureCollection(String targetCollection, int dimension) throws Exception {
+        String collectionName = safeCollectionName(targetCollection);
         JSONObject hasBody = new JSONObject();
-        hasBody.put("collectionName", collection);
+        hasBody.put("collectionName", collectionName);
         fillDatabase(hasBody);
         String responseText = request("POST", "/v2/vectordb/collections/has", hasBody);
         JSONObject response = JSON.parseObject(responseText);
@@ -134,7 +193,7 @@ public class KnowledgeMilvusClient {
             return;
         }
         JSONObject createBody = new JSONObject();
-        createBody.put("collectionName", collection);
+        createBody.put("collectionName", collectionName);
         createBody.put("dimension", dimension);
         createBody.put("metricType", "COSINE");
         createBody.put("primaryFieldName", "id");
@@ -156,15 +215,18 @@ public class KnowledgeMilvusClient {
         return false;
     }
 
-    private JSONObject buildInsertBody(KnowledgeChunkEntity chunk, List<Float> embedding) {
+    private JSONObject buildInsertBody(
+            KnowledgeChunkEntity chunk, List<Float> embedding, String targetCollection) {
         JSONObject body = new JSONObject();
-        body.put("collectionName", collection);
+        body.put("collectionName", safeCollectionName(targetCollection));
         fillDatabase(body);
         JSONArray data = new JSONArray();
         JSONObject row = new JSONObject();
         row.put("id", chunk.getId());
         row.put("tenant_id", chunk.getTenantId());
         row.put("document_id", String.valueOf(chunk.getDocumentId()));
+        row.put("document_version_id", String.valueOf(chunk.getDocumentVersionId()));
+        row.put("index_generation_id", String.valueOf(chunk.getIndexGenerationId()));
         row.put("chunk_id", String.valueOf(chunk.getId()));
         row.put("title", chunk.getTitle());
         row.put("content", chunk.getContent());
@@ -179,9 +241,10 @@ public class KnowledgeMilvusClient {
         return body;
     }
 
-    private JSONObject buildSearchBody(Long tenantId, List<Float> embedding, int topK) {
+    private JSONObject buildSearchBody(
+            String targetCollection, Long tenantId, List<Float> embedding, int topK) {
         JSONObject body = new JSONObject();
-        body.put("collectionName", collection);
+        body.put("collectionName", safeCollectionName(targetCollection));
         body.put("annsField", "vector");
         body.put("limit", topK);
         body.put("filter", "tenant_id == " + tenantId);
@@ -192,6 +255,8 @@ public class KnowledgeMilvusClient {
         JSONArray outputFields = new JSONArray();
         outputFields.add("chunk_id");
         outputFields.add("document_id");
+        outputFields.add("document_version_id");
+        outputFields.add("index_generation_id");
         outputFields.add("title");
         outputFields.add("content");
         outputFields.add("category");
@@ -321,6 +386,17 @@ public class KnowledgeMilvusClient {
             value = value.substring(0, value.length() - 1);
         }
         return value;
+    }
+
+    private String safeCollectionName(String value) {
+        if (!StringUtils.hasText(value)) {
+            throw new BusinessException("KB_MILVUS_006", "Milvus集合名称不能为空");
+        }
+        String text = value.trim();
+        if (!text.matches("[a-zA-Z0-9_]+")) {
+            throw new BusinessException("KB_MILVUS_006", "Milvus集合名称不合法");
+        }
+        return text;
     }
 
     private String firstText(String first, String second) {

@@ -7,6 +7,7 @@ import com.hz.crm.common.time.DateTimes;
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
 import jakarta.persistence.Id;
+import jakarta.persistence.Index;
 import jakarta.persistence.PrePersist;
 import jakarta.persistence.PreUpdate;
 import jakarta.persistence.Table;
@@ -17,7 +18,14 @@ import lombok.Setter;
 @Getter
 @Setter
 @Entity
-@Table(name = "kb_document")
+@Table(
+        name = "kb_document",
+        indexes = {
+                @Index(name = "idx_kb_document_source", columnList = "tenant_id, source_key"),
+                @Index(
+                        name = "idx_kb_document_active_version",
+                        columnList = "tenant_id, active_version_id, deleted")
+        })
 @TableName("kb_document")
 public class KnowledgeDocumentEntity {
 
@@ -46,6 +54,15 @@ public class KnowledgeDocumentEntity {
     @Column(length = 512)
     private String objectKey;
 
+    @Column(nullable = false, length = 512)
+    private String sourceKey;
+
+    @Column(length = 64)
+    private String rawFileHash;
+
+    @Column(nullable = false, length = 64)
+    private String normalizedContentHash;
+
     @Column(columnDefinition = "text")
     private String content;
 
@@ -66,6 +83,10 @@ public class KnowledgeDocumentEntity {
     private String indexHash;
 
     private Integer indexVersion;
+
+    private Long activeVersionId;
+
+    private Long pendingVersionId;
 
     private LocalDateTime indexedAt;
 

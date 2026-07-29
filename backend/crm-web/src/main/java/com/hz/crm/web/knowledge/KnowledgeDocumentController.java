@@ -11,9 +11,12 @@ import com.hz.crm.knowledge.dto.KnowledgeDocumentResponse;
 import com.hz.crm.knowledge.dto.KnowledgeIngestRequest;
 import com.hz.crm.knowledge.dto.KnowledgeIngestResponse;
 import com.hz.crm.knowledge.dto.KnowledgeIngestTaskResponse;
+import com.hz.crm.knowledge.dto.KnowledgeIndexGenerationResponse;
 import com.hz.crm.knowledge.dto.KnowledgeSearchRequest;
 import com.hz.crm.knowledge.dto.KnowledgeSearchResponse;
 import com.hz.crm.knowledge.service.KnowledgeDocumentService;
+import com.hz.crm.knowledge.service.KnowledgeIndexRebuildService;
+import com.hz.crm.knowledge.support.KnowledgeFingerprintService;
 import com.hz.crm.web.support.IdRequest;
 import jakarta.validation.Valid;
 import java.io.ByteArrayInputStream;
@@ -42,6 +45,12 @@ public class KnowledgeDocumentController {
 
     @Autowired
     private KnowledgeDocumentService knowledgeDocumentService;
+
+    @Autowired
+    private KnowledgeFingerprintService knowledgeFingerprintService;
+
+    @Autowired
+    private KnowledgeIndexRebuildService knowledgeIndexRebuildService;
 
     @PostMapping("/page")
     @PreAuthorize("hasAuthority('*') or hasAuthority('crm:knowledge:manage')")
@@ -84,6 +93,7 @@ public class KnowledgeDocumentController {
             @RequestParam(required = false) String category,
             @RequestParam(required = false) String tags,
             @RequestParam(required = false) String sourceUrl,
+            @RequestParam(required = false) String sourceKey,
             @RequestParam("file") MultipartFile file,
             JwtPrincipal principal) {
         validateFile(file);
@@ -93,9 +103,16 @@ public class KnowledgeDocumentController {
         request.setCategory(category);
         request.setTags(tags);
         request.setSourceUrl(sourceUrl);
+        request.setSourceKey(sourceKey);
         request.setObjectKey(resolveFileName(file));
-        request.setContent(extractDocumentText(file));
-        KnowledgeDocumentResponse response = knowledgeDocumentService.save(principal.getTenantId(), request);
+        byte[] fileBytes = readFileBytes(file);
+        request.setRawFileHash(knowledgeFingerprintService.sha256Bytes(fileBytes));
+        KnowledgeDocumentResponse response =
+                knowledgeDocumentService.reuseImportWhenRawUnchanged(principal.getTenantId(), request);
+        if (response == null) {
+            request.setContent(extractDocumentText(file, fileBytes));
+            response = knowledgeDocumentService.save(principal.getTenantId(), request);
+        }
         return ApiResult.ok(knowledgeDocumentService.ingest(principal.getTenantId(), Long.valueOf(response.getId())));
     }
 
@@ -124,6 +141,31 @@ public class KnowledgeDocumentController {
     public ApiResult<KnowledgeSearchResponse> search(
             @RequestBody KnowledgeSearchRequest request, JwtPrincipal principal) {
         return ApiResult.ok(knowledgeDocumentService.search(principal.getTenantId(), request));
+    }
+
+    @PostMapping("/rebuild/start")
+    @PreAuthorize("hasAuthority('*') or hasAuthority('crm:knowledge:manage')")
+    @AuditOperation(
+            module = "KNOWLEDGE",
+            action = "INDEX_REBUILD",
+            description = "重建知识索引",
+            targetType = "KNOWLEDGE_INDEX")
+    public ApiResult<KnowledgeIndexGenerationResponse> startRebuild(JwtPrincipal principal) {
+        return ApiResult.ok(knowledgeIndexRebuildService.start(principal.getTenantId()));
+    }
+
+    @PostMapping("/rebuild/detail")
+    @PreAuthorize("hasAuthority('*') or hasAuthority('crm:knowledge:manage')")
+    public ApiResult<KnowledgeIndexGenerationResponse> rebuildDetail(
+            @RequestBody IdRequest request, JwtPrincipal principal) {
+        return ApiResult.ok(
+                knowledgeIndexRebuildService.detail(principal.getTenantId(), request.getId()));
+    }
+
+    @PostMapping("/rebuild/current")
+    @PreAuthorize("hasAuthority('*') or hasAuthority('crm:knowledge:manage')")
+    public ApiResult<KnowledgeIndexGenerationResponse> currentRebuild(JwtPrincipal principal) {
+        return ApiResult.ok(knowledgeIndexRebuildService.current(principal.getTenantId()));
     }
 
     @PostMapping("/delete")
@@ -163,22 +205,29 @@ public class KnowledgeDocumentController {
         return StringUtils.cleanPath(fileName);
     }
 
-    private String extractDocumentText(MultipartFile file) {
+    private byte[] readFileBytes(MultipartFile file) {
         try {
-            byte[] bytes = file.getBytes();
-            String fileName = resolveFileName(file).toLowerCase();
-            if (fileName.endsWith(".docx")) {
-                return normalizePlainText(extractDocxText(bytes));
-            }
-            String text = decodeText(bytes);
-            if (fileName.endsWith(".html") || fileName.endsWith(".htm")
-                    || isHtmlContentType(file.getContentType())) {
-                return extractHtmlText(text);
-            }
-            return normalizePlainText(text);
+            return file.getBytes();
         } catch (IOException ex) {
             throw new BusinessException("KB_FILE_003", "知识文档读取失败");
         }
+    }
+
+    private String extractDocumentText(MultipartFile file, byte[] bytes) {
+        String fileName = resolveFileName(file).toLowerCase();
+        if (fileName.endsWith(".docx")) {
+            try {
+                return normalizePlainText(extractDocxText(bytes));
+            } catch (IOException ex) {
+                throw new BusinessException("KB_FILE_003", "知识文档读取失败");
+            }
+        }
+        String text = decodeText(bytes);
+        if (fileName.endsWith(".html") || fileName.endsWith(".htm")
+                || isHtmlContentType(file.getContentType())) {
+            return extractHtmlText(text);
+        }
+        return normalizePlainText(text);
     }
 
     private String decodeText(byte[] bytes) {

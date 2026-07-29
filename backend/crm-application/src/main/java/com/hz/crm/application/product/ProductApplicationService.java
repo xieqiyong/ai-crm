@@ -8,6 +8,7 @@ import com.hz.crm.common.api.PageData;
 import com.hz.crm.common.exception.BusinessException;
 import com.hz.crm.common.id.SnowflakeIdGenerator;
 import com.hz.crm.common.time.DateTimes;
+import com.hz.crm.domain.product.ProductCategory;
 import com.hz.crm.domain.product.ProductEntity;
 import com.hz.crm.domain.product.ProductType;
 import com.hz.crm.domain.product.mapper.ProductMapper;
@@ -70,7 +71,7 @@ public class ProductApplicationService {
         }
         entity.setUpdatedAt(now);
         entity.setName(trimToNull(request.getName()));
-        entity.setCategory(trimToNull(request.getCategory()));
+        entity.setCategory(request.getCategory() == null ? ProductCategory.OTHER : request.getCategory());
         entity.setProductType(request.getProductType() == null ? ProductType.STANDARD : request.getProductType());
         entity.setPrice(resolvePrice(request.getPrice()));
         entity.setUnit(trimToNull(request.getUnit()));
@@ -103,9 +104,9 @@ public class ProductApplicationService {
         if (query.getProductType() != null) {
             wrapper.eq("product_type", query.getProductType().name());
         }
-        String category = trimToNull(query.getCategory());
+        ProductCategory category = query.getCategory();
         if (category != null) {
-            wrapper.eq("category", category);
+            wrapper.eq("category", category.name());
         }
         String keyword = trimToNull(query.getKeyword());
         if (keyword != null) {

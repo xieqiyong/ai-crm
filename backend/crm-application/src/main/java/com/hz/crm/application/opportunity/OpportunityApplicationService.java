@@ -232,7 +232,9 @@ public class OpportunityApplicationService {
             entity.setProductId(product == null ? null : product.getId());
             entity.setProductCode(product == null ? null : product.getCode());
             entity.setProductName(resolveProductName(product, request));
-            entity.setCategory(product == null ? null : product.getCategory());
+            entity.setCategory(product == null || product.getCategory() == null
+                    ? null
+                    : product.getCategory().name());
             entity.setProductType(product == null ? null : product.getProductType());
             entity.setQuantity(resolveQuantity(request.getQuantity()));
             entity.setUnitPrice(resolveUnitPrice(product, request));

@@ -23,5 +23,9 @@ public class KnowledgeDocumentRequest {
 
     private String objectKey;
 
+    private String sourceKey;
+
+    private String rawFileHash;
+
     private String content;
 }

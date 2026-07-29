@@ -22,6 +22,12 @@ public class KnowledgeDocumentResponse {
 
     private String objectKey;
 
+    private String sourceKey;
+
+    private String rawFileHash;
+
+    private String normalizedContentHash;
+
     private String content;
 
     private String status;
@@ -35,6 +41,10 @@ public class KnowledgeDocumentResponse {
     private String embeddingModel;
 
     private Integer indexVersion;
+
+    private String activeVersionId;
+
+    private String pendingVersionId;
 
     private String indexHash;
 
