@@ -1,6 +1,6 @@
 import {
   BarChart3, BookOpen, Bot, BriefcaseBusiness, ClipboardCheck, FileClock,
-  LayoutDashboard, MessageSquareText, Network, Package, Settings, UserRoundCog, Users,
+  LayoutDashboard, Mail, MessageSquareText, Network, Package, Settings, UserRoundCog, Users,
 } from 'lucide-react'
 import { AgentConfigPage } from '../features/agent/AgentConfigPage'
 import { MarketingAssistantPage } from '../features/assistant/MarketingAssistantPage'
@@ -19,6 +19,7 @@ import { SimpleModulePage } from '../features/module/SimpleModulePage'
 import { OpportunityPage } from '../features/opportunity/OpportunityPage'
 import { ProductPage } from '../features/product/ProductPage'
 import { SettingsPage } from '../features/settings/SettingsPage'
+import { MailPage } from '../features/mail/MailPage'
 
 export const DEFAULT_ROUTE = 'dashboard'
 
@@ -41,25 +42,11 @@ export const routeGroups = [
         component: LeadPage,
       },
       {
-        key: 'channels',
-        label: '渠道管理',
-        icon: Network,
-        permission: 'menu.channels',
-        component: ChannelPage,
-      },
-      {
         key: 'customers',
         label: '客户管理',
         icon: Users,
         permission: 'menu.customers',
         component: CustomerPage,
-      },
-      {
-        key: 'products',
-        label: '产品管理',
-        icon: Package,
-        permission: 'menu.products',
-        component: ProductPage,
       },
       {
         key: 'opportunities',
@@ -82,6 +69,13 @@ export const routeGroups = [
         permission: 'menu.tasks',
         component: SimpleModulePage,
         pageType: 'tasks',
+      },
+      {
+        key: 'channels',
+        label: '渠道管理',
+        icon: Network,
+        permission: 'menu.channels',
+        component: ChannelPage,
       },
     ],
   },
@@ -119,8 +113,27 @@ export const routeGroups = [
     ],
   },
   {
+    label: '工具',
+    items: [
+      {
+        key: 'mail',
+        label: '客户邮件',
+        icon: Mail,
+        permission: 'menu.mail',
+        component: MailPage,
+      },
+    ],
+  },
+  {
     label: '管理',
     items: [
+      {
+        key: 'products',
+        label: '产品管理',
+        icon: Package,
+        permission: 'menu.products',
+        component: ProductPage,
+      },
       {
         key: 'organization',
         label: '组织与权限',

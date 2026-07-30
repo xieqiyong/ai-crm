@@ -28,6 +28,9 @@ const moduleText = {
   PRODUCT: '产品管理',
   OPPORTUNITY: '商机管理',
   FOLLOWUP: '跟进记录',
+  SECURITY: '登录与安全',
+  NOTIFICATION: '系统通知',
+  MAIL: '客户邮件',
 }
 
 const moduleOptions = [
@@ -111,7 +114,7 @@ export function AuditLogPage({ notify }) {
     <div className="page audit-log-page">
       <PageHeader
         title="审计日志"
-        description={`记录关键管理和业务变更，当前共 ${page.total || 0} 条`}
+        description={`拥有审计查看权限的管理员可查看当前租户全部操作，当前共 ${page.total || 0} 条`}
         actions={<Button variant="secondary" icon={RefreshCw} onClick={() => load(query)}>刷新</Button>}
       />
 

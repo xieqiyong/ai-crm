@@ -7,6 +7,7 @@ import jakarta.persistence.Entity;
 import jakarta.persistence.EnumType;
 import jakarta.persistence.Enumerated;
 import jakarta.persistence.Table;
+import jakarta.persistence.UniqueConstraint;
 import java.time.LocalDateTime;
 import lombok.Getter;
 import lombok.Setter;
@@ -14,7 +15,13 @@ import lombok.Setter;
 @Getter
 @Setter
 @Entity
-@Table(name = "crm_channel_record")
+@Table(
+        name = "crm_channel_record",
+        uniqueConstraints = {
+            @UniqueConstraint(
+                    name = "uk_channel_external_ref",
+                    columnNames = {"tenant_id", "external_provider", "external_key"})
+        })
 @TableName("crm_channel_record")
 public class ChannelRecordEntity extends BaseEntity {
 
@@ -77,4 +84,16 @@ public class ChannelRecordEntity extends BaseEntity {
 
     @Column(columnDefinition = "text")
     private String remark;
+
+    @Column(length = 32)
+    private String externalProvider;
+
+    @Column(length = 256)
+    private String externalKey;
+
+    @Column(length = 64)
+    private String externalVersion;
+
+    @Column(columnDefinition = "text")
+    private String sourceSnapshot;
 }

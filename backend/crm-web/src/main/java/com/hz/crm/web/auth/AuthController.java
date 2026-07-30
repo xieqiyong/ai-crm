@@ -1,6 +1,7 @@
 package com.hz.crm.web.auth;
 
 import com.hz.crm.auth.dto.CurrentUserResponse;
+import com.hz.crm.auth.dto.ChangePasswordRequest;
 import com.hz.crm.auth.dto.ForgotPasswordRequest;
 import com.hz.crm.auth.dto.LoginRequest;
 import com.hz.crm.auth.dto.LoginResponse;
@@ -9,9 +10,9 @@ import com.hz.crm.auth.dto.ResetPasswordRequest;
 import com.hz.crm.auth.security.JwtPrincipal;
 import com.hz.crm.auth.service.AuthApplicationService;
 import com.hz.crm.common.api.ApiResult;
+import com.hz.crm.common.audit.AuditOperation;
 import java.util.ArrayList;
 import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
@@ -40,11 +41,6 @@ public class AuthController {
         return ApiResult.ok(null);
     }
 
-    @GetMapping("/me")
-    public ApiResult<CurrentUserResponse> me(JwtPrincipal principal) {
-        return ApiResult.ok(toResponse(principal));
-    }
-
     @PostMapping("/me")
     public ApiResult<CurrentUserResponse> mePost(JwtPrincipal principal) {
         return ApiResult.ok(toResponse(principal));
@@ -53,6 +49,30 @@ public class AuthController {
     @PostMapping("/logout")
     public ApiResult<Void> logout(JwtPrincipal principal) {
         authApplicationService.logout(principal);
+        return ApiResult.ok(null);
+    }
+
+    @PostMapping("/change-password")
+    @AuditOperation(
+            module = "SECURITY",
+            action = "CHANGE_PASSWORD",
+            description = "修改登录密码",
+            targetType = "USER",
+            recordParameters = false)
+    public ApiResult<Void> changePassword(@RequestBody ChangePasswordRequest request, JwtPrincipal principal) {
+        authApplicationService.changePassword(principal, request);
+        return ApiResult.ok(null);
+    }
+
+    @PostMapping("/sessions/revoke-other")
+    @AuditOperation(
+            module = "SECURITY",
+            action = "REVOKE_OTHER_SESSION",
+            description = "退出其他登录设备",
+            targetType = "USER",
+            recordParameters = false)
+    public ApiResult<Void> revokeOtherSessions(JwtPrincipal principal) {
+        authApplicationService.revokeOtherSessions(principal);
         return ApiResult.ok(null);
     }
 

@@ -7,6 +7,8 @@ import com.hz.crm.application.channel.dto.ChannelPromoteRequest;
 import com.hz.crm.application.channel.dto.ChannelQuery;
 import com.hz.crm.application.channel.dto.ChannelResponse;
 import com.hz.crm.application.channel.dto.ChannelSaveRequest;
+import com.hz.crm.application.channel.dto.ExternalChannelSyncRequest;
+import com.hz.crm.application.channel.dto.ExternalChannelSyncResult;
 import com.hz.crm.application.lead.LeadApplicationService;
 import com.hz.crm.application.lead.dto.LeadResponse;
 import com.hz.crm.application.lead.dto.LeadSaveRequest;
@@ -27,6 +29,7 @@ import java.util.HashSet;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
+import java.util.Objects;
 import java.util.Set;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
@@ -101,7 +104,7 @@ public class ChannelApplicationService {
         entity.setCompanyName(trimToNull(request.getCompanyName()));
         entity.setPhone(trimToNull(request.getPhone()));
         entity.setEmail(trimToNull(request.getEmail()));
-        if (!isImportedMaterial(entity)) {
+        if (!requiresAiAnalysis(entity)) {
             entity.setRemark(trimToNull(request.getRemark()));
         }
         if (request.getId() == null) {
@@ -112,6 +115,55 @@ public class ChannelApplicationService {
         ChannelResponse response = toResponse(entity);
         fillOwnerName(tenantId, response);
         return response;
+    }
+
+    @Transactional
+    public ExternalChannelSyncResult syncExternalChannel(Long tenantId, ExternalChannelSyncRequest request) {
+        validateExternalSyncRequest(request);
+        QueryWrapper<ChannelRecordEntity> wrapper = new QueryWrapper<ChannelRecordEntity>();
+        wrapper.eq("tenant_id", tenantId);
+        wrapper.eq("external_provider", trimToNull(request.getExternalProvider()));
+        wrapper.eq("external_key", trimToNull(request.getExternalKey()));
+        ChannelRecordEntity entity = channelRecordMapper.selectOne(wrapper);
+        ExternalChannelSyncResult result = new ExternalChannelSyncResult();
+        LocalDateTime now = DateTimes.now();
+        if (entity == null) {
+            entity = new ChannelRecordEntity();
+            entity.setId(snowflakeIdGenerator.nextId());
+            entity.setTenantId(tenantId);
+            entity.setDeleted(false);
+            entity.setCreatedAt(now);
+            entity.setStatus(ChannelStatus.NEW);
+            entity.setChannelType(ChannelType.WECOM);
+            entity.setExternalProvider(trimToNull(request.getExternalProvider()));
+            entity.setExternalKey(trimToNull(request.getExternalKey()));
+            applyExternalChannel(entity, request);
+            entity.setUpdatedAt(now);
+            channelRecordMapper.insert(entity);
+            result.setCreated(true);
+        } else if (entity.isDeleted()) {
+            result.setSkipped(true);
+        } else {
+            boolean changed = !Objects.equals(
+                    trimToNull(entity.getExternalVersion()), trimToNull(request.getExternalVersion()));
+            if (changed && entity.getLeadId() == null) {
+                applyExternalChannel(entity, request);
+                resetExternalAnalysis(entity);
+                entity.setStatus(ChannelStatus.NEW);
+                entity.setUpdatedAt(now);
+                channelRecordMapper.updateById(entity);
+                result.setUpdated(true);
+            } else if (entity.getOwnerId() == null && request.getOwnerId() != null) {
+                entity.setOwnerId(request.getOwnerId());
+                entity.setUpdatedAt(now);
+                channelRecordMapper.updateById(entity);
+                result.setUpdated(true);
+            } else {
+                result.setSkipped(true);
+            }
+        }
+        result.setChannelId(entity.getId());
+        return result;
     }
 
     @Transactional
@@ -360,11 +412,15 @@ public class ChannelApplicationService {
                 || ChannelType.VIDEO == entity.getChannelType();
     }
 
+    private boolean requiresAiAnalysis(ChannelRecordEntity entity) {
+        return isImportedMaterial(entity);
+    }
+
     private boolean isPromotionReady(ChannelRecordEntity entity) {
         if (entity == null || entity.getLeadId() != null) {
             return false;
         }
-        if (!isImportedMaterial(entity)) {
+        if (!requiresAiAnalysis(entity)) {
             return true;
         }
         return ChannelStatus.ANALYZED == entity.getStatus()
@@ -378,6 +434,40 @@ public class ChannelApplicationService {
             return "请先完成渠道材料的中文转译";
         }
         return "请先使用渠道智能体完成AI整理并生成备注";
+    }
+
+    private void validateExternalSyncRequest(ExternalChannelSyncRequest request) {
+        if (request == null
+                || !StringUtils.hasText(request.getExternalProvider())
+                || !StringUtils.hasText(request.getExternalKey())
+                || !StringUtils.hasText(request.getTitle())
+                || !StringUtils.hasText(request.getExternalVersion())) {
+            throw new BusinessException("CHANNEL_EXTERNAL_001", "外部渠道同步参数不完整");
+        }
+    }
+
+    private void applyExternalChannel(ChannelRecordEntity entity, ExternalChannelSyncRequest request) {
+        entity.setTitle(trimToNull(request.getTitle()));
+        entity.setChannelType(ChannelType.WECOM);
+        entity.setSource(normalizeSource(request.getSource()));
+        entity.setContactName(firstText(request.getContactName(), entity.getContactName()));
+        entity.setCompanyName(firstText(request.getCompanyName(), entity.getCompanyName()));
+        entity.setPhone(firstText(request.getPhone(), entity.getPhone()));
+        entity.setEmail(firstText(request.getEmail(), entity.getEmail()));
+        if (entity.getOwnerId() == null && request.getOwnerId() != null) {
+            entity.setOwnerId(request.getOwnerId());
+        }
+        entity.setExternalVersion(trimToNull(request.getExternalVersion()));
+        entity.setSourceSnapshot(trimToNull(request.getSourceSnapshot()));
+    }
+
+    private void resetExternalAnalysis(ChannelRecordEntity entity) {
+        entity.setAiSummary(null);
+        entity.setUsefulInfo(null);
+        entity.setAiAnalysisJson(null);
+        entity.setAgentRunId(null);
+        entity.setAiAnalyzedAt(null);
+        entity.setRemark(null);
     }
 
     private ChannelDocumentProfile extractDocumentProfile(String documentText) {
@@ -577,6 +667,10 @@ public class ChannelApplicationService {
         response.setLeadId(entity.getLeadId());
         response.setOwnerId(entity.getOwnerId());
         response.setRemark(entity.getRemark());
+        response.setExternalProvider(entity.getExternalProvider());
+        response.setExternalKey(entity.getExternalKey());
+        response.setExternalVersion(entity.getExternalVersion());
+        response.setSourceSnapshot(entity.getSourceSnapshot());
         response.setPromotionReady(isPromotionReady(entity));
         response.setPromotionBlockReason(
                 response.isPromotionReady() || entity.getLeadId() != null

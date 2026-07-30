@@ -91,7 +91,8 @@ public class ChannelAiAnalysisService {
                 && channel.getAiAnalyzedAt() != null) {
             throw new BusinessException("CHANNEL_AI_010", "渠道材料已完成AI整理，无需重复分析");
         }
-        if (!StringUtils.hasText(channel.getTranscriptText())) {
+        if (!StringUtils.hasText(channel.getTranscriptText())
+                && !StringUtils.hasText(channel.getSourceSnapshot())) {
             throw new BusinessException("CHANNEL_AI_007", "渠道材料尚未完成文本提取或中文转译");
         }
     }
@@ -140,6 +141,7 @@ public class ChannelAiAnalysisService {
         data.put("email", channel.getEmail());
         data.put("mediaFileName", channel.getMediaFileName());
         data.put("transcriptText", shrink(channel.getTranscriptText(), 12000));
+        data.put("sourceSnapshot", shrink(channel.getSourceSnapshot(), 12000));
         StringBuilder builder = new StringBuilder();
         builder.append("请整理以下渠道材料，提炼销售可直接使用的备注。");
         builder.append("必须覆盖基础信息、产品定位、购买意向及依据、关键信息、风险和下一步动作。");

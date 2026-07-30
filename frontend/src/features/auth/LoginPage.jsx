@@ -1,7 +1,7 @@
 import { useState } from 'react'
 import { ContactRound, Eye, EyeOff, LockKeyhole, ShieldCheck } from 'lucide-react'
 import { api } from '../../api'
-import { BrandLogo, Button, Field, Modal } from '../../components'
+import { BrandLogo, Button, Field, Modal, SecretInput } from '../../components'
 import { APP_NAME } from '../../config/appConfig'
 import { LoginRequest } from '../../models/requests'
 import { AuthLayout } from '../../layouts'
@@ -105,6 +105,18 @@ function ForgotPasswordModal({ open, defaultUsername, onClose }) {
 
   const resetPassword = async () => {
     if (!resetToken || !newPassword) return
+    if (
+      newPassword.length < 8
+      || newPassword.length > 64
+      || !/[A-Z]/.test(newPassword)
+      || !/[a-z]/.test(newPassword)
+      || !/[0-9]/.test(newPassword)
+      || !/[^A-Za-z0-9]/.test(newPassword)
+      || /\s/.test(newPassword)
+    ) {
+      setError('密码为8至64位，必须同时包含大写字母、小写字母、数字和特殊字符，不能包含空格')
+      return
+    }
     if (newPassword !== confirmPassword) {
       setError('两次输入的新密码不一致')
       return
@@ -157,11 +169,11 @@ function ForgotPasswordModal({ open, defaultUsername, onClose }) {
           <Field label="重置码" required>
             <input value={resetToken} onChange={(event) => setResetToken(event.target.value)} />
           </Field>
-          <Field label="新密码" required>
-            <input type="password" value={newPassword} onChange={(event) => setNewPassword(event.target.value)} />
+          <Field label="新密码" required hint="8至64位，需包含大写字母、小写字母、数字和特殊字符，不能包含空格">
+            <SecretInput autoComplete="new-password" value={newPassword} onChange={(event) => setNewPassword(event.target.value)} />
           </Field>
           <Field label="确认新密码" required>
-            <input type="password" value={confirmPassword} onChange={(event) => setConfirmPassword(event.target.value)} />
+            <SecretInput autoComplete="new-password" value={confirmPassword} onChange={(event) => setConfirmPassword(event.target.value)} />
           </Field>
         </>
       )}

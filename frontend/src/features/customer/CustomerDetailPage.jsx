@@ -28,11 +28,14 @@ import {
   Modal,
   OwnerAssignModal,
   PageHeader,
+  Select,
   useConfirmDialog,
 } from '../../components'
 import { FollowupPanel } from '../followup/FollowupPanel'
 import { ownerName, ownerOptionLabel, useOwnerOptions } from '../../hooks/useOwnerOptions'
 import { useProductOptions } from '../../hooks/useProductOptions'
+import { useCustomerIndustryOptions } from '../../hooks/useCustomerIndustryOptions'
+import { validateCustomerForm } from '../../models/customerForm'
 import {
   OpportunityProductEditor,
   normalizeOpportunityProducts,
@@ -147,6 +150,7 @@ export function CustomerDetailPage({ routeParams, can, notify, navigate }) {
   const canDelete = can('crm:customer:manage')
   const canViewProduct = can('crm:product:view') || can('crm:product:manage')
   const ownerOptions = useOwnerOptions(notify)
+  const industryOptions = useCustomerIndustryOptions(notify, canWrite)
   const productOptions = useProductOptions(notify, true, canViewProduct)
   const { confirm, dialogProps } = useConfirmDialog()
   const [data, setData] = useState(null)
@@ -202,8 +206,9 @@ export function CustomerDetailPage({ routeParams, can, notify, navigate }) {
   }, [data?.id])
 
   const saveCustomer = async (form) => {
-    if (!form.name || !form.name.trim()) {
-      notify('客户名称不能为空', 'info')
+    const validationMessage = validateCustomerForm(form, industryOptions)
+    if (validationMessage) {
+      notify(validationMessage, 'info')
       return
     }
     try {
@@ -409,6 +414,7 @@ export function CustomerDetailPage({ routeParams, can, notify, navigate }) {
         open={Boolean(editing)}
         form={editing || emptyForm}
         ownerOptions={ownerOptions}
+        industryOptions={industryOptions}
         onChange={setEditing}
         onClose={() => setEditing(null)}
         onSave={saveCustomer}
@@ -841,7 +847,7 @@ function OpportunityFormModal({ open, form, productOptions, onChange, onClose, o
             onChange={(event) => update({ expectedCloseDate: event.target.value })}
           />
         </Field>
-        <Field label="产品明细" className="wide-field">
+        <Field label="产品明细" className="wide-field" as="div">
           <OpportunityProductEditor
             products={normalizeOpportunityProducts(form.products || [])}
             productOptions={productOptions || []}
@@ -856,7 +862,7 @@ function OpportunityFormModal({ open, form, productOptions, onChange, onClose, o
   )
 }
 
-function CustomerFormModal({ open, form, ownerOptions, onChange, onClose, onSave }) {
+function CustomerFormModal({ open, form, ownerOptions, industryOptions, onChange, onClose, onSave }) {
   const update = (patch) => onChange({ ...form, ...patch })
   const hasSelectedOwner = ownerOptions.some((item) => String(item.id) === String(form.ownerId || ''))
   return (
@@ -871,40 +877,51 @@ function CustomerFormModal({ open, form, ownerOptions, onChange, onClose, onSave
         </>
       )}
     >
+      <div className="customer-identity-note">
+        <b>客户主体与联系人</b>
+        <span>客户名称填写企业、机构或个人客户的主体名称；主要联系人填写该客户内部与销售直接沟通的对接人。</span>
+      </div>
       <div className="customer-form-grid">
-        <Field label="客户名称" required>
+        <Field label="客户名称" required hint="企业、机构或个人客户的主体名称">
           <input value={form.name || ''} onChange={(event) => update({ name: event.target.value })} />
         </Field>
-        <Field label="客户级别">
+        <Field label="客户级别" required>
           <select value={form.level || 'NORMAL'} onChange={(event) => update({ level: event.target.value })}>
             <option value="NORMAL">普通客户</option>
             <option value="IMPORTANT">重点客户</option>
             <option value="STRATEGIC">战略客户</option>
           </select>
         </Field>
-        <Field label="客户状态">
+        <Field label="客户状态" required>
           <select value={form.status || recommendedCustomerStatus} onChange={(event) => update({ status: event.target.value })}>
             {customerStatusOptions.map((item) => <option value={item.value} key={item.value}>{item.label}</option>)}
           </select>
         </Field>
-        <Field label="行业">
-          <input value={form.industry || ''} onChange={(event) => update({ industry: event.target.value })} />
+        <Field label="行业" required>
+          <Select
+            searchable
+            value={form.industry || ''}
+            options={industryOptions}
+            placeholder="请选择行业"
+            searchPlaceholder="搜索行业"
+            onChange={(industry) => update({ industry })}
+          />
         </Field>
-        <Field label="负责人" hint="不选则由后台设置为当前登录用户">
+        <Field label="负责人" required>
           <select value={form.ownerId || ''} onChange={(event) => update({ ownerId: event.target.value })}>
-            <option value="">默认当前登录用户</option>
+            <option value="">请选择负责人</option>
             {form.ownerId && !hasSelectedOwner && <option value={form.ownerId}>当前负责人</option>}
             {ownerOptions.map((item) => <option value={item.id} key={item.id}>{ownerOptionLabel(item)}</option>)}
           </select>
         </Field>
-        <Field label="联系人">
+        <Field label="主要联系人" required hint="客户内部与销售直接沟通的主要对接人姓名">
           <input value={form.contactName || ''} onChange={(event) => update({ contactName: event.target.value })} />
         </Field>
-        <Field label="联系电话">
+        <Field label="联系电话" required>
           <input value={form.contactPhone || ''} onChange={(event) => update({ contactPhone: event.target.value })} />
         </Field>
-        <Field label="联系邮箱">
-          <input value={form.contactEmail || ''} onChange={(event) => update({ contactEmail: event.target.value })} />
+        <Field label="联系邮箱" required>
+          <input type="email" value={form.contactEmail || ''} onChange={(event) => update({ contactEmail: event.target.value })} />
         </Field>
         <Field label="备注">
           <textarea rows="4" value={form.remark || ''} onChange={(event) => update({ remark: event.target.value })} />

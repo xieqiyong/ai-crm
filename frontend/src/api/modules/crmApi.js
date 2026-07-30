@@ -43,6 +43,7 @@ export const leadApi = {
 
 export const customerApi = {
   page: (payload) => page('/api/customer', payload),
+  industryOptions: () => request('/api/customer/industry-options', { method: 'POST' }),
   detail: (id) => detail('/api/customer', id),
   save: (payload) => save('/api/customer', payload),
   assign: (payload) => request('/api/customer/assign', { method: 'POST', body: JSON.stringify(payload) }),

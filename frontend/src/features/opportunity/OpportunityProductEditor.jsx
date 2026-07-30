@@ -61,6 +61,13 @@ function formatAmount(value) {
   return amount.toLocaleString('zh-CN', { style: 'currency', currency: 'CNY' })
 }
 
+function formatDiscount(value) {
+  const rate = value === '' || value === null || value === undefined ? 100 : Number(value)
+  if (!Number.isFinite(rate)) return '-'
+  if (rate === 100) return '原价'
+  return `${Number((rate / 10).toFixed(2))}折`
+}
+
 export function OpportunityProductEditor({ products = [], productOptions = [], onChange }) {
   const rows = normalizeOpportunityProducts(products)
   const updateLine = (index, patch) => {
@@ -91,12 +98,22 @@ export function OpportunityProductEditor({ products = [], productOptions = [], o
       <div className="opportunity-product-head">
         <div>
           <b>产品与报价</b>
-          <small>有产品明细时，商机金额自动汇总。</small>
+          <small>成交价比例用于计算优惠：100% 为原价，90% 为九折，80% 为八折；小计＝数量 × 标准单价 × 成交价比例。</small>
         </div>
         <Button type="button" variant="secondary" icon={Plus} onClick={addLine}>添加产品</Button>
       </div>
       {rows.length ? (
         <div className="opportunity-product-lines">
+          <div className="opportunity-product-columns" aria-hidden="true">
+            <span>选择产品</span>
+            <span>产品名称</span>
+            <span>数量</span>
+            <span>标准单价</span>
+            <span>成交价比例</span>
+            <span>单位</span>
+            <span>小计</span>
+            <span>操作</span>
+          </div>
           {rows.map((item, index) => (
             <div className="opportunity-product-line" key={index}>
               <select value={item.productId || ''} onChange={(event) => selectProduct(index, event.target.value)}>
@@ -127,15 +144,20 @@ export function OpportunityProductEditor({ products = [], productOptions = [], o
                 onChange={(event) => updateLine(index, { unitPrice: event.target.value })}
                 placeholder="单价"
               />
-              <input
-                type="number"
-                min="0"
-                max="100"
-                step="0.01"
-                value={item.discountRate || ''}
-                onChange={(event) => updateLine(index, { discountRate: event.target.value })}
-                placeholder="折扣%"
-              />
+              <div className="opportunity-discount-field">
+                <input
+                  type="number"
+                  min="0"
+                  max="100"
+                  step="0.01"
+                  value={item.discountRate || ''}
+                  aria-label="成交价比例"
+                  title="100%为原价，90%为九折"
+                  onChange={(event) => updateLine(index, { discountRate: event.target.value })}
+                  placeholder="比例%"
+                />
+                <small>{formatDiscount(item.discountRate)}</small>
+              </div>
               <input
                 value={item.unit || ''}
                 onChange={(event) => updateLine(index, { unit: event.target.value })}
@@ -180,7 +202,7 @@ export function OpportunityProductList({ products = [] }) {
           </div>
           <span>{item.quantity || 0}{item.unit || ''}</span>
           <span>{formatAmount(item.unitPrice)}</span>
-          <span>{item.discountRate || 100}%</span>
+          <span>{formatDiscount(item.discountRate)}</span>
           <strong>{formatAmount(item.subtotal == null ? calculateProductSubtotal(item) : item.subtotal)}</strong>
         </div>
       ))}

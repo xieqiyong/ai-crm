@@ -30,7 +30,7 @@ public class LeadAnalysisResultToolProvider implements AgentRuntimeToolProvider 
         }
         tools.add(companyWebSearchTool);
         tools.add(knowledgeSearchTool.bind(request));
-        tools.add(leadAnalysisResultTool);
+        tools.add(leadAnalysisResultTool.bind(request));
         return tools;
     }
 }

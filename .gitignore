@@ -78,3 +78,4 @@ postgres-data/
 # Agent 运行时工作区
 agent-runtime/
 skills-runtime/
+release

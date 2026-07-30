@@ -93,18 +93,18 @@ docker build -t "crm-frontend:$CRM_VERSION" "$BUILD_DIR/frontend"
 docker build -t "crm-ai-runtime:$CRM_VERSION" "$BUILD_DIR/ai-runtime"
 
 echo "准备中间件镜像"
-docker image inspect postgres:16-alpine >/dev/null 2>&1 || docker pull postgres:16-alpine
-docker image inspect redis:7-alpine >/dev/null 2>&1 || docker pull redis:7-alpine
-docker image inspect minio/minio:latest >/dev/null 2>&1 || docker pull minio/minio:latest
+docker image inspect docker.1ms.run/postgres:16-alpine >/dev/null 2>&1 || docker pull docker.1ms.run/postgres:16-alpine
+docker image inspect docker.1ms.run/redis:7-alpine >/dev/null 2>&1 || docker pull docker.1ms.run/redis:7-alpine
+docker image inspect docker.1ms.run/minio/minio:latest >/dev/null 2>&1 || docker pull docker.1ms.run/minio/minio:latest
 
 echo "保存离线镜像"
 docker save -o "$IMAGE_ARCHIVE" \
   "crm-backend:$CRM_VERSION" \
   "crm-frontend:$CRM_VERSION" \
   "crm-ai-runtime:$CRM_VERSION" \
-  postgres:16-alpine \
-  redis:7-alpine \
-  minio/minio:latest
+  docker.1ms.run/postgres:16-alpine \
+  docker.1ms.run/redis:7-alpine \
+  docker.1ms.run/minio/minio:latest
 
 cp "$DEPLOY_DIR/docker-compose.yml" "$PACKAGE_DIR/docker-compose.yml"
 cp "$DEPLOY_DIR/env.example" "$PACKAGE_DIR/env.example"

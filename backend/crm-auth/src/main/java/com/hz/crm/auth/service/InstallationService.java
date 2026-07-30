@@ -59,6 +59,9 @@ public class InstallationService {
     @Autowired
     private TenantService tenantService;
 
+    @Autowired
+    private AccountCredentialPolicy accountCredentialPolicy;
+
     @Transactional(readOnly = true)
     public InstallStatusResponse status() {
         InstallStatusResponse response = new InstallStatusResponse();
@@ -74,9 +77,8 @@ public class InstallationService {
         if (request == null || request.getUsername() == null || request.getUsername().trim().length() == 0) {
             throw new BusinessException("INSTALL_003", "超管用户名不能为空");
         }
-        if (request.getPassword() == null || request.getPassword().length() < 8) {
-            throw new BusinessException("INSTALL_002", "超管密码长度不能少于8位");
-        }
+        accountCredentialPolicy.validateUsername(request.getUsername());
+        accountCredentialPolicy.validatePassword(request.getPassword());
         SysTenantEntity tenant = tenantService.createInitialTenant(request.getTenantName());
         Long tenantId = tenant.getId();
         SysDepartmentEntity rootDepartment =

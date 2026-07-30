@@ -12,6 +12,7 @@ import com.hz.crm.agent.web.dto.LeadAiAnalyzeRequest;
 import com.hz.crm.agent.web.dto.LeadAiAnalyzeResponse;
 import com.hz.crm.agent.web.dto.LeadAiConvertDraft;
 import com.hz.crm.agent.web.dto.LeadAiCustomerProfile;
+import com.hz.crm.agent.web.tool.LeadAnalysisResultTool;
 import com.hz.crm.application.lead.LeadApplicationService;
 import com.hz.crm.application.lead.dto.LeadResponse;
 import com.hz.crm.common.exception.BusinessException;
@@ -29,6 +30,8 @@ import org.springframework.stereotype.Service;
 public class LeadAiAssistantService {
 
     private static final String LEAD_ANALYZE_SCENE = "LEAD_ANALYZE";
+
+    private static final String LEAD_RESULT_FUNCTION = "lead_analysis_result";
 
     @Autowired
     private LeadApplicationService leadApplicationService;
@@ -59,14 +62,24 @@ public class LeadAiAssistantService {
             runtimeRequest = buildRuntimeRequest(tenantId, userId, lead, agent, request);
             List<AgentRuntimeEvent> events = runAgent(runtimeRequest);
             String output = resolveOutput(events);
-            LeadAiAnalyzeResponse parsed = parseOutput(output, lead);
+            JSONObject result = resolveCapturedResult(runtimeRequest);
+            if (result == null && !hasToolCall(events, LEAD_RESULT_FUNCTION)) {
+                throw new BusinessException("AI_LEAD_002", "线索智能体未调用标准结果函数，请检查场景提示词");
+            }
+            if (result == null) {
+                result = parseJsonObject(normalizeModelOutput(output));
+            }
+            if (result == null) {
+                throw new BusinessException("AI_LEAD_003", "线索智能体已调用结果函数，但函数参数无法解析");
+            }
+            LeadAiAnalyzeResponse parsed = parseResult(result, lead);
             parsed.setRunId(runtimeRequest.getRunId());
             parsed.setConversationId(runtimeRequest.getConversationId());
             parsed.setRuntimeEvents(resolveRuntimeEvents(events));
             parsed.setAvailable(true);
             parsed.setSuccess(true);
             parsed.setMessage("线索 AI 分析完成");
-            parsed.setRawOutput(shrink(output, 2000));
+            parsed.setRawOutput(shrink(JSON.toJSONString(result), 2000));
             LeadResponse savedLead = leadApplicationService.saveAiAnalysis(
                     tenantId,
                     userId,
@@ -178,23 +191,81 @@ public class LeadAiAssistantService {
         if (events == null || events.isEmpty()) {
             return "";
         }
-        String finalContent = null;
-        StringBuilder streamContent = new StringBuilder();
+        StringBuilder toolResult = new StringBuilder();
+        String leadToolResult = null;
         for (AgentRuntimeEvent event : events) {
-            if (blank(event.getContent())) {
+            if (event == null) {
                 continue;
             }
-            String type = event.getType() == null ? "" : event.getType().toLowerCase();
-            if (type.contains("result") || type.contains("final")) {
-                finalContent = event.getContent();
-            } else {
-                streamContent.append(event.getContent());
+            String type = event.getType() == null ? "" : event.getType().toUpperCase();
+            if (type.contains("TOOL_RESULT_START")) {
+                toolResult.setLength(0);
+                continue;
+            }
+            if (type.contains("TOOL_RESULT_TEXT_DELTA") && !blank(event.getContent())) {
+                toolResult.append(event.getContent());
+                continue;
+            }
+            if (type.contains("TOOL_RESULT_END")) {
+                if (LEAD_RESULT_FUNCTION.equals(event.getToolName())) {
+                    leadToolResult = toolResult.toString();
+                }
+                toolResult.setLength(0);
             }
         }
-        if (!blank(finalContent)) {
-            return finalContent;
+        if (!blank(leadToolResult)) {
+            return leadToolResult;
         }
-        return streamContent.toString();
+        for (int index = events.size() - 1; index >= 0; index--) {
+            AgentRuntimeEvent event = events.get(index);
+            if (event != null
+                    && !blank(event.getContent())
+                    && (LEAD_RESULT_FUNCTION.equals(event.getToolName())
+                    || event.getContent().contains(LEAD_RESULT_FUNCTION))) {
+                return event.getContent();
+            }
+        }
+        for (int index = events.size() - 1; index >= 0; index--) {
+            AgentRuntimeEvent event = events.get(index);
+            if (event == null || blank(event.getContent())) {
+                continue;
+            }
+            String type = event.getType() == null ? "" : event.getType().toUpperCase();
+            if (type.contains("RESULT") || type.contains("FINAL")) {
+                return event.getContent();
+            }
+        }
+        return "";
+    }
+
+    private JSONObject resolveCapturedResult(AgentRuntimeRequest runtimeRequest) {
+        if (runtimeRequest == null || runtimeRequest.getContext() == null) {
+            return null;
+        }
+        Object value = runtimeRequest.getContext().remove(LeadAnalysisResultTool.RESULT_CONTEXT_KEY);
+        if (value == null) {
+            return null;
+        }
+        if (value instanceof JSONObject) {
+            return (JSONObject) value;
+        }
+        try {
+            return JSON.parseObject(JSON.toJSONString(value));
+        } catch (RuntimeException ex) {
+            return null;
+        }
+    }
+
+    private boolean hasToolCall(List<AgentRuntimeEvent> events, String toolName) {
+        if (events == null || blank(toolName)) {
+            return false;
+        }
+        for (AgentRuntimeEvent event : events) {
+            if (event != null && toolName.equals(event.getToolName())) {
+                return true;
+            }
+        }
+        return false;
     }
 
     private List<AgentRuntimeEvent> resolveRuntimeEvents(List<AgentRuntimeEvent> events) {
@@ -227,29 +298,9 @@ public class LeadAiAssistantService {
         return type.contains("result") || type.contains("final");
     }
 
-    private LeadAiAnalyzeResponse parseOutput(String output, LeadResponse lead) {
+    private LeadAiAnalyzeResponse parseResult(JSONObject jsonObject, LeadResponse lead) {
         LeadAiAnalyzeResponse response = baseResponse(lead);
         response.setAvailable(true);
-        String normalizedOutput = normalizeModelOutput(output);
-        JSONObject jsonObject = parseJsonObject(normalizedOutput);
-        if (jsonObject == null) {
-            response.setConclusionTitle("未生成结构化结论");
-            response.setSalesConclusion(shrink(normalizedOutput, 300));
-            response.setStage(resolveStage(lead.getStatus() == null ? null : lead.getStatus().name()));
-            response.setPriority("LOW");
-            response.getKeyFindings().add("模型未按标准函数格式返回，暂不能生成可靠销售动作。");
-            response.getRiskWarnings().add("本次分析结果不建议直接作为销售决策依据。");
-            response.getNextActions().add("请补充线索信息后重新分析。");
-            response.setRecommendConvert(false);
-            response.setScore(0);
-            response.setConfidence(BigDecimal.ZERO);
-            response.setReason("模型返回了非结构化内容，未生成可执行建议");
-            response.setNextAction("请补充线索信息后重新分析");
-            response.setConvertDraft(defaultDraft(lead, response.getSummary(), null));
-            response.setCustomerProfile(defaultCustomerProfile(lead));
-            response.setSummary(buildSalesSummary(response));
-            return response;
-        }
         response.setConclusionTitle(resolveText(jsonObject.getString("conclusionTitle"), "线索分析结论"));
         response.setSalesConclusion(shrink(resolveText(
                 jsonObject.getString("salesConclusion"),

@@ -5,5 +5,6 @@ public enum ChannelType {
     FORM,
     AUDIO,
     VIDEO,
-    DOCUMENT
+    DOCUMENT,
+    WECOM
 }

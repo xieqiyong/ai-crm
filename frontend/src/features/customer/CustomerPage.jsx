@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import {
   Building2,
   Plus,
@@ -15,6 +15,7 @@ import {
   Modal,
   OwnerAssignModal,
   PageHeader,
+  Select,
   useConfirmDialog,
 } from '../../components'
 import {
@@ -26,11 +27,13 @@ import {
   recommendedCustomerStatus,
 } from '../../models/crmStatus'
 import { ownerName, ownerOptionLabel, useOwnerOptions } from '../../hooks/useOwnerOptions'
+import { useCustomerIndustryOptions } from '../../hooks/useCustomerIndustryOptions'
+import { validateCustomerForm } from '../../models/customerForm'
 
 const emptyPage = {
   total: 0,
   pageNo: 1,
-  pageSize: 20,
+  pageSize: 10,
   records: [],
 }
 
@@ -56,9 +59,81 @@ function formatDateTime(value) {
 function compactQuery(query) {
   return {
     pageNo: query.pageNo || 1,
-    pageSize: query.pageSize || 20,
+    pageSize: query.pageSize || 10,
     keyword: query.keyword || undefined,
     status: query.status || undefined,
+  }
+}
+
+function customerListStateKey(currentUser) {
+  const tenantId = currentUser?.tenantId || 'default'
+  const userId = currentUser?.userId || currentUser?.username || 'anonymous'
+  return `crm.customer.list.query.${tenantId}.${userId}`
+}
+
+function customerLastViewedKey(currentUser) {
+  const tenantId = currentUser?.tenantId || 'default'
+  const userId = currentUser?.userId || currentUser?.username || 'anonymous'
+  return `crm.customer.list.last-viewed.${tenantId}.${userId}`
+}
+
+function isPageReload() {
+  const navigationEntry = window.performance?.getEntriesByType?.('navigation')?.[0]
+  if (navigationEntry) {
+    return navigationEntry.type === 'reload'
+  }
+  return window.performance?.navigation?.type === 1
+}
+
+const resetCustomerPageAfterReload = isPageReload()
+  && window.location.hash.replace('#/', '').split('?')[0] === 'customers'
+let customerPageReloadHandled = false
+
+function readCustomerListQuery(currentUser) {
+  const defaultQuery = { keyword: '', status: '', pageNo: 1, pageSize: 10 }
+  const resetPageNo = resetCustomerPageAfterReload && !customerPageReloadHandled
+  customerPageReloadHandled = true
+  try {
+    const stored = window.sessionStorage.getItem(customerListStateKey(currentUser))
+    if (!stored) return defaultQuery
+    const parsed = JSON.parse(stored)
+    return {
+      keyword: typeof parsed.keyword === 'string' ? parsed.keyword : '',
+      status: typeof parsed.status === 'string' ? parsed.status : '',
+      pageNo: resetPageNo ? 1 : Math.max(1, Number.parseInt(parsed.pageNo, 10) || 1),
+      pageSize: 10,
+    }
+  } catch {
+    return defaultQuery
+  }
+}
+
+function saveCustomerListQuery(currentUser, query) {
+  try {
+    window.sessionStorage.setItem(customerListStateKey(currentUser), JSON.stringify({
+      keyword: query.keyword || '',
+      status: query.status || '',
+      pageNo: query.pageNo || 1,
+      pageSize: 10,
+    }))
+  } catch {
+    // 浏览器禁用会话存储时不影响客户查询
+  }
+}
+
+function readLastViewedCustomerId(currentUser) {
+  try {
+    return window.sessionStorage.getItem(customerLastViewedKey(currentUser)) || ''
+  } catch {
+    return ''
+  }
+}
+
+function saveLastViewedCustomerId(currentUser, customerId) {
+  try {
+    window.sessionStorage.setItem(customerLastViewedKey(currentUser), String(customerId))
+  } catch {
+    // 浏览器禁用会话存储时不影响客户详情访问
   }
 }
 
@@ -92,14 +167,18 @@ function toPayload(form) {
   }
 }
 
-export function CustomerPage({ can, notify, navigate }) {
+export function CustomerPage({ can, notify, navigate, currentUser }) {
   const canWrite = can('crm:customer:manage') || can('crm:customer:edit')
   const canAssign = can('crm:customer:assign')
   const canDelete = can('crm:customer:manage')
   const ownerOptions = useOwnerOptions(notify)
+  const industryOptions = useCustomerIndustryOptions(notify, canWrite)
   const { confirm, dialogProps } = useConfirmDialog()
-  const [query, setQuery] = useState({ keyword: '', status: '', pageNo: 1, pageSize: 20 })
+  const lastViewedRowRef = useRef(null)
+  const [query, setQuery] = useState(() => readCustomerListQuery(currentUser))
   const [page, setPage] = useState(emptyPage)
+  const [jumpPage, setJumpPage] = useState('')
+  const [lastViewedCustomerId, setLastViewedCustomerId] = useState(() => readLastViewedCustomerId(currentUser))
   const [loading, setLoading] = useState(true)
   const [editing, setEditing] = useState(null)
   const [assigning, setAssigning] = useState(null)
@@ -110,7 +189,13 @@ export function CustomerPage({ can, notify, navigate }) {
     try {
       const data = await api.customer.page(compactQuery(nextQuery))
       setPage(data || emptyPage)
-      setQuery(nextQuery)
+      const resolvedQuery = {
+        ...nextQuery,
+        pageNo: data?.pageNo || nextQuery.pageNo || 1,
+        pageSize: 10,
+      }
+      setQuery(resolvedQuery)
+      saveCustomerListQuery(currentUser, resolvedQuery)
     } catch (err) {
       notify(err.message || '客户数据加载失败', 'info')
     } finally {
@@ -128,8 +213,9 @@ export function CustomerPage({ can, notify, navigate }) {
   }
 
   const saveCustomer = async (form) => {
-    if (!form.name || !form.name.trim()) {
-      notify('客户名称不能为空', 'info')
+    const validationMessage = validateCustomerForm(form, industryOptions)
+    if (validationMessage) {
+      notify(validationMessage, 'info')
       return
     }
     try {
@@ -179,28 +265,68 @@ export function CustomerPage({ can, notify, navigate }) {
 
   const openFullDetail = (row) => {
     if (!row?.id) return
+    setLastViewedCustomerId(String(row.id))
+    saveLastViewedCustomerId(currentUser, row.id)
     navigate(`customers/detail/${encodeURIComponent(row.id)}`)
   }
 
   const records = page.records || []
   const currentPage = page.pageNo || query.pageNo || 1
-  const pageSize = page.pageSize || query.pageSize || 20
+  const pageSize = page.pageSize || query.pageSize || 10
   const totalPages = Math.max(1, Math.ceil((page.total || 0) / pageSize))
 
+  useEffect(() => {
+    setJumpPage(String(currentPage))
+  }, [currentPage])
+
+  useEffect(() => {
+    if (loading || !lastViewedCustomerId || !lastViewedRowRef.current) return undefined
+    const timer = window.setTimeout(() => {
+      lastViewedRowRef.current?.scrollIntoView({
+        behavior: 'smooth',
+        block: 'center',
+        inline: 'nearest',
+      })
+    }, 80)
+    return () => window.clearTimeout(timer)
+  }, [loading, lastViewedCustomerId, currentPage])
+
+  const goToPage = (targetPage) => {
+    if (loading || targetPage === currentPage) return
+    load({ ...query, pageNo: targetPage })
+  }
+
+  const jumpToPage = (event) => {
+    event.preventDefault()
+    const targetPage = Number.parseInt(jumpPage, 10)
+    if (!Number.isInteger(targetPage) || targetPage < 1 || targetPage > totalPages) {
+      notify(`请输入 1 到 ${totalPages} 之间的页码`, 'info')
+      return
+    }
+    goToPage(targetPage)
+  }
+
   return (
-    <div className="page customer-list-page">
+    <div className="page customer-list-page compact-list-page">
       <PageHeader
         title="客户管理"
         description={`从客户列表进入详情，当前真实记录 ${page.total || 0} 条`}
         actions={(
           <>
             <Button variant="secondary" icon={RefreshCw} onClick={() => load(query)}>刷新</Button>
-            {canWrite && <Button icon={Plus} onClick={() => setEditing(emptyForm)}>新建客户</Button>}
+            {canWrite && (
+              <Button
+                icon={Plus}
+                onClick={() => setEditing({ ...emptyForm, ownerId: currentUser?.userId || '' })}
+              >
+                新建客户
+              </Button>
+            )}
           </>
         )}
       />
 
-      <form className="filter-card customer-filter-card" onSubmit={search}>
+      <form className="filter-card customer-filter-card list-filter-card" onSubmit={search}>
         <div className="filter-search">
           <Search size={17} />
           <input
@@ -220,79 +346,95 @@ export function CustomerPage({ can, notify, navigate }) {
       </form>
 
       <div className="customer-list-layout">
-        <Card className="table-card customer-table-card">
-          <div className="data-table-wrap">
-            <table className="data-table customer-list-table">
+        <Card className="table-card customer-table-card customer-list-table-card">
+          <div className="data-table-wrap customer-list-table-wrap">
+            <table className="data-table customer-list-table customer-stable-table">
+              <colgroup>
+                <col className="customer-column-name" />
+                <col className="customer-column-industry" />
+                <col className="customer-column-contact-name" />
+                <col className="customer-column-contact" />
+                <col className="customer-column-level" />
+                <col className="customer-column-status" />
+                <col className="customer-column-owner" />
+                <col className="customer-column-created" />
+                <col className="customer-column-actions" />
+              </colgroup>
               <thead>
                 <tr>
                   <th>客户名称</th>
                   <th>行业</th>
-                  <th>联系人</th>
+                  <th>主要联系人</th>
                   <th>联系方式</th>
                   <th>客户级别</th>
                   <th>状态</th>
                   <th>负责人</th>
-                  <th>更新时间</th>
-                  <th>操作</th>
+                  <th>创建时间</th>
+                  <th className="customer-list-actions-column">操作</th>
                 </tr>
               </thead>
               <tbody>
-                {records.map((row) => (
-                  <tr
-                    key={row.id}
-                    onClick={() => openFullDetail(row)}
-                  >
-                    <td><strong>{row.name}</strong><small>ID：{row.id}</small></td>
-                    <td>{row.industry || '-'}</td>
-                    <td>{row.contactName || '-'}</td>
-                    <td>
-                      <span>{row.contactPhone || '-'}</span>
-                      <small>{row.contactEmail || '-'}</small>
-                    </td>
-                    <td><Badge tone={customerLevelTone[row.level] || 'neutral'}>{customerLevelText[row.level] || row.level || '-'}</Badge></td>
-                    <td><Badge dot tone={customerStatusTone[row.status] || 'neutral'}>{customerStatusText[row.status] || row.status || '-'}</Badge></td>
-                    <td>{ownerName(row)}</td>
-                    <td>{formatDateTime(row.updatedAt || row.createdAt)}</td>
-                    <td>
-                      <div className="table-action-row text-actions" onClick={(event) => event.stopPropagation()}>
-                        <button
-                          type="button"
-                          className="table-text-button"
-                          onClick={() => openFullDetail(row)}
-                        >
-                          详情
-                        </button>
-                        {canWrite && (
+                {records.map((row) => {
+                  const isLastViewed = String(row.id) === String(lastViewedCustomerId)
+                  return (
+                    <tr
+                      key={row.id}
+                      ref={isLastViewed ? lastViewedRowRef : null}
+                      className={isLastViewed ? 'customer-row-last-viewed' : undefined}
+                      onClick={() => openFullDetail(row)}
+                    >
+                      <td><strong>{row.name || '-'}</strong></td>
+                      <td>{row.industry || '-'}</td>
+                      <td>{row.contactName || '-'}</td>
+                      <td>
+                        <span>{row.contactPhone || '-'}</span>
+                        <small>{row.contactEmail || '-'}</small>
+                      </td>
+                      <td><Badge tone={customerLevelTone[row.level] || 'neutral'}>{customerLevelText[row.level] || row.level || '-'}</Badge></td>
+                      <td><Badge dot tone={customerStatusTone[row.status] || 'neutral'}>{customerStatusText[row.status] || row.status || '-'}</Badge></td>
+                      <td>{ownerName(row)}</td>
+                      <td>{formatDateTime(row.createdAt)}</td>
+                      <td className="customer-list-actions-column">
+                        <div className="table-action-row text-actions" onClick={(event) => event.stopPropagation()}>
                           <button
                             type="button"
                             className="table-text-button"
-                            onClick={() => setEditing(toForm(row))}
+                            onClick={() => openFullDetail(row)}
                           >
-                            编辑
+                            详情
                           </button>
-                        )}
-                        {canAssign && (
-                          <button
-                            type="button"
-                            className="table-text-button"
-                            onClick={() => setAssigning(row)}
-                          >
-                            分配
-                          </button>
-                        )}
-                        {canDelete && (
-                          <button
-                            type="button"
-                            className="table-text-button danger"
-                            onClick={() => deleteCustomer(row)}
-                          >
-                            删除
-                          </button>
-                        )}
-                      </div>
-                    </td>
-                  </tr>
-                ))}
+                          {canWrite && (
+                            <button
+                              type="button"
+                              className="table-text-button"
+                              onClick={() => setEditing(toForm(row))}
+                            >
+                              编辑
+                            </button>
+                          )}
+                          {canAssign && (
+                            <button
+                              type="button"
+                              className="table-text-button"
+                              onClick={() => setAssigning(row)}
+                            >
+                              分配
+                            </button>
+                          )}
+                          {canDelete && (
+                            <button
+                              type="button"
+                              className="table-text-button danger"
+                              onClick={() => deleteCustomer(row)}
+                            >
+                              删除
+                            </button>
+                          )}
+                        </div>
+                      </td>
+                    </tr>
+                  )
+                })}
               </tbody>
             </table>
             {!loading && !records.length && (
@@ -302,7 +444,7 @@ export function CustomerPage({ can, notify, navigate }) {
                 <span>当前查询条件下没有真实客户记录</span>
               </div>
             )}
-            {loading && (
+            {loading && !records.length && (
               <div className="empty-table">
                 <RefreshCw size={26} />
                 <b>正在加载客户数据</b>
@@ -312,10 +454,25 @@ export function CustomerPage({ can, notify, navigate }) {
           </div>
           <div className="table-footer">
             <span>共 {page.total || 0} 条，当前第 {currentPage} / {totalPages} 页</span>
-            <div className="pagination">
-              <button disabled={currentPage <= 1} onClick={() => load({ ...query, pageNo: currentPage - 1 })}>‹</button>
-              <button className="active">{currentPage}</button>
-              <button disabled={currentPage >= totalPages} onClick={() => load({ ...query, pageNo: currentPage + 1 })}>›</button>
+            <div className="pagination customer-list-pagination">
+              <button type="button" disabled={loading || currentPage <= 1} onClick={() => goToPage(currentPage - 1)}>‹</button>
+              <button type="button" className="active">{currentPage}</button>
+              <button type="button" disabled={loading || currentPage >= totalPages} onClick={() => goToPage(currentPage + 1)}>›</button>
+              <form className="customer-page-jump" onSubmit={jumpToPage}>
+                <span>跳至</span>
+                <input
+                  type="number"
+                  min="1"
+                  max={totalPages}
+                  step="1"
+                  inputMode="numeric"
+                  aria-label="跳转页码"
+                  value={jumpPage}
+                  onChange={(event) => setJumpPage(event.target.value)}
+                />
+                <span>页</span>
+                <button type="submit" className="customer-page-jump-button" disabled={loading}>跳转</button>
+              </form>
             </div>
           </div>
         </Card>
@@ -326,6 +483,7 @@ export function CustomerPage({ can, notify, navigate }) {
         open={Boolean(editing)}
         form={editing || emptyForm}
         ownerOptions={ownerOptions}
+        industryOptions={industryOptions}
         onChange={setEditing}
         onClose={() => setEditing(null)}
         onSave={saveCustomer}
@@ -346,7 +504,7 @@ export function CustomerPage({ can, notify, navigate }) {
   )
 }
 
-function CustomerFormModal({ open, form, ownerOptions, onChange, onClose, onSave }) {
+function CustomerFormModal({ open, form, ownerOptions, industryOptions, onChange, onClose, onSave }) {
   const update = (patch) => onChange({ ...form, ...patch })
   const hasSelectedOwner = ownerOptions.some((item) => String(item.id) === String(form.ownerId || ''))
   return (
@@ -361,40 +519,51 @@ function CustomerFormModal({ open, form, ownerOptions, onChange, onClose, onSave
         </>
       )}
     >
+      <div className="customer-identity-note">
+        <b>客户主体与联系人</b>
+        <span>客户名称填写企业、机构或个人客户的主体名称；主要联系人填写该客户内部与销售直接沟通的对接人。</span>
+      </div>
       <div className="customer-form-grid">
-        <Field label="客户名称" required>
+        <Field label="客户名称" required hint="企业、机构或个人客户的主体名称">
           <input value={form.name || ''} onChange={(event) => update({ name: event.target.value })} />
         </Field>
-        <Field label="客户级别">
+        <Field label="客户级别" required>
           <select value={form.level || 'NORMAL'} onChange={(event) => update({ level: event.target.value })}>
             <option value="NORMAL">普通客户</option>
             <option value="IMPORTANT">重点客户</option>
             <option value="STRATEGIC">战略客户</option>
           </select>
         </Field>
-        <Field label="客户状态">
+        <Field label="客户状态" required>
           <select value={form.status || recommendedCustomerStatus} onChange={(event) => update({ status: event.target.value })}>
             {customerStatusOptions.map((item) => <option value={item.value} key={item.value}>{item.label}</option>)}
           </select>
         </Field>
-        <Field label="行业">
-          <input value={form.industry || ''} onChange={(event) => update({ industry: event.target.value })} />
+        <Field label="行业" required>
+          <Select
+            searchable
+            value={form.industry || ''}
+            options={industryOptions}
+            placeholder="请选择行业"
+            searchPlaceholder="搜索行业"
+            onChange={(industry) => update({ industry })}
+          />
         </Field>
-        <Field label="负责人" hint="不选则由后台设置为当前登录用户">
+        <Field label="负责人" required>
           <select value={form.ownerId || ''} onChange={(event) => update({ ownerId: event.target.value })}>
-            <option value="">默认当前登录用户</option>
+            <option value="">请选择负责人</option>
             {form.ownerId && !hasSelectedOwner && <option value={form.ownerId}>当前负责人</option>}
             {ownerOptions.map((item) => <option value={item.id} key={item.id}>{ownerOptionLabel(item)}</option>)}
           </select>
         </Field>
-        <Field label="联系人">
+        <Field label="主要联系人" required hint="客户内部与销售直接沟通的主要对接人姓名">
           <input value={form.contactName || ''} onChange={(event) => update({ contactName: event.target.value })} />
         </Field>
-        <Field label="联系电话">
+        <Field label="联系电话" required>
           <input value={form.contactPhone || ''} onChange={(event) => update({ contactPhone: event.target.value })} />
         </Field>
-        <Field label="联系邮箱">
-          <input value={form.contactEmail || ''} onChange={(event) => update({ contactEmail: event.target.value })} />
+        <Field label="联系邮箱" required>
+          <input type="email" value={form.contactEmail || ''} onChange={(event) => update({ contactEmail: event.target.value })} />
         </Field>
         <Field label="备注">
           <textarea rows="4" value={form.remark || ''} onChange={(event) => update({ remark: event.target.value })} />

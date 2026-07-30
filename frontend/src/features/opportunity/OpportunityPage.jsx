@@ -499,7 +499,7 @@ function OpportunityFormModal({
         <Field label="预计成交日期">
           <input type="date" value={form.expectedCloseDate || ''} onChange={(event) => update({ expectedCloseDate: event.target.value })} />
         </Field>
-        <Field label="产品明细" className="wide-field">
+        <Field label="产品明细" className="wide-field" as="div">
           <OpportunityProductEditor
             products={form.products || []}
             productOptions={productOptions || []}

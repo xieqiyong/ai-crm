@@ -1,6 +1,8 @@
 package com.hz.crm.agent.web.tool;
 
 import com.alibaba.fastjson2.JSON;
+import com.alibaba.fastjson2.JSONObject;
+import com.hz.crm.agent.runtime.core.AgentRuntimeRequest;
 import io.agentscope.core.message.ToolResultBlock;
 import io.agentscope.core.tool.AgentTool;
 import io.agentscope.core.tool.ToolCallParam;
@@ -13,6 +15,16 @@ import reactor.core.publisher.Mono;
 
 @Component
 public class LeadAnalysisResultTool implements AgentTool {
+
+    public static final String RESULT_CONTEXT_KEY = "leadAnalysisResult";
+
+    private AgentRuntimeRequest runtimeRequest;
+
+    public LeadAnalysisResultTool bind(AgentRuntimeRequest request) {
+        LeadAnalysisResultTool tool = new LeadAnalysisResultTool();
+        tool.runtimeRequest = request;
+        return tool;
+    }
 
     @Override
     public String getName() {
@@ -69,7 +81,11 @@ public class LeadAnalysisResultTool implements AgentTool {
         if (input == null || input.isEmpty()) {
             return Mono.just(ToolResultBlock.error("线索分析结果不能为空"));
         }
-        return Mono.just(ToolResultBlock.text("lead_analysis_result(" + JSON.toJSONString(input) + ")"));
+        JSONObject result = JSON.parseObject(JSON.toJSONString(input));
+        if (runtimeRequest != null && runtimeRequest.getContext() != null) {
+            runtimeRequest.getContext().put(RESULT_CONTEXT_KEY, result);
+        }
+        return Mono.just(ToolResultBlock.text(JSON.toJSONString(result)));
     }
 
     private Map<String, Object> stringField(String description) {

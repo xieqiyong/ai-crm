@@ -25,7 +25,9 @@ import {
   useConfirmDialog,
 } from '../../components'
 import { useCustomerOptions } from '../../hooks/useCustomerOptions'
+import { useCustomerIndustryOptions } from '../../hooks/useCustomerIndustryOptions'
 import { ownerName, useOwnerOptions } from '../../hooks/useOwnerOptions'
+import { validateCustomerForm } from '../../models/customerForm'
 import {
   leadStatusText,
   leadStatusTone,
@@ -57,6 +59,7 @@ export function LeadDetailPage({ routeParams, can, notify, navigate }) {
   const canFollowup = can('crm:followup:manage') || can('crm:followup:create')
   const ownerOptions = useOwnerOptions(notify)
   const customerOptions = useCustomerOptions(notify, canBindCustomer)
+  const industryOptions = useCustomerIndustryOptions(notify, canConvert)
   const { confirm, dialogProps } = useConfirmDialog()
   const [data, setData] = useState(null)
   const [loading, setLoading] = useState(true)
@@ -149,9 +152,15 @@ export function LeadDetailPage({ routeParams, can, notify, navigate }) {
       notify('线索编号不能为空', 'info')
       return
     }
-    if (form.convertType === 'CREATE_CUSTOMER' && !form.customerName) {
-      notify('客户名称不能为空', 'info')
-      return
+    if (form.convertType === 'CREATE_CUSTOMER') {
+      const validationMessage = validateCustomerForm(
+        { ...form, name: form.customerName },
+        industryOptions,
+      )
+      if (validationMessage) {
+        notify(validationMessage, 'info')
+        return
+      }
     }
     if (form.convertType === 'BIND_CUSTOMER' && !form.customerId) {
       notify('请选择要绑定的客户', 'info')
@@ -407,6 +416,7 @@ export function LeadDetailPage({ routeParams, can, notify, navigate }) {
         form={converting}
         ownerOptions={ownerOptions}
         customerOptions={customerOptions}
+        industryOptions={industryOptions}
         canBindCustomer={canBindCustomer}
         onChange={setConverting}
         onClose={() => setConverting(null)}

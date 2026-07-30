@@ -18,10 +18,13 @@ import {
   Modal,
   OwnerAssignModal,
   PageHeader,
+  Select,
   useConfirmDialog,
 } from '../../components'
 import { customerOptionLabel, useCustomerOptions } from '../../hooks/useCustomerOptions'
+import { useCustomerIndustryOptions } from '../../hooks/useCustomerIndustryOptions'
 import { ownerName, ownerOptionLabel, useOwnerOptions } from '../../hooks/useOwnerOptions'
+import { validateCustomerForm } from '../../models/customerForm'
 import {
   customerLevelText,
   customerStatusOptions,
@@ -82,9 +85,81 @@ export function formatDateTime(value) {
 function compactQuery(query) {
   return {
     pageNo: query.pageNo || 1,
-    pageSize: query.pageSize || 20,
+    pageSize: query.pageSize || 10,
     keyword: query.keyword || undefined,
     status: query.status || undefined,
+  }
+}
+
+function leadListStateKey(currentUser) {
+  const tenantId = currentUser?.tenantId || 'default'
+  const userId = currentUser?.userId || currentUser?.username || 'anonymous'
+  return `crm.lead.list.query.${tenantId}.${userId}`
+}
+
+function leadLastViewedKey(currentUser) {
+  const tenantId = currentUser?.tenantId || 'default'
+  const userId = currentUser?.userId || currentUser?.username || 'anonymous'
+  return `crm.lead.list.last-viewed.${tenantId}.${userId}`
+}
+
+function isPageReload() {
+  const navigationEntry = window.performance?.getEntriesByType?.('navigation')?.[0]
+  if (navigationEntry) {
+    return navigationEntry.type === 'reload'
+  }
+  return window.performance?.navigation?.type === 1
+}
+
+const resetLeadPageAfterReload = isPageReload()
+  && window.location.hash.replace('#/', '').split('?')[0] === 'leads'
+let leadPageReloadHandled = false
+
+function readLeadListQuery(currentUser) {
+  const defaultQuery = { keyword: '', status: '', pageNo: 1, pageSize: 10 }
+  const resetPageNo = resetLeadPageAfterReload && !leadPageReloadHandled
+  leadPageReloadHandled = true
+  try {
+    const stored = window.sessionStorage.getItem(leadListStateKey(currentUser))
+    if (!stored) return defaultQuery
+    const parsed = JSON.parse(stored)
+    return {
+      keyword: typeof parsed.keyword === 'string' ? parsed.keyword : '',
+      status: typeof parsed.status === 'string' ? parsed.status : '',
+      pageNo: resetPageNo ? 1 : Math.max(1, Number.parseInt(parsed.pageNo, 10) || 1),
+      pageSize: 10,
+    }
+  } catch {
+    return defaultQuery
+  }
+}
+
+function readLastViewedLeadId(currentUser) {
+  try {
+    return window.sessionStorage.getItem(leadLastViewedKey(currentUser)) || ''
+  } catch {
+    return ''
+  }
+}
+
+function saveLeadListQuery(currentUser, query) {
+  try {
+    window.sessionStorage.setItem(leadListStateKey(currentUser), JSON.stringify({
+      keyword: query.keyword || '',
+      status: query.status || '',
+      pageNo: query.pageNo || 1,
+      pageSize: 10,
+    }))
+  } catch {
+    // 浏览器禁用会话存储时不影响线索查询
+  }
+}
+
+function saveLastViewedLeadId(currentUser, leadId) {
+  try {
+    window.sessionStorage.setItem(leadLastViewedKey(currentUser), String(leadId))
+  } catch {
+    // 浏览器禁用会话存储时不影响线索详情访问
   }
 }
 
@@ -280,7 +355,7 @@ function resolveConvertAdvice(analysis) {
   }
 }
 
-export function LeadPage({ can, notify, navigate }) {
+export function LeadPage({ can, notify, navigate, currentUser }) {
   const canManage = can('crm:lead:manage')
   const canAssign = can('crm:lead:assign')
   const canCreate = canManage || can('crm:lead:create')
@@ -291,10 +366,14 @@ export function LeadPage({ can, notify, navigate }) {
   const canAnalyze = can('crm:assistant:use') && (can('crm:lead:view') || canManage)
   const ownerOptions = useOwnerOptions(notify)
   const customerOptions = useCustomerOptions(notify, canBindCustomer)
+  const industryOptions = useCustomerIndustryOptions(notify, canConvert)
   const { confirm, dialogProps } = useConfirmDialog()
   const importInputRef = useRef(null)
-  const [query, setQuery] = useState({ keyword: '', status: '', pageNo: 1, pageSize: 10 })
+  const lastViewedRowRef = useRef(null)
+  const [query, setQuery] = useState(() => readLeadListQuery(currentUser))
   const [page, setPage] = useState(emptyPage)
+  const [jumpPage, setJumpPage] = useState('')
+  const [lastViewedLeadId, setLastViewedLeadId] = useState(() => readLastViewedLeadId(currentUser))
   const [loading, setLoading] = useState(true)
   const [editing, setEditing] = useState(null)
   const [assigning, setAssigning] = useState(null)
@@ -311,7 +390,13 @@ export function LeadPage({ can, notify, navigate }) {
     try {
       const data = await api.lead.page(compactQuery(nextQuery))
       setPage(data || emptyPage)
-      setQuery(nextQuery)
+      const resolvedQuery = {
+        ...nextQuery,
+        pageNo: data?.pageNo || nextQuery.pageNo || 1,
+        pageSize: 10,
+      }
+      setQuery(resolvedQuery)
+      saveLeadListQuery(currentUser, resolvedQuery)
     } catch (err) {
       notify(err.message || '线索数据加载失败', 'info')
     } finally {
@@ -338,6 +423,8 @@ export function LeadPage({ can, notify, navigate }) {
   }
 
   const openDetail = (row) => {
+    setLastViewedLeadId(String(row.id))
+    saveLastViewedLeadId(currentUser, row.id)
     navigate(`leads/detail/${encodeURIComponent(row.id)}`)
   }
 
@@ -392,9 +479,15 @@ export function LeadPage({ can, notify, navigate }) {
       notify('线索编号不能为空', 'info')
       return
     }
-    if (form.convertType === 'CREATE_CUSTOMER' && !form.customerName) {
-      notify('客户名称不能为空', 'info')
-      return
+    if (form.convertType === 'CREATE_CUSTOMER') {
+      const validationMessage = validateCustomerForm(
+        { ...form, name: form.customerName },
+        industryOptions,
+      )
+      if (validationMessage) {
+        notify(validationMessage, 'info')
+        return
+      }
     }
     if (form.convertType === 'BIND_CUSTOMER' && !form.customerId) {
       notify('请选择要绑定的客户', 'info')
@@ -488,8 +581,39 @@ export function LeadPage({ can, notify, navigate }) {
   const pageSize = page.pageSize || query.pageSize || 10
   const totalPages = Math.max(1, Math.ceil((page.total || 0) / pageSize))
 
+  useEffect(() => {
+    setJumpPage(String(currentPage))
+  }, [currentPage])
+
+  useEffect(() => {
+    if (loading || !lastViewedLeadId || !lastViewedRowRef.current) return undefined
+    const timer = window.setTimeout(() => {
+      lastViewedRowRef.current?.scrollIntoView({
+        behavior: 'smooth',
+        block: 'center',
+        inline: 'nearest',
+      })
+    }, 80)
+    return () => window.clearTimeout(timer)
+  }, [loading, lastViewedLeadId, currentPage])
+
+  const goToPage = (targetPage) => {
+    if (loading || targetPage === currentPage) return
+    load({ ...query, pageNo: targetPage })
+  }
+
+  const jumpToPage = (event) => {
+    event.preventDefault()
+    const targetPage = Number.parseInt(jumpPage, 10)
+    if (!Number.isInteger(targetPage) || targetPage < 1 || targetPage > totalPages) {
+      notify(`请输入 1 到 ${totalPages} 之间的页码`, 'info')
+      return
+    }
+    goToPage(targetPage)
+  }
+
   return (
-    <div className="page lead-list-page">
+    <div className="page lead-list-page compact-list-page">
       <PageHeader
         title="线索管理"
         description={`当前真实线索 ${page.total || 0} 条`}
@@ -520,7 +644,7 @@ export function LeadPage({ can, notify, navigate }) {
         )}
       />
 
-      <form className="filter-card customer-filter-card" onSubmit={search}>
+      <form className="filter-card customer-filter-card list-filter-card" onSubmit={search}>
         <div className="filter-search">
           <Search size={17} />
           <input
@@ -540,9 +664,19 @@ export function LeadPage({ can, notify, navigate }) {
       </form>
 
       <div className="lead-table-layout">
-        <Card className="table-card customer-table-card">
-          <div className="data-table-wrap">
-            <table className="data-table customer-list-table">
+        <Card className="table-card customer-table-card lead-list-table-card">
+          <div className="data-table-wrap lead-list-table-wrap">
+            <table className="data-table customer-list-table lead-list-table">
+              <colgroup>
+                <col className="lead-column-name" />
+                <col className="lead-column-company" />
+                <col className="lead-column-contact" />
+                <col className="lead-column-source" />
+                <col className="lead-column-status" />
+                <col className="lead-column-owner" />
+                <col className="lead-column-created" />
+                <col className="lead-column-actions" />
+              </colgroup>
               <thead>
                 <tr>
                   <th>名称</th>
@@ -551,88 +685,96 @@ export function LeadPage({ can, notify, navigate }) {
                   <th>来源</th>
                   <th>状态</th>
                   <th>负责人</th>
-                  <th>更新时间</th>
-                  <th>操作</th>
+                  <th>创建时间</th>
+                  <th className="lead-list-actions-column">操作</th>
                 </tr>
               </thead>
               <tbody>
-                {records.map((row) => (
-                  <tr key={row.id} onClick={() => openDetail(row)}>
-                    <td><strong>{row.name}</strong><small>ID：{row.id}</small></td>
-                    <td>{row.companyName || '-'}</td>
-                    <td><span>{row.phone || '-'}</span><small>{row.email || '-'}</small></td>
-                    <td>{leadSourceText[row.source] || row.source || '-'}</td>
-                    <td><Badge dot tone={statusTone[row.status] || 'neutral'}>{statusText[row.status] || row.status || '-'}</Badge></td>
-                    <td>{ownerName(row)}</td>
-                    <td>{formatDateTime(row.updatedAt || row.createdAt)}</td>
-                    <td>
-                      <div className="table-action-row text-actions" onClick={(event) => event.stopPropagation()}>
-                        <button
-                          type="button"
-                          className="table-text-button"
-                          onClick={() => openDetail(row)}
-                        >
-                          详情
-                        </button>
-                        {canManage && (
+                {records.map((row) => {
+                  const isLastViewed = String(row.id) === String(lastViewedLeadId)
+                  return (
+                    <tr
+                      key={row.id}
+                      ref={isLastViewed ? lastViewedRowRef : null}
+                      className={isLastViewed ? 'lead-row-last-viewed' : undefined}
+                      onClick={() => openDetail(row)}
+                    >
+                      <td><strong>{row.name || '-'}</strong></td>
+                      <td>{row.companyName || '-'}</td>
+                      <td><span>{row.phone || '-'}</span><small>{row.email || '-'}</small></td>
+                      <td>{leadSourceText[row.source] || row.source || '-'}</td>
+                      <td><Badge dot tone={statusTone[row.status] || 'neutral'}>{statusText[row.status] || row.status || '-'}</Badge></td>
+                      <td>{ownerName(row)}</td>
+                      <td>{formatDateTime(row.createdAt)}</td>
+                      <td className="lead-list-actions-column">
+                        <div className="table-action-row text-actions" onClick={(event) => event.stopPropagation()}>
                           <button
                             type="button"
                             className="table-text-button"
-                            onClick={() => setEditing(toForm(row))}
+                            onClick={() => openDetail(row)}
                           >
-                            编辑
+                            详情
                           </button>
-                        )}
-                        {canAssign && (
-                          <button
-                            type="button"
-                            className="table-text-button"
-                            onClick={() => setAssigning(row)}
-                          >
-                            分配
-                          </button>
-                        )}
-                        {canAnalyze && (
-                          <button
-                            type="button"
-                            className="table-text-button"
-                            disabled={String(analyzingId || '') === String(row.id)}
-                            onClick={() => analyzeLead(row)}
-                          >
-                            {String(analyzingId || '') === String(row.id) ? '分析中' : 'AI分析'}
-                          </button>
-                        )}
-                        {canConvert && row.status !== 'CONVERTED' && (
-                          <button
-                            type="button"
-                            className="table-text-button primary"
-                            onClick={() => setConverting(toConvertForm(row))}
-                          >
-                            转客户
-                          </button>
-                        )}
-                        {row.status === 'CONVERTED' && row.customerId && (
-                          <button
-                            type="button"
-                            className="table-text-button"
-                            onClick={() => navigate(`customers/detail/${encodeURIComponent(row.customerId)}`)}
-                          >
-                            查看客户
-                          </button>
-                        )}
-                        {canDelete && (
-                          <button
-                            type="button"
-                            className="table-text-button danger"
-                            onClick={() => deleteLead(row)}
-                          >
-                            删除
-                          </button>
-                        )}
-                      </div>
-                    </td>
-                  </tr>
-                ))}
+                          {canManage && (
+                            <button
+                              type="button"
+                              className="table-text-button"
+                              onClick={() => setEditing(toForm(row))}
+                            >
+                              编辑
+                            </button>
+                          )}
+                          {canAssign && (
+                            <button
+                              type="button"
+                              className="table-text-button"
+                              onClick={() => setAssigning(row)}
+                            >
+                              分配
+                            </button>
+                          )}
+                          {canAnalyze && (
+                            <button
+                              type="button"
+                              className="table-text-button"
+                              disabled={String(analyzingId || '') === String(row.id)}
+                              onClick={() => analyzeLead(row)}
+                            >
+                              {String(analyzingId || '') === String(row.id) ? '分析中' : 'AI分析'}
+                            </button>
+                          )}
+                          {canConvert && row.status !== 'CONVERTED' && (
+                            <button
+                              type="button"
+                              className="table-text-button primary"
+                              onClick={() => setConverting(toConvertForm(row))}
+                            >
+                              转客户
+                            </button>
+                          )}
+                          {row.status === 'CONVERTED' && row.customerId && (
+                            <button
+                              type="button"
+                              className="table-text-button"
+                              onClick={() => navigate(`customers/detail/${encodeURIComponent(row.customerId)}`)}
+                            >
+                              查看客户
+                            </button>
+                          )}
+                          {canDelete && (
+                            <button
+                              type="button"
+                              className="table-text-button danger"
+                              onClick={() => deleteLead(row)}
+                            >
+                              删除
+                            </button>
+                          )}
+                        </div>
+                      </td>
+                    </tr>
+                  )
+                })}
               </tbody>
             </table>
             {!loading && !records.length && (
@@ -642,7 +784,7 @@ export function LeadPage({ can, notify, navigate }) {
                 <span>当前查询条件下没有真实线索记录</span>
               </div>
             )}
-            {loading && (
+            {loading && !records.length && (
               <div className="empty-table">
                 <RefreshCw size={26} />
                 <b>正在加载线索数据</b>
@@ -652,10 +794,25 @@ export function LeadPage({ can, notify, navigate }) {
           </div>
           <div className="table-footer">
             <span>共 {page.total || 0} 条，当前第 {currentPage} / {totalPages} 页</span>
-            <div className="pagination">
-              <button type="button" disabled={currentPage <= 1} onClick={() => load({ ...query, pageNo: currentPage - 1 })}>‹</button>
+            <div className="pagination lead-list-pagination">
+              <button type="button" disabled={loading || currentPage <= 1} onClick={() => goToPage(currentPage - 1)}>‹</button>
               <button type="button" className="active">{currentPage}</button>
-              <button type="button" disabled={currentPage >= totalPages} onClick={() => load({ ...query, pageNo: currentPage + 1 })}>›</button>
+              <button type="button" disabled={loading || currentPage >= totalPages} onClick={() => goToPage(currentPage + 1)}>›</button>
+              <form className="lead-page-jump" onSubmit={jumpToPage}>
+                <span>跳至</span>
+                <input
+                  type="number"
+                  min="1"
+                  max={totalPages}
+                  step="1"
+                  inputMode="numeric"
+                  aria-label="跳转页码"
+                  value={jumpPage}
+                  onChange={(event) => setJumpPage(event.target.value)}
+                />
+                <span>页</span>
+                <button type="submit" className="lead-page-jump-button" disabled={loading}>跳转</button>
+              </form>
             </div>
           </div>
         </Card>
@@ -685,6 +842,7 @@ export function LeadPage({ can, notify, navigate }) {
         form={converting}
         ownerOptions={ownerOptions}
         customerOptions={customerOptions}
+        industryOptions={industryOptions}
         canBindCustomer={canBindCustomer}
         onChange={setConverting}
         onClose={() => setConverting(null)}
@@ -1050,7 +1208,17 @@ function DetailItem({ icon: Icon, label, value }) {
   )
 }
 
-export function LeadConvertModal({ open, form, ownerOptions, customerOptions, canBindCustomer, onChange, onClose, onSave }) {
+export function LeadConvertModal({
+  open,
+  form,
+  ownerOptions,
+  customerOptions,
+  industryOptions,
+  canBindCustomer,
+  onChange,
+  onClose,
+  onSave,
+}) {
   const update = (patch) => onChange({ ...form, ...patch })
   const hasSelectedOwner = ownerOptions.some((item) => String(item.id) === String(form?.ownerId || ''))
   const hasSelectedCustomer = customerOptions.some((item) => String(item.id) === String(form?.customerId || ''))
@@ -1087,37 +1255,48 @@ export function LeadConvertModal({ open, form, ownerOptions, customerOptions, ca
           </Field>
         ) : (
           <>
-            <Field label="客户名称" required>
+            <div className="customer-identity-note customer-form-grid-wide">
+              <b>客户主体与联系人</b>
+              <span>客户名称填写企业、机构或个人客户的主体名称；主要联系人填写该客户内部与销售直接沟通的对接人。</span>
+            </div>
+            <Field label="客户名称" required hint="企业、机构或个人客户的主体名称">
               <input value={form.customerName || ''} onChange={(event) => update({ customerName: event.target.value })} />
             </Field>
-            <Field label="客户级别">
+            <Field label="客户级别" required>
               <select value={form.level || 'NORMAL'} onChange={(event) => update({ level: event.target.value })}>
                 {Object.entries(customerLevelText).map(([value, label]) => <option value={value} key={value}>{label}</option>)}
               </select>
             </Field>
-            <Field label="客户状态">
+            <Field label="客户状态" required>
               <select value={form.status || recommendedCustomerStatus} onChange={(event) => update({ status: event.target.value })}>
                 {customerStatusOptions.map((item) => <option value={item.value} key={item.value}>{item.label}</option>)}
               </select>
             </Field>
-            <Field label="负责人" hint="不选则由后台设置为当前登录用户">
+            <Field label="负责人" required>
               <select value={form.ownerId || ''} onChange={(event) => update({ ownerId: event.target.value })}>
-                <option value="">默认当前登录用户</option>
+                <option value="">请选择负责人</option>
                 {form.ownerId && !hasSelectedOwner && <option value={form.ownerId}>当前负责人</option>}
                 {ownerOptions.map((item) => <option value={item.id} key={item.id}>{ownerOptionLabel(item)}</option>)}
               </select>
             </Field>
-            <Field label="行业">
-              <input value={form.industry || ''} onChange={(event) => update({ industry: event.target.value })} />
+            <Field label="行业" required>
+              <Select
+                searchable
+                value={form.industry || ''}
+                options={industryOptions}
+                placeholder="请选择行业"
+                searchPlaceholder="搜索行业"
+                onChange={(industry) => update({ industry })}
+              />
             </Field>
-            <Field label="联系人">
+            <Field label="主要联系人" required hint="客户内部与销售直接沟通的主要对接人姓名">
               <input value={form.contactName || ''} onChange={(event) => update({ contactName: event.target.value })} />
             </Field>
-            <Field label="联系电话">
+            <Field label="联系电话" required>
               <input value={form.contactPhone || ''} onChange={(event) => update({ contactPhone: event.target.value })} />
             </Field>
-            <Field label="联系邮箱">
-              <input value={form.contactEmail || ''} onChange={(event) => update({ contactEmail: event.target.value })} />
+            <Field label="联系邮箱" required>
+              <input type="email" value={form.contactEmail || ''} onChange={(event) => update({ contactEmail: event.target.value })} />
             </Field>
             <Field label="备注">
               <textarea rows="4" value={form.remark || ''} onChange={(event) => update({ remark: event.target.value })} />

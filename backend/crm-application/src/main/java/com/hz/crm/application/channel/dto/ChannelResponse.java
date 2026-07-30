@@ -58,6 +58,14 @@ public class ChannelResponse {
 
     private String remark;
 
+    private String externalProvider;
+
+    private String externalKey;
+
+    private String externalVersion;
+
+    private String sourceSnapshot;
+
     private boolean promotionReady;
 
     private String promotionBlockReason;

@@ -1,6 +1,6 @@
 services:
   crm-postgres:
-    image: postgres:16-alpine
+    image: docker.1ms.run/postgres:16-alpine
     container_name: crm-postgres
     restart: unless-stopped
     environment:
@@ -19,7 +19,7 @@ services:
       - crm-net
 
   crm-redis:
-    image: redis:7-alpine
+    image: docker.1ms.run/redis:7-alpine
     container_name: crm-redis
     restart: unless-stopped
     environment:
@@ -44,7 +44,7 @@ services:
       - crm-net
 
   crm-minio:
-    image: minio/minio:latest
+    image: docker.1ms.run/minio/minio:latest
     container_name: crm-minio
     restart: unless-stopped
     environment:
@@ -107,6 +107,11 @@ services:
       CRM_CHANNEL_UPLOAD_DIR: ${CRM_CHANNEL_UPLOAD_DIR}
       CRM_STORAGE_UPLOAD_DIR: ${CRM_STORAGE_UPLOAD_DIR}
       CRM_STORAGE_PUBLIC_PATH: ${CRM_STORAGE_PUBLIC_PATH}
+      CRM_WECOM_BASE_URL: ${CRM_WECOM_BASE_URL:-https://qyapi.weixin.qq.com}
+      CRM_WECOM_CONNECT_TIMEOUT_MS: ${CRM_WECOM_CONNECT_TIMEOUT_MS:-5000}
+      CRM_WECOM_READ_TIMEOUT_MS: ${CRM_WECOM_READ_TIMEOUT_MS:-30000}
+      CRM_WECOM_SCHEDULE_DELAY_MS: ${CRM_WECOM_SCHEDULE_DELAY_MS:-60000}
+      CRM_WECOM_SCHEDULE_INITIAL_DELAY_MS: ${CRM_WECOM_SCHEDULE_INITIAL_DELAY_MS:-30000}
       CRM_AGENT_WORKSPACE: /app/data/agent-runtime
       CRM_AGENT_WEB_SEARCH_ENABLED: ${CRM_AGENT_WEB_SEARCH_ENABLED}
       CRM_AGENT_WEB_SEARCH_PROVIDER: ${CRM_AGENT_WEB_SEARCH_PROVIDER}

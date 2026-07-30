@@ -4,7 +4,7 @@ import {
   RefreshCw, RotateCcw, ShieldCheck, Trash2,
 } from 'lucide-react'
 import { api } from '../../api'
-import { Badge, Button, Card, Drawer, Field, Modal, PageHeader } from '../../components'
+import { Badge, Button, Card, Drawer, Field, Modal, PageHeader, SecretInput } from '../../components'
 
 const DATA_SCOPE_LABELS = {
   ALL: '全部数据',
@@ -44,6 +44,8 @@ const MODULE_DEFINITIONS = [
   { key: 'products', label: '产品管理', menuCodes: ['menu.products'], actionPrefixes: ['crm:product:'] },
   { key: 'opportunities', label: '商机管理', menuCodes: ['menu.opportunities'], actionPrefixes: ['crm:opportunity:'] },
   { key: 'followups', label: '跟进记录', menuCodes: ['menu.followups'] },
+  { key: 'mail', label: '客户邮件', menuCodes: ['menu.mail'], actionPrefixes: ['crm:mail:'] },
+  { key: 'notifications', label: '系统通知', actionPrefixes: ['crm:notification:'] },
   { key: 'tasks', label: '销售任务', menuCodes: ['menu.tasks'] },
   { key: 'assistant', label: 'AI智能体助手', menuCodes: ['menu.assistant'], actionPrefixes: ['crm:assistant:'] },
   { key: 'agent_config', label: '智能体配置', menuCodes: ['menu.agent_config'], actionPrefixes: ['crm:agent:'] },
@@ -53,8 +55,8 @@ const MODULE_DEFINITIONS = [
   {
     key: 'settings',
     label: '系统与运维',
-    menuCodes: ['menu.settings'],
-    actionPrefixes: ['crm:settings:', 'crm:workflow:', 'crm:observability:'],
+    menuCodes: ['menu.settings', 'menu.audit_logs'],
+    actionPrefixes: ['crm:settings:', 'crm:workflow:', 'crm:observability:', 'crm:audit:'],
   },
 ]
 
@@ -182,7 +184,7 @@ export function OrganizationAdminPage({ can, notify }) {
       />
       <PermissionModal open={modal.type === 'permission'} data={modal.data} onClose={closeModal} reload={load} />
       <RoleModal open={modal.type === 'role'} data={modal.data} overview={overview} onClose={closeModal} reload={load} notify={notify} />
-      <UserModal open={modal.type === 'user'} data={modal.data} overview={overview} onClose={closeModal} reload={load} />
+      <UserModal open={modal.type === 'user'} data={modal.data} overview={overview} onClose={closeModal} reload={load} notify={notify} />
     </div>
   )
 }
@@ -571,7 +573,7 @@ function PermissionBlock({ title, permissions, selectedCodes, onTogglePermission
   )
 }
 
-function UserModal({ open, data, overview, onClose, reload }) {
+function UserModal({ open, data, overview, onClose, reload, notify }) {
   const [form, setForm] = useState(data || { username: '', displayName: '', departmentId: '', password: '', enabled: true, roleIds: [] })
   useEffect(() => setForm(data || { username: '', displayName: '', departmentId: '', password: '', enabled: true, roleIds: [] }), [data, open])
   const superAdminRole = overview.roles.find((role) => isSuperAdminRole(role))
@@ -590,15 +592,40 @@ function UserModal({ open, data, overview, onClose, reload }) {
     setForm({ ...form, roleIds: exists ? form.roleIds.filter((item) => item !== id) : [...(form.roleIds || []), id] })
   }
   const save = async () => {
-    await api.admin.saveUser({ ...form, departmentId: form.departmentId || null })
-    onClose()
-    reload()
+    const usernameValid = /^[A-Za-z][A-Za-z0-9_.-]{3,31}$/.test(form.username || '')
+    if (!usernameValid) {
+      notify('用户名为4至32位，必须以字母开头，仅支持字母、数字、下划线、短横线和点', 'info')
+      return
+    }
+    if (form.password) {
+      const passwordValid = form.password.length >= 8
+        && form.password.length <= 64
+        && /[A-Z]/.test(form.password)
+        && /[a-z]/.test(form.password)
+        && /[0-9]/.test(form.password)
+        && /[^A-Za-z0-9]/.test(form.password)
+        && !/\s/.test(form.password)
+      if (!passwordValid) {
+        notify('密码为8至64位，必须同时包含大写字母、小写字母、数字和特殊字符，不能包含空格', 'info')
+        return
+      }
+    }
+    try {
+      await api.admin.saveUser({ ...form, departmentId: form.departmentId || null })
+      notify(data?.id ? '用户信息已保存' : '用户创建成功')
+      onClose()
+      reload()
+    } catch (err) {
+      notify(err.message || '用户保存失败', 'info')
+    }
   }
   return <Modal open={open} title={data?.id ? '编辑用户' : '新建用户'} onClose={onClose} footer={<><Button variant="secondary" onClick={onClose}>取消</Button><Button onClick={save}>保存</Button></>}>
-    <Field label="用户名" required><input disabled={Boolean(data?.id)} value={form.username} onChange={(e) => setForm({ ...form, username: e.target.value })} /></Field>
+    <Field label="用户名" required hint="4至32位，以字母开头，仅支持字母、数字、下划线、短横线和点"><input disabled={Boolean(data?.id)} maxLength={32} value={form.username} onChange={(e) => setForm({ ...form, username: e.target.value })} /></Field>
     <Field label="显示名称"><input value={form.displayName || ''} onChange={(e) => setForm({ ...form, displayName: e.target.value })} /></Field>
     <Field label="所属部门"><select value={form.departmentId || ''} onChange={(e) => setForm({ ...form, departmentId: e.target.value })}><option value="">不分配部门</option>{overview.departments.map((department) => <option value={department.id} key={department.id}>{department.name}</option>)}</select></Field>
-    <Field label={data?.id ? '修改密码' : '初始密码'} hint={data?.id ? '不填写则不修改密码' : '至少8位'}><input type="password" value={form.password || ''} onChange={(e) => setForm({ ...form, password: e.target.value })} /></Field>
+    <Field label={data?.id ? '修改密码' : '初始密码'} required={!data?.id} hint={`${data?.id ? '不填写则不修改。' : ''}8至64位，需包含大写字母、小写字母、数字和特殊字符，不能包含空格`}>
+      <SecretInput autoComplete="new-password" value={form.password || ''} onChange={(e) => setForm({ ...form, password: e.target.value })} />
+    </Field>
     <div className="role-grid">
       {overview.roles.map((role) => (
         <label className={`role-card ${isSuperAdminRole(role) ? 'locked' : ''}`} key={role.id}>

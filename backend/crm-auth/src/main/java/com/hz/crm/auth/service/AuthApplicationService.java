@@ -8,6 +8,7 @@ import com.hz.crm.auth.domain.SysRolePermissionEntity;
 import com.hz.crm.auth.domain.SysUserEntity;
 import com.hz.crm.auth.domain.SysUserRoleEntity;
 import com.hz.crm.auth.dto.ForgotPasswordRequest;
+import com.hz.crm.auth.dto.ChangePasswordRequest;
 import com.hz.crm.auth.dto.LoginRequest;
 import com.hz.crm.auth.dto.LoginResponse;
 import com.hz.crm.auth.dto.PasswordResetResponse;
@@ -18,12 +19,14 @@ import com.hz.crm.auth.repository.SysRolePermissionRepository;
 import com.hz.crm.auth.repository.SysRoleRepository;
 import com.hz.crm.auth.repository.SysUserRepository;
 import com.hz.crm.auth.repository.SysUserRoleRepository;
+import com.hz.crm.auth.mapper.SysUserMapper;
 import com.hz.crm.auth.security.CurrentUserContext;
 import com.hz.crm.auth.security.JwtPrincipal;
 import com.hz.crm.auth.security.JwtService;
 import com.hz.crm.auth.security.LoginSessionService;
 import com.hz.crm.common.exception.BusinessException;
 import com.hz.crm.common.redis.RedisCacheService;
+import com.hz.crm.common.time.DateTimes;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.UUID;
@@ -62,6 +65,12 @@ public class AuthApplicationService {
 
     @Autowired
     private RedisCacheService redisCacheService;
+
+    @Autowired
+    private SysUserMapper sysUserMapper;
+
+    @Autowired
+    private AccountCredentialPolicy accountCredentialPolicy;
 
     @Value("${crm.auth.password-reset.ttl-seconds:900}")
     private long passwordResetTtlSeconds;
@@ -109,6 +118,36 @@ public class AuthApplicationService {
         loginSessionService.remove(principal);
     }
 
+    @Transactional
+    public void changePassword(JwtPrincipal principal, ChangePasswordRequest request) {
+        if (principal == null || request == null) {
+            throw new BusinessException("AUTH_PASSWORD_001", "修改密码请求无效");
+        }
+        SysUserEntity user = sysUserMapper.selectById(principal.getUserId());
+        if (user == null || user.isDeleted() || !principal.getTenantId().equals(user.getTenantId())) {
+            throw new BusinessException("AUTH_PASSWORD_002", "当前用户不存在");
+        }
+        if (request.getCurrentPassword() == null
+                || !passwordEncoder.matches(request.getCurrentPassword(), user.getPasswordHash())) {
+            throw new BusinessException("AUTH_PASSWORD_003", "当前密码不正确");
+        }
+        if (request.getNewPassword() == null || !request.getNewPassword().equals(request.getConfirmPassword())) {
+            throw new BusinessException("AUTH_PASSWORD_004", "两次输入的新密码不一致");
+        }
+        if (passwordEncoder.matches(request.getNewPassword(), user.getPasswordHash())) {
+            throw new BusinessException("AUTH_PASSWORD_005", "新密码不能与当前密码相同");
+        }
+        accountCredentialPolicy.validatePassword(request.getNewPassword());
+        user.setPasswordHash(passwordEncoder.encode(request.getNewPassword()));
+        user.setUpdatedAt(DateTimes.now());
+        sysUserMapper.updateById(user);
+        loginSessionService.revokeOtherSessions(principal);
+    }
+
+    public void revokeOtherSessions(JwtPrincipal principal) {
+        loginSessionService.revokeOtherSessions(principal);
+    }
+
     @Transactional(readOnly = true)
     public PasswordResetResponse requestPasswordReset(ForgotPasswordRequest request) {
         PasswordResetResponse response = new PasswordResetResponse();
@@ -138,9 +177,7 @@ public class AuthApplicationService {
         if (request == null || request.getResetToken() == null || request.getResetToken().trim().length() == 0) {
             throw new BusinessException("AUTH_RESET_001", "重置码不能为空");
         }
-        if (request.getNewPassword() == null || request.getNewPassword().length() < 8) {
-            throw new BusinessException("AUTH_RESET_002", "新密码长度不能少于8位");
-        }
+        accountCredentialPolicy.validatePassword(request.getNewPassword());
         String key = passwordResetKey(request.getResetToken().trim());
         String value = redisCacheService.getString(key);
         if (value == null || value.trim().length() == 0 || value.indexOf(':') < 0) {
@@ -151,7 +188,9 @@ public class AuthApplicationService {
                 .findByIdAndTenantIdAndDeletedFalse(Long.valueOf(parts[1]), Long.valueOf(parts[0]))
                 .orElseThrow(() -> new BusinessException("AUTH_RESET_003", "重置码无效或已过期"));
         user.setPasswordHash(passwordEncoder.encode(request.getNewPassword()));
-        userRepository.save(user);
+        user.setUpdatedAt(DateTimes.now());
+        sysUserMapper.updateById(user);
+        loginSessionService.revokeAllSessions(user.getTenantId(), user.getId());
         redisCacheService.delete(key);
     }
 

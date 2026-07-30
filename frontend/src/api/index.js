@@ -10,6 +10,9 @@ import { dashboardApi } from './modules/dashboardApi'
 import { knowledgeApi } from './modules/knowledgeApi'
 import { observabilityApi } from './modules/observabilityApi'
 import { workflowApi } from './modules/workflowApi'
+import { wecomApi } from './modules/wecomApi'
+import { notificationApi } from './modules/notificationApi'
+import { mailApi } from './modules/mailApi'
 
 export const api = {
   auth: authApi,
@@ -29,6 +32,9 @@ export const api = {
   knowledge: knowledgeApi,
   workflow: workflowApi,
   observability: observabilityApi,
+  wecom: wecomApi,
+  notification: notificationApi,
+  mail: mailApi,
 }
 
 export { request } from './httpClient'

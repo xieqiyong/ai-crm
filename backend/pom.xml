@@ -26,6 +26,7 @@
         <module>crm-observability</module>
         <module>crm-agent-runtime</module>
         <module>crm-application</module>
+        <module>crm-wecom</module>
         <module>crm-agent-web</module>
         <module>crm-web</module>
     </modules>

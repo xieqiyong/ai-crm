@@ -8,6 +8,7 @@ import {
   FileText,
   Link2,
   MessageSquareText,
+  MessagesSquare,
   MoreHorizontal,
   Plus,
   RefreshCw,
@@ -30,6 +31,7 @@ import {
 } from '../../components'
 import { ownerName } from '../../hooks/useOwnerOptions'
 import { leadSourceOptions as sourceOptions, leadSourceText as sourceText } from '../../models/crmSource'
+import { WecomSyncModal } from './WecomSyncModal'
 
 const typeOptions = [
   { value: '', label: '全部类型' },
@@ -38,6 +40,7 @@ const typeOptions = [
   { value: 'AUDIO', label: '录音导入' },
   { value: 'VIDEO', label: '视频导入' },
   { value: 'DOCUMENT', label: '文档导入' },
+  { value: 'WECOM', label: '企业微信' },
 ]
 
 const statusOptions = [
@@ -74,6 +77,7 @@ const typeText = {
   AUDIO: '录音导入',
   VIDEO: '视频导入',
   DOCUMENT: '文档导入',
+  WECOM: '企业微信',
 }
 
 const emptyForm = {
@@ -198,6 +202,14 @@ function isImportedMaterial(row) {
     && ['DOCUMENT', 'AUDIO', 'VIDEO'].includes(row?.channelType)
 }
 
+function requiresAiAnalysis(row) {
+  return isImportedMaterial(row)
+}
+
+function supportsAiAnalysis(row) {
+  return requiresAiAnalysis(row) || row?.channelType === 'WECOM'
+}
+
 function isSameId(first, second) {
   if (first === undefined || first === null || second === undefined || second === null) {
     return false
@@ -206,14 +218,20 @@ function isSameId(first, second) {
 }
 
 function channelStatusLabel(row) {
-  if (isImportedMaterial(row) && row?.status === 'ANALYZED' && !row?.promotionReady) {
+  if (row?.channelType === 'WECOM' && row?.status === 'WAITING_AI_ANALYSIS') {
+    return '待跟进'
+  }
+  if (requiresAiAnalysis(row) && row?.status === 'ANALYZED' && !row?.promotionReady) {
     return '待AI重整'
   }
   return statusText[row?.status] || row?.status
 }
 
 function channelStatusTone(row) {
-  if (isImportedMaterial(row) && row?.status === 'ANALYZED' && !row?.promotionReady) {
+  if (row?.channelType === 'WECOM' && row?.status === 'WAITING_AI_ANALYSIS') {
+    return 'info'
+  }
+  if (requiresAiAnalysis(row) && row?.status === 'ANALYZED' && !row?.promotionReady) {
     return 'warning'
   }
   return statusTone[row?.status] || 'neutral'
@@ -240,7 +258,7 @@ function toEditForm(row) {
     phone: row.phone || '',
     email: row.email || '',
     remark: row.remark || '',
-    importedMaterial: Boolean(row.importedMaterial) || isImportedMaterial(row),
+    importedMaterial: Boolean(row.importedMaterial) || requiresAiAnalysis(row),
   }
 }
 
@@ -266,6 +284,9 @@ export function ChannelPage({ can, notify }) {
   const canMedia = can('crm:channel:media') || canManage
   const canAnalyze = can('crm:channel:analyze') || canManage
   const canPromote = can('crm:channel:promote')
+  const canWecomView = can('crm:wecom:view') || can('crm:channel:view') || canManage
+  const canWecomManage = can('crm:wecom:manage') || canManage
+  const canWecomSync = can('crm:wecom:sync') || canManage
   const { confirm, dialogProps } = useConfirmDialog()
 
   const [query, setQuery] = useState({
@@ -289,6 +310,7 @@ export function ChannelPage({ can, notify }) {
   const [marketingFormsLoading, setMarketingFormsLoading] = useState(true)
   const [marketingFormEditing, setMarketingFormEditing] = useState(null)
   const [analyzingId, setAnalyzingId] = useState(null)
+  const [wecomOpen, setWecomOpen] = useState(false)
 
   const load = async (nextQuery = query) => {
     setLoading(true)
@@ -438,6 +460,11 @@ export function ChannelPage({ can, notify }) {
           导入渠道材料
         </Button>
       )}
+      {canWecomView && (
+        <Button variant="secondary" icon={MessagesSquare} onClick={() => setWecomOpen(true)}>
+          企业微信同步
+        </Button>
+      )}
       {canManage && (
         <Button variant="secondary" icon={Link2} onClick={() => setMarketingFormEditing(emptyMarketingForm)}>
           新建获客表单
@@ -550,6 +577,14 @@ export function ChannelPage({ can, notify }) {
         onDelete={deleteChannel}
       />
       <ConfirmDialog {...dialogProps} />
+      <WecomSyncModal
+        open={wecomOpen}
+        canManage={canWecomManage}
+        canSync={canWecomSync}
+        onClose={() => setWecomOpen(false)}
+        notify={notify}
+        onSynced={refreshFirstPage}
+      />
     </div>
   )
 }
@@ -716,11 +751,14 @@ function ChannelTableRow({
 }) {
   const promoted = Boolean(row.leadId)
   const documentImported = row.channelType === 'DOCUMENT'
-  const importedMaterial = isImportedMaterial(row)
-  const analysisReady = importedMaterial
+  const aiManaged = supportsAiAnalysis(row)
+  const analysisReady = aiManaged
     && !promoted
-    && !row.promotionReady
-    && (documentImported || row.status === 'TRANSCRIBED' || row.status === 'WAITING_AI_ANALYSIS')
+    && row.status !== 'ANALYZED'
+    && (row.channelType === 'WECOM'
+      || documentImported
+      || row.status === 'TRANSCRIBED'
+      || row.status === 'WAITING_AI_ANALYSIS')
 
   return (
     <tr onClick={() => onSelect(row)}>
@@ -743,7 +781,7 @@ function ChannelTableRow({
         </Badge>
       </td>
       <td>
-        <span>{row.mediaFileName || '-'}</span>
+        <span>{row.mediaFileName || (row.channelType === 'WECOM' ? '企业微信客户' : '-')}</span>
         <small>{formatSize(row.mediaSize)}</small>
       </td>
       <td>
@@ -768,7 +806,7 @@ function ChannelTableRow({
               删除
             </button>
           )}
-          {!documentImported && (
+          {(row.channelType === 'AUDIO' || row.channelType === 'VIDEO') && (
             <button
               className="text-action"
               disabled={!canMedia || row.status === 'PROMOTED'}
@@ -1095,6 +1133,7 @@ function ChannelEditModal({ open, data, onClose, notify, reload }) {
             <option value="FORM">获客表单</option>
             <option value="AUDIO">录音渠道</option>
             <option value="VIDEO">视频渠道</option>
+            {form.channelType === 'WECOM' && <option value="WECOM">企业微信同步</option>}
           </select>
         </Field>
         <Field label="渠道来源">
@@ -1275,15 +1314,19 @@ function ChannelDetailModal({
   if (!data) return null
   const promoted = Boolean(data.leadId)
   const documentImported = data.channelType === 'DOCUMENT'
-  const importedMaterial = isImportedMaterial(data)
-  const analysisReady = importedMaterial
+  const aiManaged = supportsAiAnalysis(data)
+  const analysisRequired = requiresAiAnalysis(data)
+  const analysisReady = aiManaged
     && !promoted
-    && !data.promotionReady
-    && (documentImported || data.status === 'TRANSCRIBED' || data.status === 'WAITING_AI_ANALYSIS')
+    && data.status !== 'ANALYZED'
+    && (data.channelType === 'WECOM'
+      || documentImported
+      || data.status === 'TRANSCRIBED'
+      || data.status === 'WAITING_AI_ANALYSIS')
   const footer = (
     <>
       <Button variant="secondary" onClick={onClose}>关闭</Button>
-      {!documentImported && (
+      {(data.channelType === 'AUDIO' || data.channelType === 'VIDEO') && (
         <Button
           variant="secondary"
           disabled={!canMedia || promoted}
@@ -1334,7 +1377,7 @@ function ChannelDetailModal({
         <DetailItem label="创建时间" value={formatDateTime(data.createdAt)} />
         <DetailItem label="AI分析时间" value={formatDateTime(data.aiAnalyzedAt)} />
       </div>
-      {importedMaterial && !data.promotionReady && !promoted && (
+      {analysisRequired && !data.promotionReady && !promoted && (
         <div className="channel-promotion-gate">
           <Sparkles size={18} />
           <div>
@@ -1347,6 +1390,9 @@ function ChannelDetailModal({
       <TextBlock label="提取文本" value={data.transcriptText || '暂无提取文本。'} />
       <TextBlock label="结构化摘要" value={data.aiSummary || '暂无结构化摘要。'} />
       <TextBlock label="有用信息" value={data.usefulInfo || '暂无有用信息。'} />
+      {data.channelType === 'WECOM' && (
+        <WecomSourceSnapshot value={data.sourceSnapshot} />
+      )}
     </Modal>
   )
 }
@@ -1367,4 +1413,165 @@ function TextBlock({ label, value, markdown = false }) {
       {markdown ? <MarkdownText value={value} /> : <p>{value}</p>}
     </div>
   )
+}
+
+function WecomSourceSnapshot({ value }) {
+  if (!value) {
+    return (
+      <section className="wecom-snapshot">
+        <div className="wecom-snapshot-head">
+          <div>
+            <span>企业微信原始信息</span>
+            <h3>暂无同步信息</h3>
+          </div>
+        </div>
+      </section>
+    )
+  }
+
+  let snapshot
+  try {
+    snapshot = JSON.parse(value)
+  } catch {
+    return <TextBlock label="企业微信原始信息" value={value} />
+  }
+  if (!snapshot || typeof snapshot !== 'object' || Array.isArray(snapshot)) {
+    return <TextBlock label="企业微信原始信息" value={value} />
+  }
+
+  const profile = snapshot['客户基础信息'] || {}
+  const follows = Array.isArray(snapshot['好友关系']) ? snapshot['好友关系'] : []
+  const groups = Array.isArray(snapshot['客户群关系']) ? snapshot['客户群关系'] : []
+
+  return (
+    <section className="wecom-snapshot">
+      <div className="wecom-snapshot-head">
+        <div>
+          <span>企业微信原始信息</span>
+          <h3>{profile['姓名'] || profile['企业名称'] || '企业微信客户资料'}</h3>
+          <p>{snapshot['数据来源'] || '企业微信同步'}</p>
+        </div>
+        {hasSnapshotValue(snapshot['企业ID']) && (
+          <small>企业ID：{formatSnapshotValue('企业ID', snapshot['企业ID'])}</small>
+        )}
+      </div>
+
+      <SnapshotSection title="客户基础资料" count={snapshotEntries(profile).length}>
+        <div className="wecom-profile-grid">
+          {snapshotEntries(profile).map(([label, fieldValue]) => (
+            <SnapshotField label={label} value={fieldValue} key={label} />
+          ))}
+        </div>
+      </SnapshotSection>
+
+      <SnapshotSection title="好友关系" count={follows.length}>
+        <div className="wecom-relation-list">
+          {follows.map((item, index) => (
+            <SnapshotRelationCard
+              data={item}
+              title={item?.['添加员工'] || `好友关系 ${index + 1}`}
+              titleLabel="添加员工"
+              key={`${item?.['添加员工'] || 'follow'}-${index}`}
+            />
+          ))}
+        </div>
+      </SnapshotSection>
+
+      <SnapshotSection title="客户群关系" count={groups.length}>
+        <div className="wecom-relation-list">
+          {groups.map((item, index) => (
+            <SnapshotRelationCard
+              data={item}
+              title={item?.['客户群名称'] || `客户群 ${index + 1}`}
+              titleLabel="客户群名称"
+              key={`${item?.['客户群ID'] || 'group'}-${index}`}
+            />
+          ))}
+        </div>
+      </SnapshotSection>
+    </section>
+  )
+}
+
+function SnapshotSection({ title, count, children }) {
+  return (
+    <div className="wecom-snapshot-section">
+      <div className="wecom-snapshot-section-head">
+        <h4>{title}</h4>
+        <Badge tone={count ? 'info' : 'neutral'}>{count || 0}</Badge>
+      </div>
+      {count ? children : <div className="wecom-snapshot-empty">暂无{title}</div>}
+    </div>
+  )
+}
+
+function SnapshotRelationCard({ data, title, titleLabel }) {
+  const entries = snapshotEntries(data).filter(([label]) => label !== titleLabel)
+  return (
+    <article className="wecom-relation-card">
+      <div className="wecom-relation-card-head">
+        <b>{title}</b>
+      </div>
+      <div className="wecom-relation-fields">
+        {entries.map(([label, value]) => (
+          <SnapshotField label={label} value={value} key={label} />
+        ))}
+      </div>
+    </article>
+  )
+}
+
+function SnapshotField({ label, value }) {
+  return (
+    <div className="wecom-snapshot-field">
+      <span>{label}</span>
+      <b>{formatSnapshotValue(label, value)}</b>
+    </div>
+  )
+}
+
+function snapshotEntries(data) {
+  if (!data || typeof data !== 'object' || Array.isArray(data)) return []
+  return Object.entries(data).filter(([, value]) => hasSnapshotValue(value))
+}
+
+function hasSnapshotValue(value) {
+  if (value === null || value === undefined || value === '') return false
+  if (Array.isArray(value)) return value.length > 0
+  if (typeof value === 'object') return Object.keys(value).length > 0
+  return true
+}
+
+function formatSnapshotValue(label, value) {
+  if (label === '性别') {
+    if (Number(value) === 1) return '男'
+    if (Number(value) === 2) return '女'
+    return '未设置'
+  }
+  if (label === '添加方式' || label === '入群方式') {
+    return `场景代码 ${value}`
+  }
+  if (label.includes('时间') && typeof value === 'string') {
+    return formatDateTime(value)
+  }
+  if (Array.isArray(value)) {
+    return value.map((item) => formatSnapshotArrayItem(item)).filter(Boolean).join('、')
+  }
+  if (value && typeof value === 'object') {
+    return Object.entries(value)
+      .filter(([, item]) => hasSnapshotValue(item))
+      .map(([key, item]) => `${key}：${formatSnapshotValue(key, item)}`)
+      .join('；')
+  }
+  return String(value)
+}
+
+function formatSnapshotArrayItem(item) {
+  if (!item || typeof item !== 'object') return item === null || item === undefined ? '' : String(item)
+  return item.tag_name
+    || item.name
+    || Object.entries(item)
+      .filter(([, value]) => hasSnapshotValue(value))
+      .map(([key, value]) => `${key}：${formatSnapshotValue(key, value)}`)
+      .join('；')
 }

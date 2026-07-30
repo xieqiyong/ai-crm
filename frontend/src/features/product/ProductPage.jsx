@@ -178,7 +178,7 @@ export function ProductPage({ can, notify }) {
   const totalPages = Math.max(1, Math.ceil((page.total || 0) / pageSize))
 
   return (
-    <div className="page product-page">
+    <div className="page product-page compact-list-page">
       <PageHeader
         title="产品管理"
         description={`维护商机可选择的产品和服务，当前真实产品 ${page.total || 0} 个`}
@@ -190,7 +190,7 @@ export function ProductPage({ can, notify }) {
         )}
       />
 
-      <form className="filter-card customer-filter-card" onSubmit={search}>
+      <form className="filter-card customer-filter-card list-filter-card" onSubmit={search}>
         <div className="filter-search">
           <Search size={17} />
           <input

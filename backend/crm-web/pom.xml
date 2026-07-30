@@ -21,6 +21,11 @@
         </dependency>
         <dependency>
             <groupId>com.hz.crm</groupId>
+            <artifactId>crm-wecom</artifactId>
+            <version>${project.version}</version>
+        </dependency>
+        <dependency>
+            <groupId>com.hz.crm</groupId>
             <artifactId>crm-auth</artifactId>
             <version>${project.version}</version>
         </dependency>

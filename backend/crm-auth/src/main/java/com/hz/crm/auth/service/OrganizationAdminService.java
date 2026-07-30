@@ -27,6 +27,7 @@ import com.hz.crm.auth.repository.SysRolePermissionRepository;
 import com.hz.crm.auth.repository.SysRoleRepository;
 import com.hz.crm.auth.repository.SysUserRepository;
 import com.hz.crm.auth.repository.SysUserRoleRepository;
+import com.hz.crm.auth.security.LoginSessionService;
 import com.hz.crm.common.exception.BusinessException;
 import com.hz.crm.common.id.SnowflakeIdGenerator;
 import java.security.SecureRandom;
@@ -44,9 +45,6 @@ import org.springframework.transaction.annotation.Transactional;
 
 @Service
 public class OrganizationAdminService {
-
-    private static final String TEMP_PASSWORD_CHARS =
-            "ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz23456789";
 
     private static final String SUPER_ADMIN_ROLE = "SUPER_ADMIN";
 
@@ -81,6 +79,12 @@ public class OrganizationAdminService {
 
     @Autowired
     private DepartmentSeedService departmentSeedService;
+
+    @Autowired
+    private AccountCredentialPolicy accountCredentialPolicy;
+
+    @Autowired
+    private LoginSessionService loginSessionService;
 
     private SecureRandom secureRandom = new SecureRandom();
 
@@ -225,28 +229,28 @@ public class OrganizationAdminService {
         if (request == null || blank(request.getUsername())) {
             throw new BusinessException("ORG_USER_001", "用户名不能为空");
         }
+        accountCredentialPolicy.validateUsername(request.getUsername());
         SysUserEntity entity;
+        boolean passwordChanged = false;
         if (request.getId() == null) {
             if (userRepository.existsByUsernameAndTenantIdAndDeletedFalse(request.getUsername().trim(), tenantId)) {
                 throw new BusinessException("ORG_USER_002", "用户名已存在");
             }
-            if (request.getPassword() == null || request.getPassword().length() < 8) {
-                throw new BusinessException("ORG_USER_003", "初始密码长度不能少于8位");
-            }
+            accountCredentialPolicy.validatePassword(request.getPassword());
             entity = new SysUserEntity();
             entity.setId(snowflakeIdGenerator.nextId());
             entity.setTenantId(tenantId);
             entity.setUsername(request.getUsername().trim());
             entity.setPasswordHash(passwordEncoder.encode(request.getPassword()));
+            passwordChanged = true;
         } else {
             entity = userRepository
                     .findByIdAndTenantIdAndDeletedFalse(request.getId(), tenantId)
                     .orElseThrow(() -> new BusinessException("ORG_USER_004", "用户不存在"));
             if (request.getPassword() != null && request.getPassword().trim().length() > 0) {
-                if (request.getPassword().length() < 8) {
-                    throw new BusinessException("ORG_USER_003", "密码长度不能少于8位");
-                }
+                accountCredentialPolicy.validatePassword(request.getPassword());
                 entity.setPasswordHash(passwordEncoder.encode(request.getPassword()));
+                passwordChanged = true;
             }
         }
         entity.setDisplayName(blank(request.getDisplayName()) ? entity.getUsername() : request.getDisplayName().trim());
@@ -257,6 +261,9 @@ public class OrganizationAdminService {
         }
         entity.setEnabled(enabled);
         entity = userRepository.save(entity);
+        if (passwordChanged && request.getId() != null) {
+            loginSessionService.revokeAllSessions(tenantId, entity.getId());
+        }
         saveUserRoles(tenantId, entity.getId(), request.getRoleIds());
         return findUserResponse(tenantId, entity.getId());
     }
@@ -289,6 +296,7 @@ public class OrganizationAdminService {
         String password = generateTemporaryPassword();
         user.setPasswordHash(passwordEncoder.encode(password));
         userRepository.save(user);
+        loginSessionService.revokeAllSessions(tenantId, user.getId());
         UserPasswordResetResponse response = new UserPasswordResetResponse();
         response.setUserId(user.getId());
         response.setTemporaryPassword(password);
@@ -726,9 +734,18 @@ public class OrganizationAdminService {
     }
 
     private String generateTemporaryPassword() {
+        String uppercase = "ABCDEFGHJKLMNPQRSTUVWXYZ";
+        String lowercase = "abcdefghijkmnopqrstuvwxyz";
+        String numbers = "23456789";
+        String special = "!@#$%*-_";
+        String all = uppercase + lowercase + numbers + special;
         StringBuilder builder = new StringBuilder();
-        for (int i = 0; i < 12; i++) {
-            builder.append(TEMP_PASSWORD_CHARS.charAt(secureRandom.nextInt(TEMP_PASSWORD_CHARS.length())));
+        builder.append(uppercase.charAt(secureRandom.nextInt(uppercase.length())));
+        builder.append(lowercase.charAt(secureRandom.nextInt(lowercase.length())));
+        builder.append(numbers.charAt(secureRandom.nextInt(numbers.length())));
+        builder.append(special.charAt(secureRandom.nextInt(special.length())));
+        for (int i = 4; i < 12; i++) {
+            builder.append(all.charAt(secureRandom.nextInt(all.length())));
         }
         return builder.toString();
     }

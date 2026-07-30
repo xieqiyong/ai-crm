@@ -1,9 +1,31 @@
 import { useEffect, useState } from 'react'
 import {
-  Bell, ChevronDown, HelpCircle, LogOut, Menu, Search, Zap,
+  Bell, ChevronDown, HelpCircle, LogOut, Menu, PanelLeftClose, PanelLeftOpen, Search, Zap,
 } from 'lucide-react'
-import { BrandLogo } from '../components'
+import { Badge, BrandLogo, Button, Drawer } from '../components'
 import { api } from '../api'
+
+const SIDEBAR_COLLAPSED_KEY = 'crm.sidebar.collapsed'
+const NAV_GROUPS_COLLAPSED_KEY = 'crm.sidebar.collapsedGroups'
+
+function readSidebarCollapsed() {
+  if (typeof window === 'undefined') return false
+  try {
+    return window.localStorage.getItem(SIDEBAR_COLLAPSED_KEY) === '1'
+  } catch {
+    return false
+  }
+}
+
+function readCollapsedGroups() {
+  if (typeof window === 'undefined') return []
+  try {
+    const value = JSON.parse(window.localStorage.getItem(NAV_GROUPS_COLLAPSED_KEY) || '[]')
+    return Array.isArray(value) ? value.filter((item) => typeof item === 'string') : []
+  } catch {
+    return []
+  }
+}
 
 function formatUsage(user, tokenUsage) {
   if (tokenUsage?.dailyTokenLimit > 0) {
@@ -52,6 +74,30 @@ export function AppLayout({
   const [mobileOpen, setMobileOpen] = useState(false)
   const [profileOpen, setProfileOpen] = useState(false)
   const [tokenUsage, setTokenUsage] = useState(null)
+  const [notificationOpen, setNotificationOpen] = useState(false)
+  const [notifications, setNotifications] = useState([])
+  const [notificationLoading, setNotificationLoading] = useState(false)
+  const [unreadCount, setUnreadCount] = useState(resolveUnreadCount(currentUser))
+  const [sidebarCollapsed, setSidebarCollapsed] = useState(readSidebarCollapsed)
+  const [collapsedGroups, setCollapsedGroups] = useState(readCollapsedGroups)
+
+  useEffect(() => {
+    try {
+      window.localStorage.setItem(SIDEBAR_COLLAPSED_KEY, sidebarCollapsed ? '1' : '0')
+    } catch {
+      return undefined
+    }
+    return undefined
+  }, [sidebarCollapsed])
+
+  useEffect(() => {
+    try {
+      window.localStorage.setItem(NAV_GROUPS_COLLAPSED_KEY, JSON.stringify(collapsedGroups))
+    } catch {
+      return undefined
+    }
+    return undefined
+  }, [collapsedGroups])
 
   useEffect(() => {
     let canceled = false
@@ -73,9 +119,79 @@ export function AppLayout({
     }
   }, [currentUser?.id, currentUser?.userId, currentUser?.username])
 
+  useEffect(() => {
+    let canceled = false
+    let timer
+    const loadUnread = () => {
+      api.notification.unreadCount()
+        .then((data) => {
+          if (!canceled) setUnreadCount(Number(data?.unreadCount || 0))
+        })
+        .catch(() => {
+          if (!canceled) setUnreadCount(resolveUnreadCount(currentUser))
+        })
+    }
+    loadUnread()
+    timer = window.setInterval(loadUnread, 60000)
+    return () => {
+      canceled = true
+      window.clearInterval(timer)
+    }
+  }, [currentUser?.id, currentUser?.userId, currentUser?.username])
+
+  const loadNotifications = async () => {
+    setNotificationLoading(true)
+    try {
+      const data = await api.notification.page({ pageNo: 1, pageSize: 30 })
+      setNotifications(data?.records || [])
+    } catch (err) {
+      onNotify(err.message || '通知加载失败', 'info')
+    } finally {
+      setNotificationLoading(false)
+    }
+  }
+
+  const openNotifications = () => {
+    setNotificationOpen(true)
+    loadNotifications()
+  }
+
+  const readNotification = async (item) => {
+    if (item.readAt) return
+    try {
+      await api.notification.read(item.id)
+      setNotifications((values) => values.map((value) => (
+        value.id === item.id ? { ...value, readAt: new Date().toISOString() } : value
+      )))
+      setUnreadCount((value) => Math.max(0, value - 1))
+    } catch (err) {
+      onNotify(err.message || '通知状态更新失败', 'info')
+    }
+  }
+
+  const readAllNotifications = async () => {
+    try {
+      await api.notification.readAll()
+      const readAt = new Date().toISOString()
+      setNotifications((values) => values.map((value) => ({ ...value, readAt })))
+      setUnreadCount(0)
+      onNotify('全部通知已标记为已读')
+    } catch (err) {
+      onNotify(err.message || '通知状态更新失败', 'info')
+    }
+  }
+
   const go = (next) => {
     onNavigate(next)
     setMobileOpen(false)
+  }
+
+  const toggleGroup = (label) => {
+    setCollapsedGroups((values) => (
+      values.includes(label)
+        ? values.filter((item) => item !== label)
+        : [...values, label]
+    ))
   }
   const rawRouteKey = String(routeKey || '')
   const activeRouteKey = rawRouteKey.startsWith('customers/detail/')
@@ -84,28 +200,51 @@ export function AppLayout({
       ? 'leads'
       : routeKey
   const usageText = formatUsage(currentUser, tokenUsage)
-  const unreadCount = resolveUnreadCount(currentUser)
   const unreadBadge = unreadCount > 99 ? '99+' : String(unreadCount)
 
   return (
-    <div className="app-shell">
+    <div className={`app-shell ${sidebarCollapsed ? 'sidebar-is-collapsed' : ''}`}>
       {mobileOpen && <div className="mobile-scrim" onClick={() => setMobileOpen(false)} />}
-      <aside className={`sidebar ${mobileOpen ? 'mobile-open' : ''}`}>
-        <div className="sidebar-brand"><BrandLogo logo={logo} /></div>
+      <aside className={`sidebar ${sidebarCollapsed ? 'desktop-collapsed' : ''} ${mobileOpen ? 'mobile-open' : ''}`}>
+        <div className="sidebar-brand">
+          <BrandLogo logo={logo} />
+          <button
+            type="button"
+            className="icon-button sidebar-collapse-button"
+            onClick={() => setSidebarCollapsed(true)}
+            aria-label="收起左侧导航"
+            title="收起左侧导航"
+          >
+            <PanelLeftClose size={19} />
+          </button>
+        </div>
         <nav className="nav-area" aria-label="主导航">
           {routeGroups.map((group) => {
             const visible = group.items.filter((item) => can(item.permission))
             if (!visible.length) return null
+            const collapsed = collapsedGroups.includes(group.label)
             return (
-              <div className="nav-group" key={group.label}>
-                <div className="nav-label">{group.label}</div>
-                {visible.map(({ key, label, icon: Icon }) => (
-                  <button className={`nav-item ${activeRouteKey === key ? 'active' : ''}`} key={key} onClick={() => go(key)}>
-                    <Icon size={19} />
-                    <span>{label}</span>
-                    {key === 'assistant' && <i className="nav-live" />}
-                  </button>
-                ))}
+              <div className={`nav-group ${collapsed ? 'collapsed' : ''}`} key={group.label}>
+                <button
+                  type="button"
+                  className="nav-group-toggle"
+                  onClick={() => toggleGroup(group.label)}
+                  aria-expanded={!collapsed}
+                >
+                  <span>{group.label}</span>
+                  <ChevronDown size={15} />
+                </button>
+                {!collapsed && (
+                  <div className="nav-group-items">
+                    {visible.map(({ key, label, icon: Icon }) => (
+                      <button className={`nav-item ${activeRouteKey === key ? 'active' : ''}`} key={key} onClick={() => go(key)}>
+                        <Icon size={19} />
+                        <span>{label}</span>
+                        {key === 'assistant' && <i className="nav-live" />}
+                      </button>
+                    ))}
+                  </div>
+                )}
               </div>
             )
           })}
@@ -135,6 +274,17 @@ export function AppLayout({
       <div className="app-main">
         <header className="topbar">
           <button className="icon-button menu-button" onClick={() => setMobileOpen(true)} aria-label="打开菜单"><Menu size={21} /></button>
+          {sidebarCollapsed && (
+            <button
+              type="button"
+              className="icon-button sidebar-expand-button"
+              onClick={() => setSidebarCollapsed(false)}
+              aria-label="展开左侧导航"
+              title="展开左侧导航"
+            >
+              <PanelLeftOpen size={20} />
+            </button>
+          )}
           <div className="global-search"><Search size={18} /><input aria-label="全局搜索" placeholder="搜索线索、客户或商机…" /></div>
           <div className="topbar-actions">
             <span className="usage-pill topbar-usage" title={`AI用量 ${usageText}`}>
@@ -144,11 +294,11 @@ export function AppLayout({
             </span>
             <button
               className="icon-button notification-button"
-              onClick={() => onNotify(unreadCount > 0 ? `有 ${unreadCount} 条未读消息` : '暂无未读消息', 'info')}
+              onClick={openNotifications}
               aria-label={`通知，${unreadCount} 条未读`}
             >
               <Bell size={19} />
-              <span className="notification-count">{unreadBadge}</span>
+              {unreadCount > 0 && <span className="notification-count">{unreadBadge}</span>}
             </button>
             <button
               className="icon-button hide-mobile"
@@ -162,6 +312,75 @@ export function AppLayout({
         <main className="content">{children}</main>
       </div>
 
+      <NotificationDrawer
+        open={notificationOpen}
+        records={notifications}
+        loading={notificationLoading}
+        unreadCount={unreadCount}
+        onRead={readNotification}
+        onReadAll={readAllNotifications}
+        onClose={() => setNotificationOpen(false)}
+      />
     </div>
   )
+}
+
+function NotificationDrawer({
+  open,
+  records,
+  loading,
+  unreadCount,
+  onRead,
+  onReadAll,
+  onClose,
+}) {
+  return (
+    <Drawer
+      open={open}
+      title="系统通知"
+      onClose={onClose}
+      footer={(
+        <div className="notification-drawer-footer">
+          <span>{unreadCount > 0 ? `${unreadCount} 条未读` : '已全部读完'}</span>
+          <Button variant="secondary" disabled={unreadCount <= 0} onClick={onReadAll}>全部已读</Button>
+        </div>
+      )}
+    >
+      <div className="notification-list">
+        {records.map((item) => (
+          <button
+            type="button"
+            className={item.readAt ? 'read' : 'unread'}
+            onClick={() => onRead(item)}
+            key={item.id}
+          >
+            <div>
+              <span>{item.senderName || '系统管理员'}</span>
+              <Badge tone={item.level === 'WARNING' ? 'danger' : item.level === 'IMPORTANT' ? 'warning' : 'neutral'}>
+                {item.level === 'WARNING' ? '风险' : item.level === 'IMPORTANT' ? '重要' : '通知'}
+              </Badge>
+            </div>
+            <b>{item.title}</b>
+            <p>{item.content}</p>
+            <small>{formatNotificationTime(item.createdAt)}</small>
+          </button>
+        ))}
+        {!loading && !records.length && (
+          <div className="notification-empty">
+            <Bell size={25} />
+            <b>暂无系统通知</b>
+            <span>管理员发布的全站通知或私发消息会展示在这里</span>
+          </div>
+        )}
+        {loading && !records.length && <div className="notification-empty"><b>正在加载通知…</b></div>}
+      </div>
+    </Drawer>
+  )
+}
+
+function formatNotificationTime(value) {
+  if (!value) return '-'
+  const date = new Date(value)
+  if (Number.isNaN(date.getTime())) return String(value)
+  return date.toLocaleString('zh-CN', { hour12: false })
 }

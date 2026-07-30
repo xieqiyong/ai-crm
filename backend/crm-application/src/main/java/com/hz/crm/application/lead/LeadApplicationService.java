@@ -78,6 +78,7 @@ public class LeadApplicationService {
                 tenantId, userId, dataScope, safeQuery);
         Long total = leadMapper.selectCount(wrapper);
         wrapper.orderByDesc(LeadEntity::getCreatedAt)
+                .orderByDesc(LeadEntity::getId)
                 .last("LIMIT " + pageSize + " OFFSET " + offset);
         List<LeadEntity> entities = leadMapper.selectList(wrapper);
         List<LeadResponse> records = new ArrayList<LeadResponse>();

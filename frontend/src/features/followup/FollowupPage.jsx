@@ -119,7 +119,7 @@ export function FollowupPage({ can, notify, navigate }) {
   }
 
   return (
-    <div className="page followup-page">
+    <div className="page followup-page compact-list-page">
       <PageHeader
         title="跟进记录"
         description={`记录客户、线索、商机的真实销售动作，当前 ${page.total || 0} 条`}
@@ -131,7 +131,7 @@ export function FollowupPage({ can, notify, navigate }) {
         )}
       />
 
-      <form className="filter-card customer-filter-card" onSubmit={search}>
+      <form className="filter-card customer-filter-card list-filter-card" onSubmit={search}>
         <div className="filter-search">
           <Search size={17} />
           <input

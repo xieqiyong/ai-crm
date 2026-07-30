@@ -2,6 +2,7 @@ package com.hz.crm.web.customer;
 
 import com.hz.crm.application.customer.CustomerApplicationService;
 import com.hz.crm.application.customer.dto.CustomerAssignRequest;
+import com.hz.crm.application.customer.dto.CustomerIndustryOptionResponse;
 import com.hz.crm.application.customer.dto.CustomerQuery;
 import com.hz.crm.application.customer.dto.CustomerResponse;
 import com.hz.crm.application.customer.dto.CustomerSaveRequest;
@@ -11,6 +12,7 @@ import com.hz.crm.common.api.PageData;
 import com.hz.crm.common.audit.AuditOperation;
 import com.hz.crm.web.support.IdRequest;
 import jakarta.validation.Valid;
+import java.util.List;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.PostMapping;
@@ -31,6 +33,13 @@ public class CustomerController {
             @RequestBody(required = false) CustomerQuery query, JwtPrincipal principal) {
         return ApiResult.ok(customerApplicationService.page(
                 principal.getTenantId(), principal.getUserId(), principal.getDataScope(), query));
+    }
+
+    @PostMapping("/industry-options")
+    @PreAuthorize("hasAuthority('*') or hasAuthority('crm:customer:view') "
+            + "or hasAuthority('crm:customer:manage') or hasAuthority('crm:customer:edit')")
+    public ApiResult<List<CustomerIndustryOptionResponse>> industryOptions() {
+        return ApiResult.ok(customerApplicationService.industryOptions());
     }
 
     @PostMapping("/detail")
