@@ -3,18 +3,20 @@ package com.hz.crm.agent.runtime.service;
 import com.hz.crm.agent.runtime.core.AgentRuntimeEngine;
 import com.hz.crm.agent.runtime.core.AgentRuntimeRequest;
 import com.hz.crm.agent.runtime.domain.AgentEntity;
+import com.hz.crm.agent.runtime.domain.AgentSkillEntity;
 import com.hz.crm.agent.runtime.dto.AgentRuntimeEvent;
 import com.hz.crm.agent.runtime.workflow.AgentWorkflowEngine;
+import io.agentscope.core.ReActAgent;
 import io.agentscope.core.agent.RuntimeContext;
 import io.agentscope.core.message.UserMessage;
+import io.agentscope.core.skill.repository.FileSystemSkillRepository;
 import io.agentscope.core.tool.AgentTool;
 import io.agentscope.core.tool.Toolkit;
-import io.agentscope.harness.agent.HarnessAgent;
+import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Set;
-import java.nio.file.Path;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 import reactor.core.publisher.Flux;
@@ -76,21 +78,41 @@ public class AgentScopeRuntime implements AgentRuntimeEngine {
         Toolkit toolkit = new Toolkit();
         registerBuiltinTools(toolkit, request);
         agentRuntimeMcpMountService.mount(toolkit, request.getMcps());
-        Path agentWorkspace = agentRuntimeWorkspaceService.resolveAgentWorkspace(request);
-        Path skillRoot = agentRuntimeSkillMountService.materialize(agentWorkspace, request.getSkills());
-        HarnessAgent.Builder builder = HarnessAgent.builder()
+        ReActAgent.Builder builder = ReActAgent.builder()
                 .name(sceneAgent.getName())
                 .sysPrompt(agentRuntimePromptService.render(
                         sceneAgent.getSystemPrompt(), request.getInjectedPrompt(), request.getContext()))
                 .model(agentRuntimeModelFactory.build(sceneAgent))
                 .toolkit(toolkit)
-                .workspace(agentWorkspace)
-                .projectGlobalSkillsDir(skillRoot)
                 .maxIters(resolveMaxIters(request));
+        mountSkills(builder, request);
         RuntimeHolder holder = new RuntimeHolder();
         holder.setAgent(builder.build());
         holder.setRuntimeContext(agentRuntimeContextFactory.build(request));
         return holder;
+    }
+
+    private void mountSkills(ReActAgent.Builder builder, AgentRuntimeRequest request) {
+        if (!hasAvailableSkill(request.getSkills())) {
+            return;
+        }
+        Path agentWorkspace = agentRuntimeWorkspaceService.resolveAgentWorkspace(request);
+        Path skillRoot = agentRuntimeSkillMountService.materialize(agentWorkspace, request.getSkills());
+        builder.skillRepository(new FileSystemSkillRepository(skillRoot, false));
+    }
+
+    private boolean hasAvailableSkill(List<AgentSkillEntity> skills) {
+        if (skills == null || skills.isEmpty()) {
+            return false;
+        }
+        for (AgentSkillEntity skill : skills) {
+            if (skill != null
+                    && skill.getContent() != null
+                    && skill.getContent().trim().length() > 0) {
+                return true;
+            }
+        }
+        return false;
     }
 
     private int resolveMaxIters(AgentRuntimeRequest request) {
@@ -129,7 +151,7 @@ public class AgentScopeRuntime implements AgentRuntimeEngine {
     @lombok.Setter
     private static class RuntimeHolder {
 
-        private HarnessAgent agent;
+        private ReActAgent agent;
 
         private RuntimeContext runtimeContext;
     }

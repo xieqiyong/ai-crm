@@ -37,7 +37,7 @@
         </dependency>
         <dependency>
             <groupId>io.agentscope</groupId>
-            <artifactId>agentscope-harness</artifactId>
+            <artifactId>agentscope-core</artifactId>
         </dependency>
         <dependency>
             <groupId>io.agentscope</groupId>

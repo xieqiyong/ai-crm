@@ -1,7 +1,15 @@
 import { useEffect, useState } from 'react'
 import { CalendarDays, Edit2, MessageCircleMore, Plus, RefreshCw } from 'lucide-react'
 import { api } from '../../api'
-import { Button, Card, Field, Modal, RichTextEditor, RichTextViewer } from '../../components'
+import {
+  Button,
+  Card,
+  CollapsibleRichText,
+  Field,
+  Modal,
+  RichTextEditor,
+  RichTextViewer,
+} from '../../components'
 import { ownerName } from '../../hooks/useOwnerOptions'
 
 export const followupTypeText = {
@@ -109,16 +117,23 @@ export function FollowupPanel({
   canWrite,
   notify,
   pageSize = 8,
+  compact = false,
 }) {
   const [page, setPage] = useState(emptyPage)
   const [loading, setLoading] = useState(false)
   const [editing, setEditing] = useState(null)
+  const [visibleSize, setVisibleSize] = useState(pageSize)
 
-  const load = async () => {
+  const load = async (requestedPageSize = visibleSize) => {
     if (!canView || !targetType || !targetId) return
     setLoading(true)
     try {
-      const data = await api.followup.page({ targetType, targetId, pageNo: 1, pageSize })
+      const data = await api.followup.page({
+        targetType,
+        targetId,
+        pageNo: 1,
+        pageSize: requestedPageSize,
+      })
       setPage(data || emptyPage)
     } catch (error) {
       notify(error.message || '跟进记录加载失败', 'info')
@@ -128,8 +143,13 @@ export function FollowupPanel({
   }
 
   useEffect(() => {
-    load()
-  }, [canView, targetType, targetId])
+    setVisibleSize(pageSize)
+    if (!canView || !targetType || !targetId) {
+      setPage(emptyPage)
+      return
+    }
+    load(pageSize)
+  }, [canView, targetType, targetId, pageSize])
 
   const save = async (form) => {
     if (!hasRichContent(form.content)) {
@@ -140,30 +160,58 @@ export function FollowupPanel({
       await api.followup.save(toFollowupPayload(form))
       notify('跟进记录已保存', 'success')
       setEditing(null)
-      load()
+      load(visibleSize)
     } catch (error) {
       notify(error.message || '跟进记录保存失败', 'info')
     }
   }
 
   const records = page.records || []
+  const total = Number(page.total || 0)
+  const hasMore = compact && records.length < total
+  const showMore = () => {
+    const nextSize = Math.min(100, visibleSize + pageSize)
+    if (nextSize <= visibleSize) return
+    setVisibleSize(nextSize)
+    load(nextSize)
+  }
 
   return (
-    <Card className="followup-panel">
+    <Card className={`followup-panel ${compact ? 'compact' : ''}`}>
       <div className="followup-panel-head">
         <div>
           <h2><MessageCircleMore size={18} />{title}</h2>
-          <p>记录电话、微信、会议、拜访等真实销售动作。</p>
+          <p>
+            记录电话、微信、会议、拜访等真实销售动作。
+            {compact && total > 0 && ` 当前展示最新 ${records.length} 条，共 ${total} 条。`}
+          </p>
         </div>
         <div>
-          <Button variant="secondary" icon={RefreshCw} onClick={load}>刷新</Button>
+          <Button variant="secondary" icon={RefreshCw} onClick={() => load(visibleSize)}>刷新</Button>
           {canWrite && (
             <Button icon={Plus} onClick={() => setEditing(buildTargetFollowupForm(targetType, targetId))}>写跟进</Button>
           )}
         </div>
       </div>
       {canView ? (
-        <FollowupTimeline records={records} loading={loading} onEdit={canWrite ? setEditing : null} />
+        <>
+          <FollowupTimeline
+            records={records}
+            loading={loading}
+            compact={compact}
+            onEdit={canWrite ? setEditing : null}
+          />
+          {hasMore && (
+            <button
+              type="button"
+              className="followup-load-more"
+              disabled={loading || visibleSize >= 100}
+              onClick={showMore}
+            >
+              {visibleSize >= 100 ? '更多记录请在跟进记录页查看' : `查看更多跟进（剩余 ${total - records.length} 条）`}
+            </button>
+          )}
+        </>
       ) : (
         <div className="followup-empty">
           <MessageCircleMore size={24} />
@@ -184,7 +232,7 @@ export function FollowupPanel({
   )
 }
 
-export function FollowupTimeline({ records = [], loading, onEdit }) {
+export function FollowupTimeline({ records = [], loading, compact = false, onEdit }) {
   if (loading) {
     return (
       <div className="followup-empty">
@@ -212,7 +260,9 @@ export function FollowupTimeline({ records = [], loading, onEdit }) {
               <b>{followupTypeText[row.followupType] || row.followupType || '跟进'}</b>
               <small>{formatDateTime(row.followupAt)}</small>
             </div>
-            <RichTextViewer value={row.content} />
+            {compact
+              ? <CollapsibleRichText value={row.content} maxHeight={132} />
+              : <RichTextViewer value={row.content} />}
             {row.result && <em>结果：{row.result}</em>}
             {row.nextPlan && <em>下次计划：{row.nextPlan}</em>}
             {row.nextFollowTime && <em>下次跟进：{formatDateTime(row.nextFollowTime)}</em>}

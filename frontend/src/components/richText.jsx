@@ -175,3 +175,67 @@ export function RichTextViewer({ value, empty = '暂无内容' }) {
   }
   return <div className="rich-viewer" dangerouslySetInnerHTML={{ __html: html }} />
 }
+
+export function CollapsibleRichText({
+  value,
+  empty = '暂无内容',
+  maxHeight = 132,
+  expandText = '展开内容',
+  collapseText = '收起内容',
+}) {
+  const contentRef = useRef(null)
+  const [expanded, setExpanded] = useState(false)
+  const [collapsible, setCollapsible] = useState(false)
+
+  useEffect(() => {
+    setExpanded(false)
+  }, [value])
+
+  useEffect(() => {
+    const element = contentRef.current
+    if (!element) return undefined
+
+    const measure = () => {
+      setCollapsible(element.scrollHeight > Number(maxHeight || 132) + 2)
+    }
+    const frame = window.requestAnimationFrame(measure)
+    let observer
+    if (typeof ResizeObserver !== 'undefined') {
+      observer = new ResizeObserver(measure)
+      observer.observe(element)
+    } else {
+      window.addEventListener('resize', measure)
+    }
+
+    return () => {
+      window.cancelAnimationFrame(frame)
+      observer?.disconnect()
+      window.removeEventListener('resize', measure)
+    }
+  }, [value, maxHeight])
+
+  const collapsed = collapsible && !expanded
+
+  return (
+    <div
+      className="collapsible-richtext"
+      style={{ '--collapsible-richtext-height': `${maxHeight}px` }}
+    >
+      <div className={`collapsible-richtext-viewport ${collapsed ? 'is-collapsed' : ''}`}>
+        <div ref={contentRef}>
+          <RichTextViewer value={value} empty={empty} />
+        </div>
+        {collapsed && <span className="collapsible-richtext-fade" aria-hidden="true" />}
+      </div>
+      {collapsible && (
+        <button
+          type="button"
+          className="collapsible-richtext-toggle"
+          onClick={() => setExpanded((current) => !current)}
+        >
+          {expanded ? collapseText : expandText}
+        </button>
+      )}
+    </div>
+  )
+}

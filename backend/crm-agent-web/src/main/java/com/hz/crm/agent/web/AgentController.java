@@ -25,7 +25,10 @@ import com.hz.crm.common.api.PageQuery;
 import com.hz.crm.common.audit.AuditOperation;
 import jakarta.validation.Valid;
 import java.io.IOException;
+import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.MediaType;
 import org.springframework.security.access.prepost.PreAuthorize;
@@ -144,6 +147,7 @@ public class AgentController {
     @PostMapping(value = "/run/stream", produces = MediaType.TEXT_EVENT_STREAM_VALUE)
     @PreAuthorize("hasAuthority('*') or hasAuthority('crm:agent:manage')")
     public SseEmitter runStream(@Valid @RequestBody AgentRunRequest request, JwtPrincipal principal) {
+        fillRuntimeAccessContext(request, principal);
         SseEmitter emitter = new SseEmitter(0L);
         Disposable disposable = agentRunService
                 .run(principal.getTenantId(), principal.getUserId(), request)
@@ -155,6 +159,21 @@ public class AgentController {
         emitter.onTimeout(disposable::dispose);
         emitter.onError(error -> disposable.dispose());
         return emitter;
+    }
+
+    private void fillRuntimeAccessContext(
+            AgentRunRequest request, JwtPrincipal principal) {
+        Map<String, Object> context = request.getContext();
+        if (context == null) {
+            context = new HashMap<String, Object>();
+            request.setContext(context);
+        }
+        context.put("dataScope", principal.getDataScope());
+        context.put(
+                "permissions",
+                principal.getPermissions() == null
+                        ? new ArrayList<String>()
+                        : new ArrayList<String>(principal.getPermissions()));
     }
 
     @PostMapping("/token/today")

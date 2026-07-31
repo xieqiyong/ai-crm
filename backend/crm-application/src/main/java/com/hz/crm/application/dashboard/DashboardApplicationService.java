@@ -1,16 +1,25 @@
 package com.hz.crm.application.dashboard;
 
+import com.baomidou.mybatisplus.core.conditions.query.QueryWrapper;
 import com.hz.crm.application.dashboard.dto.DashboardCountItem;
 import com.hz.crm.application.dashboard.dto.DashboardOverviewResponse;
+import com.hz.crm.common.time.DateTimes;
+import com.hz.crm.domain.channel.ChannelRecordEntity;
 import com.hz.crm.domain.channel.ChannelStatus;
-import com.hz.crm.domain.channel.repository.ChannelRecordRepository;
+import com.hz.crm.domain.channel.mapper.ChannelRecordMapper;
+import com.hz.crm.domain.customer.CustomerEntity;
 import com.hz.crm.domain.customer.CustomerStatus;
-import com.hz.crm.domain.customer.repository.CustomerJpaRepository;
+import com.hz.crm.domain.customer.mapper.CustomerMapper;
+import com.hz.crm.domain.followup.FollowupRecordEntity;
+import com.hz.crm.domain.followup.mapper.FollowupRecordMapper;
+import com.hz.crm.domain.lead.LeadEntity;
 import com.hz.crm.domain.lead.LeadStatus;
-import com.hz.crm.domain.lead.repository.LeadJpaRepository;
+import com.hz.crm.domain.lead.mapper.LeadMapper;
+import com.hz.crm.domain.opportunity.OpportunityEntity;
 import com.hz.crm.domain.opportunity.OpportunityStage;
-import com.hz.crm.domain.opportunity.repository.OpportunityJpaRepository;
+import com.hz.crm.domain.opportunity.mapper.OpportunityMapper;
 import java.math.BigDecimal;
+import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.List;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -21,27 +30,37 @@ import org.springframework.transaction.annotation.Transactional;
 public class DashboardApplicationService {
 
     @Autowired
-    private LeadJpaRepository leadRepository;
+    private LeadMapper leadMapper;
 
     @Autowired
-    private CustomerJpaRepository customerRepository;
+    private CustomerMapper customerMapper;
 
     @Autowired
-    private OpportunityJpaRepository opportunityRepository;
+    private OpportunityMapper opportunityMapper;
 
     @Autowired
-    private ChannelRecordRepository channelRecordRepository;
+    private ChannelRecordMapper channelRecordMapper;
+
+    @Autowired
+    private FollowupRecordMapper followupRecordMapper;
 
     @Transactional(readOnly = true)
     public DashboardOverviewResponse overview(Long tenantId, Long userId, String dataScope) {
-        DashboardOverviewResponse response = new DashboardOverviewResponse();
         Long ownerId = "SELF".equals(dataScope) ? userId : null;
-        response.setLeadCount(countLead(tenantId, ownerId));
-        response.setCustomerCount(countCustomer(tenantId, ownerId));
-        response.setOpportunityCount(countOpportunity(tenantId, ownerId));
-        response.setChannelCount(countChannel(tenantId, ownerId));
-        response.setOpportunityAmount(nullToZero(opportunityRepository.sumAmount(tenantId, ownerId)));
-        response.setWonAmount(nullToZero(opportunityRepository.sumAmountByStage(tenantId, ownerId, OpportunityStage.WON)));
+        LocalDateTime todayStart = DateTimes.now().toLocalDate().atStartOfDay();
+        LocalDateTime tomorrowStart = todayStart.plusDays(1);
+        DashboardOverviewResponse response = new DashboardOverviewResponse();
+        response.setLeadCount(count(leadMapper.selectCount(leadBase(tenantId, ownerId))));
+        response.setCustomerCount(count(customerMapper.selectCount(customerBase(tenantId, ownerId))));
+        response.setOpportunityCount(count(opportunityMapper.selectCount(opportunityBase(tenantId, ownerId))));
+        response.setChannelCount(count(channelRecordMapper.selectCount(channelBase(tenantId, ownerId))));
+        response.setOpportunityAmount(sumOpportunityAmount(tenantId, ownerId, null));
+        response.setWonAmount(sumOpportunityAmount(tenantId, ownerId, OpportunityStage.WON));
+        response.setTodayFollowupCount(countTodayFollowup(tenantId, ownerId, todayStart, tomorrowStart));
+        response.setTodayChannelUserCount(countTodayChannel(tenantId, ownerId, todayStart, tomorrowStart));
+        response.setTodayLeadConversionCount(
+                countTodayLeadConversion(tenantId, ownerId, todayStart, tomorrowStart));
+        response.setTodayNewLeadCount(countTodayLead(tenantId, ownerId, todayStart, tomorrowStart));
         response.setLeadStatusCounts(buildLeadStatusCounts(tenantId, ownerId));
         response.setCustomerStatusCounts(buildCustomerStatusCounts(tenantId, ownerId));
         response.setOpportunityStageCounts(buildOpportunityStageCounts(tenantId, ownerId));
@@ -49,41 +68,61 @@ public class DashboardApplicationService {
         return response;
     }
 
-    private long countLead(Long tenantId, Long ownerId) {
-        if (ownerId == null) {
-            return leadRepository.countByTenantIdAndDeletedFalse(tenantId);
-        }
-        return leadRepository.countByTenantIdAndOwnerIdAndDeletedFalse(tenantId, ownerId);
+    private long countTodayFollowup(
+            Long tenantId,
+            Long ownerId,
+            LocalDateTime todayStart,
+            LocalDateTime tomorrowStart) {
+        QueryWrapper<FollowupRecordEntity> wrapper = followupBase(tenantId, ownerId);
+        wrapper.ge("followup_at", todayStart);
+        wrapper.lt("followup_at", tomorrowStart);
+        return count(followupRecordMapper.selectCount(wrapper));
     }
 
-    private long countCustomer(Long tenantId, Long ownerId) {
-        if (ownerId == null) {
-            return customerRepository.countByTenantIdAndDeletedFalse(tenantId);
-        }
-        return customerRepository.countByTenantIdAndOwnerIdAndDeletedFalse(tenantId, ownerId);
+    private long countTodayChannel(
+            Long tenantId,
+            Long ownerId,
+            LocalDateTime todayStart,
+            LocalDateTime tomorrowStart) {
+        QueryWrapper<ChannelRecordEntity> wrapper = channelBase(tenantId, ownerId);
+        wrapper.ge("created_at", todayStart);
+        wrapper.lt("created_at", tomorrowStart);
+        return count(channelRecordMapper.selectCount(wrapper));
     }
 
-    private long countOpportunity(Long tenantId, Long ownerId) {
-        if (ownerId == null) {
-            return opportunityRepository.countByTenantIdAndDeletedFalse(tenantId);
-        }
-        return opportunityRepository.countByTenantIdAndOwnerIdAndDeletedFalse(tenantId, ownerId);
+    private long countTodayLeadConversion(
+            Long tenantId,
+            Long ownerId,
+            LocalDateTime todayStart,
+            LocalDateTime tomorrowStart) {
+        QueryWrapper<LeadEntity> wrapper = leadBase(tenantId, ownerId);
+        wrapper.eq("status", LeadStatus.CONVERTED.name());
+        wrapper.ge("converted_at", todayStart);
+        wrapper.lt("converted_at", tomorrowStart);
+        return count(leadMapper.selectCount(wrapper));
     }
 
-    private long countChannel(Long tenantId, Long ownerId) {
-        if (ownerId == null) {
-            return channelRecordRepository.countByTenantIdAndDeletedFalse(tenantId);
-        }
-        return channelRecordRepository.countByTenantIdAndOwnerIdAndDeletedFalse(tenantId, ownerId);
+    private long countTodayLead(
+            Long tenantId,
+            Long ownerId,
+            LocalDateTime todayStart,
+            LocalDateTime tomorrowStart) {
+        QueryWrapper<LeadEntity> wrapper = leadBase(tenantId, ownerId);
+        wrapper.ge("created_at", todayStart);
+        wrapper.lt("created_at", tomorrowStart);
+        return count(leadMapper.selectCount(wrapper));
     }
 
     private List<DashboardCountItem> buildLeadStatusCounts(Long tenantId, Long ownerId) {
         List<DashboardCountItem> items = new ArrayList<DashboardCountItem>();
         for (LeadStatus status : LeadStatus.values()) {
-            long count = ownerId == null
-                    ? leadRepository.countByTenantIdAndStatusAndDeletedFalse(tenantId, status)
-                    : leadRepository.countByTenantIdAndOwnerIdAndStatusAndDeletedFalse(tenantId, ownerId, status);
-            items.add(countItem(status.name(), leadStatusName(status), count, BigDecimal.ZERO));
+            QueryWrapper<LeadEntity> wrapper = leadBase(tenantId, ownerId);
+            wrapper.eq("status", status.name());
+            items.add(countItem(
+                    status.name(),
+                    leadStatusName(status),
+                    count(leadMapper.selectCount(wrapper)),
+                    BigDecimal.ZERO));
         }
         return items;
     }
@@ -91,10 +130,13 @@ public class DashboardApplicationService {
     private List<DashboardCountItem> buildCustomerStatusCounts(Long tenantId, Long ownerId) {
         List<DashboardCountItem> items = new ArrayList<DashboardCountItem>();
         for (CustomerStatus status : CustomerStatus.values()) {
-            long count = ownerId == null
-                    ? customerRepository.countByTenantIdAndStatusAndDeletedFalse(tenantId, status)
-                    : customerRepository.countByTenantIdAndOwnerIdAndStatusAndDeletedFalse(tenantId, ownerId, status);
-            items.add(countItem(status.name(), customerStatusName(status), count, BigDecimal.ZERO));
+            QueryWrapper<CustomerEntity> wrapper = customerBase(tenantId, ownerId);
+            wrapper.eq("status", status.name());
+            items.add(countItem(
+                    status.name(),
+                    customerStatusName(status),
+                    count(customerMapper.selectCount(wrapper)),
+                    BigDecimal.ZERO));
         }
         return items;
     }
@@ -102,11 +144,13 @@ public class DashboardApplicationService {
     private List<DashboardCountItem> buildOpportunityStageCounts(Long tenantId, Long ownerId) {
         List<DashboardCountItem> items = new ArrayList<DashboardCountItem>();
         for (OpportunityStage stage : OpportunityStage.values()) {
-            long count = ownerId == null
-                    ? opportunityRepository.countByTenantIdAndStageAndDeletedFalse(tenantId, stage)
-                    : opportunityRepository.countByTenantIdAndOwnerIdAndStageAndDeletedFalse(tenantId, ownerId, stage);
-            BigDecimal amount = opportunityRepository.sumAmountByStage(tenantId, ownerId, stage);
-            items.add(countItem(stage.name(), opportunityStageName(stage), count, nullToZero(amount)));
+            QueryWrapper<OpportunityEntity> wrapper = opportunityBase(tenantId, ownerId);
+            wrapper.eq("stage", stage.name());
+            items.add(countItem(
+                    stage.name(),
+                    opportunityStageName(stage),
+                    count(opportunityMapper.selectCount(wrapper)),
+                    sumOpportunityAmount(tenantId, ownerId, stage)));
         }
         return items;
     }
@@ -114,12 +158,82 @@ public class DashboardApplicationService {
     private List<DashboardCountItem> buildChannelStatusCounts(Long tenantId, Long ownerId) {
         List<DashboardCountItem> items = new ArrayList<DashboardCountItem>();
         for (ChannelStatus status : ChannelStatus.values()) {
-            long count = ownerId == null
-                    ? channelRecordRepository.countByTenantIdAndStatusAndDeletedFalse(tenantId, status)
-                    : channelRecordRepository.countByTenantIdAndOwnerIdAndStatusAndDeletedFalse(tenantId, ownerId, status);
-            items.add(countItem(status.name(), channelStatusName(status), count, BigDecimal.ZERO));
+            QueryWrapper<ChannelRecordEntity> wrapper = channelBase(tenantId, ownerId);
+            wrapper.eq("status", status.name());
+            items.add(countItem(
+                    status.name(),
+                    channelStatusName(status),
+                    count(channelRecordMapper.selectCount(wrapper)),
+                    BigDecimal.ZERO));
         }
         return items;
+    }
+
+    private BigDecimal sumOpportunityAmount(Long tenantId, Long ownerId, OpportunityStage stage) {
+        QueryWrapper<OpportunityEntity> wrapper = opportunityBase(tenantId, ownerId);
+        if (stage != null) {
+            wrapper.eq("stage", stage.name());
+        }
+        wrapper.select("coalesce(sum(amount), 0)");
+        List<Object> values = opportunityMapper.selectObjs(wrapper);
+        if (values == null || values.isEmpty() || values.get(0) == null) {
+            return BigDecimal.ZERO;
+        }
+        Object value = values.get(0);
+        if (value instanceof BigDecimal) {
+            return (BigDecimal) value;
+        }
+        return new BigDecimal(String.valueOf(value));
+    }
+
+    private QueryWrapper<LeadEntity> leadBase(Long tenantId, Long ownerId) {
+        QueryWrapper<LeadEntity> wrapper = new QueryWrapper<LeadEntity>();
+        wrapper.eq("tenant_id", tenantId);
+        wrapper.eq("deleted", false);
+        applyOwnerScope(wrapper, ownerId);
+        return wrapper;
+    }
+
+    private QueryWrapper<CustomerEntity> customerBase(Long tenantId, Long ownerId) {
+        QueryWrapper<CustomerEntity> wrapper = new QueryWrapper<CustomerEntity>();
+        wrapper.eq("tenant_id", tenantId);
+        wrapper.eq("deleted", false);
+        applyOwnerScope(wrapper, ownerId);
+        return wrapper;
+    }
+
+    private QueryWrapper<OpportunityEntity> opportunityBase(Long tenantId, Long ownerId) {
+        QueryWrapper<OpportunityEntity> wrapper = new QueryWrapper<OpportunityEntity>();
+        wrapper.eq("tenant_id", tenantId);
+        wrapper.eq("deleted", false);
+        applyOwnerScope(wrapper, ownerId);
+        return wrapper;
+    }
+
+    private QueryWrapper<ChannelRecordEntity> channelBase(Long tenantId, Long ownerId) {
+        QueryWrapper<ChannelRecordEntity> wrapper = new QueryWrapper<ChannelRecordEntity>();
+        wrapper.eq("tenant_id", tenantId);
+        wrapper.eq("deleted", false);
+        applyOwnerScope(wrapper, ownerId);
+        return wrapper;
+    }
+
+    private QueryWrapper<FollowupRecordEntity> followupBase(Long tenantId, Long ownerId) {
+        QueryWrapper<FollowupRecordEntity> wrapper = new QueryWrapper<FollowupRecordEntity>();
+        wrapper.eq("tenant_id", tenantId);
+        wrapper.eq("deleted", false);
+        applyOwnerScope(wrapper, ownerId);
+        return wrapper;
+    }
+
+    private void applyOwnerScope(QueryWrapper<?> wrapper, Long ownerId) {
+        if (ownerId != null) {
+            wrapper.eq("owner_id", ownerId);
+        }
+    }
+
+    private long count(Long value) {
+        return value == null ? 0L : value.longValue();
     }
 
     private DashboardCountItem countItem(String code, String name, long count, BigDecimal amount) {
@@ -127,15 +241,8 @@ public class DashboardApplicationService {
         item.setCode(code);
         item.setName(name);
         item.setCount(count);
-        item.setAmount(nullToZero(amount));
+        item.setAmount(amount == null ? BigDecimal.ZERO : amount);
         return item;
-    }
-
-    private BigDecimal nullToZero(BigDecimal value) {
-        if (value == null) {
-            return BigDecimal.ZERO;
-        }
-        return value;
     }
 
     private String leadStatusName(LeadStatus status) {

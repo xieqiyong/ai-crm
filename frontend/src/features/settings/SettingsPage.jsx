@@ -37,6 +37,7 @@ export function SettingsPage({
   const [draft, setDraft] = useState(preferences)
   const [saved, setSaved] = useState(true)
   const fileRef = useRef(null)
+  const faviconRef = useRef(null)
   const accents = ['#f45b0b', '#2563eb', '#7c3aed', '#0891b2', '#16a34a']
 
   const update = (patch) => {
@@ -46,21 +47,26 @@ export function SettingsPage({
     setSaved(false)
   }
 
-  const uploadLogo = (event) => {
+  const uploadBrandImage = (event, field, label, maxSize) => {
     const file = event.target.files?.[0]
     if (!file) return
-    if (!file.type.startsWith('image/')) {
-      notify('请选择图片格式的 Logo', 'info')
+    const isIcon = file.name.toLowerCase().endsWith('.ico')
+    if (!file.type.startsWith('image/') && !isIcon) {
+      notify(`请选择图片格式的${label}`, 'info')
       return
     }
-    if (file.size > 1024 * 1024) {
-      notify('Logo 图片请控制在 1MB 以内', 'info')
+    if (file.size > maxSize) {
+      notify(`${label}图片大小超出限制`, 'info')
       return
     }
     const reader = new FileReader()
-    reader.onload = () => update({ logo: reader.result })
+    reader.onload = () => update({ [field]: reader.result })
     reader.readAsDataURL(file)
+    event.target.value = ''
   }
+
+  const uploadLogo = (event) => uploadBrandImage(event, 'logo', 'Logo', 1024 * 1024)
+  const uploadFavicon = (event) => uploadBrandImage(event, 'favicon', '页签图标', 512 * 1024)
 
   const save = () => {
     onUpdate(draft)
@@ -91,9 +97,11 @@ export function SettingsPage({
               draft={draft}
               accents={accents}
               fileRef={fileRef}
+              faviconRef={faviconRef}
               saved={saved}
               update={update}
               uploadLogo={uploadLogo}
+              uploadFavicon={uploadFavicon}
               save={save}
             />
           )}
@@ -117,16 +125,18 @@ function AppearanceSettings({
   draft,
   accents,
   fileRef,
+  faviconRef,
   saved,
   update,
   uploadLogo,
+  uploadFavicon,
   save,
 }) {
   return (
     <>
       <Card className="settings-section">
         <div className="settings-section-head">
-          <div><h2>企业品牌</h2><p>自定义 Logo 会应用于登录页、侧栏和移动端导航。</p></div>
+          <div><h2>企业品牌</h2><p>分别管理系统 Logo 和浏览器页签小图标。</p></div>
           <Badge tone="success">已启用</Badge>
         </div>
         <div className="logo-setting">
@@ -139,6 +149,26 @@ function AppearanceSettings({
               {draft.logo && <Button variant="ghost" onClick={() => update({ logo: '' })}>恢复默认</Button>}
             </div>
             <input ref={fileRef} hidden type="file" accept="image/png,image/jpeg,image/webp,image/svg+xml" onChange={uploadLogo} />
+          </div>
+        </div>
+        <div className="logo-setting favicon-setting">
+          <div className="logo-preview favicon-preview">
+            <img src={draft.favicon || draft.logo || '/favicon.svg'} alt="当前页签图标" />
+          </div>
+          <div>
+            <b>浏览器页签图标</b>
+            <p>未单独上传时自动跟随企业 Logo；建议使用正方形 PNG、SVG 或 ICO，最大 512KB。</p>
+            <div>
+              <Button variant="secondary" icon={Upload} onClick={() => faviconRef.current?.click()}>上传页签图标</Button>
+              {draft.favicon && <Button variant="ghost" onClick={() => update({ favicon: '' })}>跟随企业 Logo</Button>}
+            </div>
+            <input
+              ref={faviconRef}
+              hidden
+              type="file"
+              accept="image/png,image/jpeg,image/webp,image/svg+xml,image/x-icon,.ico"
+              onChange={uploadFavicon}
+            />
           </div>
         </div>
         <Field label="系统名称"><input defaultValue={APP_NAME} disabled /></Field>

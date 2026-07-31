@@ -7,6 +7,7 @@ export const STORAGE_KEYS = {
   accent: 'crm.accent',
   density: 'crm.density',
   logo: 'crm.logo',
+  favicon: 'crm.favicon',
 }
 
 export const DEFAULT_PREFERENCES = {
@@ -14,6 +15,7 @@ export const DEFAULT_PREFERENCES = {
   accent: '#f45b0b',
   density: 'comfortable',
   logo: '',
+  favicon: '',
 }
 
 export const DATA_SCOPE_LABELS = {

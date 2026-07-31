@@ -190,8 +190,10 @@ flowchart LR
 6. 把启用的 Skill 物化为工作目录中的 `SKILL.md`。
 7. 合成系统提示词。
 8. 根据智能体配置创建 OpenAI 兼容模型。
-9. 构造 AgentScope `HarnessAgent`。
+9. 构造 AgentScope `ReActAgent`。
 10. 使用流式事件方式执行。
+
+运行时使用 AgentScope Core 的 `ReActAgent.builder()`，不使用 Harness。智能体只会获得当前场景显式注册的 Java 业务工具、动态 MCP 工具，以及存在 Skill 时由 AgentScope 注册的 Skill 读取工具，不会自动获得文件读写、命令执行、长期记忆、会话检索、异步任务或子智能体工具。
 
 模型配置支持 OpenAI 兼容协议。`DEEPSEEK` 和 `DASHSCOPE` 在未填写地址时会使用系统内置的兼容地址，其他供应商可以通过 `baseUrl` 接入。
 
@@ -216,6 +218,20 @@ Java 工具通过 `AgentRuntimeToolProvider` 扩展点注册。每个 Provider �
 同名工具在一次运行中只注册一次，避免多个 Provider 重复挂载。
 
 业务 Tool Provider 是场景隔离的重要边界。即使其他场景的工具 Bean 已经存在于 Spring 容器，只要 Provider 没有为当前 `sceneCode` 返回该工具，本次智能体就无法调用它。
+
+#### 4.5.1 预置CRM只读查询工具
+
+系统预置以下CRM业务查询工具，但没有为它们实现 `AgentRuntimeToolProvider`，因此当前不会自动挂载到任何智能体：
+
+| 工具名称 | 能力 | 读取权限 |
+| --- | --- | --- |
+| `crm_query_leads` | 按编号读取线索详情，或按关键词、状态分页查询线索 | `crm:lead:view` 或 `crm:lead:manage` |
+| `crm_query_customers` | 按编号读取客户详情，或按关键词、状态分页查询客户 | `crm:customer:view` 或 `crm:customer:manage` |
+| `crm_query_followups` | 按编号读取跟进详情，或按对象、方式、关键词分页查询跟进记录 | `crm:followup:view` 或 `crm:followup:manage` |
+
+三个工具统一通过 `CrmBusinessQueryToolCatalog` 按名称绑定。后续为某个场景创建 Provider 时，只能显式传入需要的工具名称，空列表不会返回任何工具。
+
+工具查询复用应用层服务，底层仍通过 MyBatis-Plus 读取真实数据。运行上下文必须包含租户、用户、数据权限和功能权限；缺少权限上下文时工具拒绝执行。返回结果中的雪花编号统一使用字符串，每页最多返回20条，避免编号精度丢失和单次工具结果消耗过多上下文。
 
 ### 4.6 Skills 动态挂载
 

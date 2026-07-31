@@ -507,6 +507,7 @@ function CustomerOverview({
           canView={canViewFollowup}
           notify={notify}
           pageSize={5}
+          compact
         />
 
         <div className="customer-bottom-grid">

@@ -8,6 +8,7 @@ export function useThemePreferences() {
     accent: readStorage(STORAGE_KEYS.accent, DEFAULT_PREFERENCES.accent),
     density: readStorage(STORAGE_KEYS.density, DEFAULT_PREFERENCES.density),
     logo: readStorage(STORAGE_KEYS.logo, DEFAULT_PREFERENCES.logo),
+    favicon: readStorage(STORAGE_KEYS.favicon, DEFAULT_PREFERENCES.favicon),
   }))
 
   useEffect(() => {
@@ -25,6 +26,20 @@ export function useThemePreferences() {
     return () => media.removeEventListener?.('change', applyTheme)
   }, [preferences])
 
+  useEffect(() => {
+    const favicon = document.querySelector('link[rel~="icon"]') || document.createElement('link')
+    favicon.rel = 'icon'
+    favicon.href = preferences.favicon || preferences.logo || '/favicon.svg'
+    if (preferences.favicon || preferences.logo) {
+      favicon.removeAttribute('type')
+    } else {
+      favicon.type = 'image/svg+xml'
+    }
+    if (!favicon.parentNode) {
+      document.head.appendChild(favicon)
+    }
+  }, [preferences.favicon, preferences.logo])
+
   const updatePreferences = (next) => {
     const merged = { ...preferences, ...next }
     setPreferences(merged)
@@ -32,6 +47,7 @@ export function useThemePreferences() {
     writeStorage(STORAGE_KEYS.accent, merged.accent)
     writeStorage(STORAGE_KEYS.density, merged.density)
     writeStorage(STORAGE_KEYS.logo, merged.logo)
+    writeStorage(STORAGE_KEYS.favicon, merged.favicon)
   }
 
   return [preferences, updatePreferences]

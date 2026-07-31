@@ -22,6 +22,14 @@ public class DashboardOverviewResponse {
 
     private BigDecimal wonAmount = BigDecimal.ZERO;
 
+    private long todayFollowupCount;
+
+    private long todayChannelUserCount;
+
+    private long todayLeadConversionCount;
+
+    private long todayNewLeadCount;
+
     private List<DashboardCountItem> leadStatusCounts = new ArrayList<DashboardCountItem>();
 
     private List<DashboardCountItem> customerStatusCounts = new ArrayList<DashboardCountItem>();

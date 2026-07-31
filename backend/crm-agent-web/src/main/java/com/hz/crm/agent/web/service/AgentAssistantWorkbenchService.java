@@ -261,6 +261,18 @@ public class AgentAssistantWorkbenchService {
         context.put("userMessage", request.getMessage());
         context.put("attachments", safeAttachments(request.getAttachments()));
         context.put("conversationTitle", title(request.getMessage()));
+        JwtPrincipal principal = CurrentUserContext.getPrincipal();
+        if (principal == null) {
+            context.put("dataScope", "SELF");
+            context.put("permissions", new ArrayList<String>());
+        } else {
+            context.put("dataScope", principal.getDataScope());
+            context.put(
+                    "permissions",
+                    principal.getPermissions() == null
+                            ? new ArrayList<String>()
+                            : new ArrayList<String>(principal.getPermissions()));
+        }
         runRequest.setContext(context);
         return runRequest;
     }
