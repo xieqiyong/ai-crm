@@ -1440,6 +1440,8 @@ function WecomSourceSnapshot({ value }) {
   }
 
   const profile = snapshot['客户基础信息'] || {}
+  const summary = snapshot['同步摘要'] || {}
+  const externalProfile = Array.isArray(snapshot['客户对外资料']) ? snapshot['客户对外资料'] : []
   const follows = Array.isArray(snapshot['好友关系']) ? snapshot['好友关系'] : []
   const groups = Array.isArray(snapshot['客户群关系']) ? snapshot['客户群关系'] : []
 
@@ -1456,10 +1458,31 @@ function WecomSourceSnapshot({ value }) {
         )}
       </div>
 
+      <SnapshotSection title="同步摘要" count={snapshotEntries(summary).length}>
+        <div className="wecom-profile-grid">
+          {snapshotEntries(summary).map(([label, fieldValue]) => (
+            <SnapshotField label={label} value={fieldValue} key={label} />
+          ))}
+        </div>
+      </SnapshotSection>
+
       <SnapshotSection title="客户基础资料" count={snapshotEntries(profile).length}>
         <div className="wecom-profile-grid">
           {snapshotEntries(profile).map(([label, fieldValue]) => (
             <SnapshotField label={label} value={fieldValue} key={label} />
+          ))}
+        </div>
+      </SnapshotSection>
+
+      <SnapshotSection title="客户对外资料" count={externalProfile.length}>
+        <div className="wecom-relation-list">
+          {externalProfile.map((item, index) => (
+            <SnapshotRelationCard
+              data={item}
+              title={item?.['资料名称'] || `对外资料 ${index + 1}`}
+              titleLabel="资料名称"
+              key={`${item?.['资料名称'] || 'external-profile'}-${index}`}
+            />
           ))}
         </div>
       </SnapshotSection>
@@ -1549,7 +1572,10 @@ function formatSnapshotValue(label, value) {
     return '未设置'
   }
   if (label === '添加方式' || label === '入群方式') {
-    return `场景代码 ${value}`
+    if (typeof value === 'number' || /^\d+$/.test(String(value))) {
+      return `方式代码 ${value}`
+    }
+    return String(value)
   }
   if (label.includes('时间') && typeof value === 'string') {
     return formatDateTime(value)

@@ -73,6 +73,7 @@ public class WecomDataService {
     public WecomUpsertResult<WecomExternalContactEntity> upsertContact(
             Long tenantId, Long configId, JSONObject profile) {
         JSONObject external = profile == null ? null : profile.getJSONObject("external_contact");
+        boolean fullProfile = external != null;
         if (external == null) {
             external = profile;
         }
@@ -93,15 +94,17 @@ public class WecomDataService {
             entity.setCreatedAt(now);
             entity.setDeleted(false);
         }
-        entity.setName(external.getString("name"));
-        entity.setContactType(external.getInteger("type"));
-        entity.setGender(external.getInteger("gender"));
-        entity.setAvatar(external.getString("avatar"));
-        entity.setPosition(external.getString("position"));
-        entity.setCorpName(external.getString("corp_name"));
-        entity.setCorpFullName(external.getString("corp_full_name"));
-        entity.setUnionId(external.getString("unionid"));
-        entity.setProfileJson(JSON.toJSONString(external));
+        entity.setName(resolveString(entity.getName(), external.getString("name"), fullProfile));
+        entity.setContactType(resolveInteger(entity.getContactType(), external.getInteger("type"), fullProfile));
+        entity.setGender(resolveInteger(entity.getGender(), external.getInteger("gender"), fullProfile));
+        entity.setAvatar(resolveString(entity.getAvatar(), external.getString("avatar"), fullProfile));
+        entity.setPosition(resolveString(entity.getPosition(), external.getString("position"), fullProfile));
+        entity.setCorpName(resolveString(entity.getCorpName(), external.getString("corp_name"), fullProfile));
+        entity.setCorpFullName(resolveString(entity.getCorpFullName(), external.getString("corp_full_name"), fullProfile));
+        entity.setUnionId(resolveString(entity.getUnionId(), external.getString("unionid"), fullProfile));
+        if (fullProfile || !StringUtils.hasText(entity.getProfileJson())) {
+            entity.setProfileJson(JSON.toJSONString(external));
+        }
         entity.setActive(true);
         entity.setLastSyncedAt(now);
         entity.setUpdatedAt(now);
@@ -338,6 +341,20 @@ public class WecomDataService {
         wrapper.eq("chat_id", chatId);
         wrapper.eq("deleted", false);
         return groupChatMapper.selectOne(wrapper);
+    }
+
+    private String resolveString(String currentValue, String nextValue, boolean fullProfile) {
+        if (fullProfile || StringUtils.hasText(nextValue)) {
+            return nextValue;
+        }
+        return currentValue;
+    }
+
+    private Integer resolveInteger(Integer currentValue, Integer nextValue, boolean fullProfile) {
+        if (fullProfile || nextValue != null) {
+            return nextValue;
+        }
+        return currentValue;
     }
 
     private WecomGroupMemberEntity findGroupMember(

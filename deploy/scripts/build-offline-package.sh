@@ -212,6 +212,22 @@ CRM_STORAGE_UPLOAD_DIR=${CRM_STORAGE_UPLOAD_DIR:-/app/uploads}
 # 本地附件对外访问路径
 CRM_STORAGE_PUBLIC_PATH=${CRM_STORAGE_PUBLIC_PATH:-/uploads}
 
+# -------------------- 企业微信客户同步 --------------------
+# 企业微信接口地址，通常无需修改
+CRM_WECOM_BASE_URL=${CRM_WECOM_BASE_URL:-https://qyapi.weixin.qq.com}
+# 企业微信接口连接超时，单位毫秒
+CRM_WECOM_CONNECT_TIMEOUT_MS=${CRM_WECOM_CONNECT_TIMEOUT_MS:-5000}
+# 企业微信接口读取超时，单位毫秒
+CRM_WECOM_READ_TIMEOUT_MS=${CRM_WECOM_READ_TIMEOUT_MS:-30000}
+# 定时任务扫描间隔，单位毫秒；每个企业实际同步频率在渠道页面配置
+CRM_WECOM_SCHEDULE_DELAY_MS=${CRM_WECOM_SCHEDULE_DELAY_MS:-60000}
+# 服务启动后首次扫描延迟，单位毫秒
+CRM_WECOM_SCHEDULE_INITIAL_DELAY_MS=${CRM_WECOM_SCHEDULE_INITIAL_DELAY_MS:-30000}
+# 是否补充读取企业微信客户详情，用于获取完整跟进人、标签和对外资料
+CRM_WECOM_FETCH_DETAIL_ENABLED=${CRM_WECOM_FETCH_DETAIL_ENABLED:-true}
+# 是否读取企业微信客户标签库，用于把标签ID转换成标签名称
+CRM_WECOM_FETCH_TAGS_ENABLED=${CRM_WECOM_FETCH_TAGS_ENABLED:-true}
+
 # -------------------- Java Agent联网搜索 --------------------
 # 是否启用企业公开信息搜索
 CRM_AGENT_WEB_SEARCH_ENABLED=${CRM_AGENT_WEB_SEARCH_ENABLED:-false}

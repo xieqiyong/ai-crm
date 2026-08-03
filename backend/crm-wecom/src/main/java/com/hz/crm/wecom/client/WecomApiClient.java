@@ -93,6 +93,49 @@ public class WecomApiClient {
         return records;
     }
 
+    public JSONObject getExternalContact(String accessToken, String externalUserId) {
+        if (!StringUtils.hasText(externalUserId)) {
+            return null;
+        }
+        JSONObject result = new JSONObject();
+        JSONArray followUsers = new JSONArray();
+        String cursor = "";
+        do {
+            String path = "/cgi-bin/externalcontact/get?access_token="
+                    + encode(accessToken)
+                    + "&external_userid="
+                    + encode(externalUserId);
+            if (StringUtils.hasText(cursor)) {
+                path = path + "&cursor=" + encode(cursor);
+            }
+            JSONObject response = execute("GET", path, null);
+            if (result.getJSONObject("external_contact") == null) {
+                result.put("external_contact", response.getJSONObject("external_contact"));
+            }
+            JSONArray array = response.getJSONArray("follow_user");
+            if (array != null) {
+                for (int index = 0; index < array.size(); index++) {
+                    JSONObject item = array.getJSONObject(index);
+                    if (item != null) {
+                        followUsers.add(item);
+                    }
+                }
+            }
+            cursor = response.getString("next_cursor");
+        } while (StringUtils.hasText(cursor));
+        result.put("follow_user", followUsers);
+        return result;
+    }
+
+    public JSONArray listCorpTags(String accessToken) {
+        JSONObject response = execute(
+                "POST",
+                "/cgi-bin/externalcontact/get_corp_tag_list?access_token=" + encode(accessToken),
+                new JSONObject());
+        JSONArray groups = response.getJSONArray("tag_group");
+        return groups == null ? new JSONArray() : groups;
+    }
+
     public List<String> listGroupChatIds(String accessToken, List<String> ownerUserIds) {
         if (ownerUserIds == null || ownerUserIds.isEmpty()) {
             return Collections.emptyList();
