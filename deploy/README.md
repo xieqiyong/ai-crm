@@ -272,3 +272,6 @@ docker-compose down
 - 前端通过 Nginx 代理 `/api`、`/uploads`、`/minio` 到后端或 MinIO 服务。
 - 首次启动后，如果系统没有超级管理员，会进入初始化页面。
 - 生产环境必须修改 `.env` 里的密码和 `CRM_JWT_SECRET`。
+
+## 八、本地开发
+.\deploy\scripts\build-app-images.ps1 crm-v1 -DeployRemote -RemoteDeployDir /app/builds/products/crm/current

@@ -2,7 +2,21 @@
     [Parameter(Position = 0)]
     [string]$Version = "release",
 
-    [string]$JavaHome = "D:\work-tools\jdk-21.0.2"
+    [string]$JavaHome = "D:\work-tools\jdk-21.0.2",
+
+    [switch]$Upload,
+
+    [switch]$DeployRemote,
+
+    [string]$RemoteHost = "192.168.50.105",
+
+    [string]$RemoteUser = "root",
+
+    [string]$RemotePath = "/app/builds/products/crm",
+
+    [string]$RemotePassword = $env:CRM_DEPLOY_PASSWORD,
+
+    [string]$RemoteDeployDir = ""
 )
 
 $ErrorActionPreference = "Stop"
@@ -31,6 +45,224 @@ function Assert-CommandExists {
     if (-not (Get-Command $Command -ErrorAction SilentlyContinue)) {
         throw "未找到$Description，请先安装并加入环境变量：$Command"
     }
+}
+
+function Write-Utf8NoBomFile {
+    param(
+        [string]$Path,
+        [string]$Content
+    )
+
+    $Utf8NoBom = New-Object System.Text.UTF8Encoding($false)
+    $NormalizedContent = $Content -replace "`r`n", "`n"
+    [System.IO.File]::WriteAllText($Path, $NormalizedContent, $Utf8NoBom)
+}
+
+function New-ServerScripts {
+    param(
+        [string]$OutputDir,
+        [string]$Version
+    )
+
+    $LoadScript = Join-Path $OutputDir "load-app-images.sh"
+    $RestartScript = Join-Path $OutputDir "restart-crm-app.sh"
+    $DeployScript = Join-Path $OutputDir "deploy-crm-app.sh"
+    $VersionFile = Join-Path $OutputDir "VERSION"
+
+    $LoadContent = @"
+#!/usr/bin/env bash
+set -euo pipefail
+
+SCRIPT_DIR="`$(cd "`$(dirname "`$0")" && pwd)"
+CRM_VERSION="`${1:-$Version}"
+BACKEND_ARCHIVE="`$SCRIPT_DIR/crm-backend-`$CRM_VERSION.tar"
+FRONTEND_ARCHIVE="`$SCRIPT_DIR/crm-frontend-`$CRM_VERSION.tar"
+
+if [ ! -f "`$BACKEND_ARCHIVE" ]; then
+  echo "未找到后端镜像：`$BACKEND_ARCHIVE"
+  exit 1
+fi
+
+if [ ! -f "`$FRONTEND_ARCHIVE" ]; then
+  echo "未找到前端镜像：`$FRONTEND_ARCHIVE"
+  exit 1
+fi
+
+echo "加载后端镜像：`$BACKEND_ARCHIVE"
+docker load -i "`$BACKEND_ARCHIVE"
+
+echo "加载前端镜像：`$FRONTEND_ARCHIVE"
+docker load -i "`$FRONTEND_ARCHIVE"
+
+docker image inspect "crm-backend:`$CRM_VERSION" >/dev/null
+docker image inspect "crm-frontend:`$CRM_VERSION" >/dev/null
+
+echo "应用镜像加载完成：`$CRM_VERSION"
+"@
+
+    $RestartContent = @"
+#!/usr/bin/env bash
+set -euo pipefail
+
+SCRIPT_DIR="`$(cd "`$(dirname "`$0")" && pwd)"
+CRM_VERSION="`${1:-$Version}"
+DEPLOY_DIR="`${2:-`${CRM_DEPLOY_DIR:-}}"
+
+compose() {
+  if docker compose version >/dev/null 2>&1; then
+    docker compose "`$@"
+    return
+  fi
+  if command -v docker-compose >/dev/null 2>&1; then
+    docker-compose "`$@"
+    return
+  fi
+  echo "未找到Docker Compose"
+  exit 1
+}
+
+resolve_deploy_dir() {
+  if [ -n "`$DEPLOY_DIR" ]; then
+    echo "`$DEPLOY_DIR"
+    return
+  fi
+
+  if [ -f "`$SCRIPT_DIR/docker-compose.yml" ]; then
+    echo "`$SCRIPT_DIR"
+    return
+  fi
+
+  if [ -f "/app/builds/products/crm/current/docker-compose.yml" ]; then
+    echo "/app/builds/products/crm/current"
+    return
+  fi
+
+  local latest_dir
+  latest_dir="`$(find /app/builds/products/crm -maxdepth 2 -name docker-compose.yml -printf '%T@ %h\n' 2>/dev/null | sort -nr | head -n 1 | cut -d' ' -f2-)"
+  if [ -n "`$latest_dir" ]; then
+    echo "`$latest_dir"
+    return
+  fi
+
+  echo ""
+}
+
+DEPLOY_DIR="`$(resolve_deploy_dir)"
+if [ -z "`$DEPLOY_DIR" ] || [ ! -f "`$DEPLOY_DIR/docker-compose.yml" ]; then
+  echo "未找到部署目录，请通过第二个参数或CRM_DEPLOY_DIR指定包含docker-compose.yml的目录"
+  exit 1
+fi
+
+cd "`$DEPLOY_DIR"
+
+if [ ! -f ".env" ]; then
+  echo "部署目录缺少.env：`$DEPLOY_DIR/.env"
+  exit 1
+fi
+
+TMP_ENV=".env.tmp.`$$"
+if grep -q '^CRM_VERSION=' .env; then
+  sed "s/^CRM_VERSION=.*/CRM_VERSION=`$CRM_VERSION/" .env > "`$TMP_ENV"
+else
+  cp .env "`$TMP_ENV"
+  printf '\nCRM_VERSION=%s\n' "`$CRM_VERSION" >> "`$TMP_ENV"
+fi
+mv "`$TMP_ENV" .env
+
+echo "部署目录：`$DEPLOY_DIR"
+echo "应用版本：`$CRM_VERSION"
+echo "重启后端和前端"
+compose up -d --no-deps --force-recreate crm-backend crm-frontend
+
+echo "当前应用容器状态"
+compose ps crm-backend crm-frontend
+"@
+
+    $DeployContent = @"
+#!/usr/bin/env bash
+set -euo pipefail
+
+SCRIPT_DIR="`$(cd "`$(dirname "`$0")" && pwd)"
+CRM_VERSION="`${1:-$Version}"
+DEPLOY_DIR="`${2:-`${CRM_DEPLOY_DIR:-}}"
+
+bash "`$SCRIPT_DIR/load-app-images.sh" "`$CRM_VERSION"
+
+if [ -n "`$DEPLOY_DIR" ]; then
+  bash "`$SCRIPT_DIR/restart-crm-app.sh" "`$CRM_VERSION" "`$DEPLOY_DIR"
+else
+  bash "`$SCRIPT_DIR/restart-crm-app.sh" "`$CRM_VERSION"
+fi
+"@
+
+    $VersionContent = @"
+CRM_VERSION=$Version
+BUILD_TIME=$(Get-Date -Format "yyyy-MM-dd HH:mm:ss")
+BACKEND_IMAGE=crm-backend:$Version
+FRONTEND_IMAGE=crm-frontend:$Version
+"@
+
+    Write-Utf8NoBomFile -Path $LoadScript -Content $LoadContent
+    Write-Utf8NoBomFile -Path $RestartScript -Content $RestartContent
+    Write-Utf8NoBomFile -Path $DeployScript -Content $DeployContent
+    Write-Utf8NoBomFile -Path $VersionFile -Content $VersionContent
+
+    return @($LoadScript, $RestartScript, $DeployScript, $VersionFile)
+}
+
+function Invoke-RemoteCommand {
+    param(
+        [string]$CommandText,
+        [string]$Description,
+        [string]$RemoteHost,
+        [string]$RemoteUser,
+        [string]$RemotePassword
+    )
+
+    $RemoteTarget = "$RemoteUser@$RemoteHost"
+    if (-not [string]::IsNullOrWhiteSpace($RemotePassword) -and (Get-Command "plink" -ErrorAction SilentlyContinue)) {
+        Invoke-CheckedCommand `
+            -Command "plink" `
+            -Arguments @("-batch", "-pw", $RemotePassword, $RemoteTarget, $CommandText) `
+            -Description $Description
+        return
+    }
+
+    Assert-CommandExists -Command "ssh" -Description "OpenSSH ssh或PuTTY plink"
+    Invoke-CheckedCommand `
+        -Command "ssh" `
+        -Arguments @($RemoteTarget, $CommandText) `
+        -Description $Description
+}
+
+function Invoke-RemoteUpload {
+    param(
+        [string[]]$Files,
+        [string]$RemoteHost,
+        [string]$RemoteUser,
+        [string]$RemotePath,
+        [string]$RemotePassword
+    )
+
+    $RemoteTarget = "$RemoteUser@$RemoteHost"
+    $RemoteDestination = "${RemoteTarget}:$RemotePath/"
+    if (-not [string]::IsNullOrWhiteSpace($RemotePassword) -and (Get-Command "pscp" -ErrorAction SilentlyContinue)) {
+        Invoke-CheckedCommand `
+            -Command "pscp" `
+            -Arguments (@("-batch", "-pw", $RemotePassword) + $Files + @($RemoteDestination)) `
+            -Description "上传应用镜像和部署脚本"
+        return
+    }
+
+    if (-not [string]::IsNullOrWhiteSpace($RemotePassword)) {
+        Write-Host "检测到远程密码，但未找到pscp；将使用scp并由系统提示输入密码。" -ForegroundColor Yellow
+    }
+
+    Assert-CommandExists -Command "scp" -Description "OpenSSH scp或PuTTY pscp"
+    Invoke-CheckedCommand `
+        -Command "scp" `
+        -Arguments ($Files + @($RemoteDestination)) `
+        -Description "上传应用镜像和部署脚本"
 }
 
 function Set-BuildJavaHome {
@@ -104,6 +336,9 @@ function Set-BuildJavaHome {
 if ($Version -notmatch "^[A-Za-z0-9_][A-Za-z0-9_.-]{0,127}$") {
     throw "镜像版本格式不正确，只允许字母、数字、下划线、点和短横线"
 }
+if ([string]::IsNullOrWhiteSpace($RemotePath) -or -not $RemotePath.StartsWith("/")) {
+    throw "远程上传目录必须是Linux绝对路径"
+}
 
 $ScriptDir = Split-Path -Parent $MyInvocation.MyCommand.Path
 $DeployDir = Split-Path -Parent $ScriptDir
@@ -121,6 +356,7 @@ $BackendImage = "crm-backend:$Version"
 $FrontendImage = "crm-frontend:$Version"
 $BackendArchive = Join-Path $OutputDir "crm-backend-$Version.tar"
 $FrontendArchive = Join-Path $OutputDir "crm-frontend-$Version.tar"
+$ShouldUpload = $Upload.IsPresent -or $DeployRemote.IsPresent
 $OriginalJavaHome = $env:JAVA_HOME
 $OriginalPath = $env:Path
 
@@ -260,6 +496,44 @@ try {
         "$($BackendHash.Hash.ToLower())  $($BackendHash.Path | Split-Path -Leaf)"
         "$($FrontendHash.Hash.ToLower())  $($FrontendHash.Path | Split-Path -Leaf)"
     ) | Set-Content -LiteralPath $ChecksumFile -Encoding ASCII
+    $ServerScripts = New-ServerScripts -OutputDir $OutputDir -Version $Version
+
+    if ($ShouldUpload) {
+        Invoke-RemoteCommand `
+            -CommandText "mkdir -p '$RemotePath'" `
+            -Description "创建远程上传目录" `
+            -RemoteHost $RemoteHost `
+            -RemoteUser $RemoteUser `
+            -RemotePassword $RemotePassword
+
+        $UploadFiles = @($BackendArchive, $FrontendArchive, $ChecksumFile) + $ServerScripts
+        Invoke-RemoteUpload `
+            -Files $UploadFiles `
+            -RemoteHost $RemoteHost `
+            -RemoteUser $RemoteUser `
+            -RemotePath $RemotePath `
+            -RemotePassword $RemotePassword
+
+        Invoke-RemoteCommand `
+            -CommandText "chmod +x '$RemotePath/load-app-images.sh' '$RemotePath/restart-crm-app.sh' '$RemotePath/deploy-crm-app.sh'" `
+            -Description "授权远程部署脚本" `
+            -RemoteHost $RemoteHost `
+            -RemoteUser $RemoteUser `
+            -RemotePassword $RemotePassword
+    }
+
+    if ($DeployRemote.IsPresent) {
+        $RemoteDeployCommand = "cd '$RemotePath' && bash deploy-crm-app.sh '$Version'"
+        if (-not [string]::IsNullOrWhiteSpace($RemoteDeployDir)) {
+            $RemoteDeployCommand = "cd '$RemotePath' && bash deploy-crm-app.sh '$Version' '$RemoteDeployDir'"
+        }
+        Invoke-RemoteCommand `
+            -CommandText $RemoteDeployCommand `
+            -Description "远程加载镜像并重启应用" `
+            -RemoteHost $RemoteHost `
+            -RemoteUser $RemoteUser `
+            -RemotePassword $RemotePassword
+    }
 
     Write-Host ""
     Write-Host "构建完成" -ForegroundColor Green
@@ -270,13 +544,19 @@ try {
     Write-Host "上传以下文件到服务器：" -ForegroundColor Yellow
     Write-Host "  $BackendArchive"
     Write-Host "  $FrontendArchive"
+    Write-Host "  $ChecksumFile"
+    foreach ($ServerScript in $ServerScripts) {
+        Write-Host "  $ServerScript"
+    }
     Write-Host ""
     Write-Host "服务器执行：" -ForegroundColor Yellow
-    Write-Host "  docker load -i crm-backend-$Version.tar"
-    Write-Host "  docker load -i crm-frontend-$Version.tar"
-    Write-Host "  docker compose up -d --no-deps --force-recreate crm-backend crm-frontend"
+    Write-Host "  cd $RemotePath"
+    Write-Host "  bash deploy-crm-app.sh $Version"
     Write-Host ""
     Write-Host "注意：Version必须与服务器.env中的CRM_VERSION一致。" -ForegroundColor Yellow
+    if ($ShouldUpload) {
+        Write-Host "远程目录：${RemoteUser}@${RemoteHost}:$RemotePath" -ForegroundColor Green
+    }
 } finally {
     $env:JAVA_HOME = $OriginalJavaHome
     $env:Path = $OriginalPath

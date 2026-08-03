@@ -5757,6 +5757,13 @@ h1, h2, h3, p { margin-top: 0; }
   font-weight: 700;
 }
 
+.agent-markdown ul ul,
+.agent-markdown ul ol,
+.agent-markdown ol ul,
+.agent-markdown ol ol {
+  margin: 4px 0 0;
+}
+
 .agent-markdown strong {
   color: var(--agent-prose-heading);
   font-weight: 750;
@@ -5793,6 +5800,37 @@ h1, h2, h3, p { margin-top: 0; }
   background: none;
   color: inherit;
   font-size: inherit;
+}
+
+/* 代码块外层容器：统一圆角与外边距，语言角标固定在右上角 */
+.agent-markdown-code {
+  position: relative;
+  margin: 0 0 12px;
+  border-radius: 10px;
+  overflow: hidden;
+}
+
+.agent-markdown-code > pre {
+  margin: 0;
+  border-radius: 0;
+}
+
+.agent-markdown-code-lang {
+  position: absolute;
+  top: 0;
+  right: 0;
+  padding: 3px 10px;
+  border-bottom-left-radius: 8px;
+  background: color-mix(in srgb, #ffffff 10%, transparent);
+  color: #94a3b8;
+  font-family: "JetBrains Mono", "Fira Code", Consolas, monospace;
+  font-size: 11px;
+  line-height: 1.6;
+  letter-spacing: 0.5px;
+  text-transform: uppercase;
+  pointer-events: none;
+  user-select: none;
+  z-index: 1;
 }
 
 .agent-markdown blockquote {
@@ -5832,7 +5870,7 @@ h1, h2, h3, p { margin-top: 0; }
 
 .agent-markdown-table table {
   width: 100%;
-  min-width: 520px;
+  min-width: max-content;
   border-collapse: collapse;
   font-size: 14px;
 }
@@ -5843,6 +5881,7 @@ h1, h2, h3, p { margin-top: 0; }
   border-bottom: 1px solid var(--agent-prose-border);
   text-align: left;
   vertical-align: top;
+  overflow-wrap: anywhere;
 }
 
 .agent-markdown-table th {

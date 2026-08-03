@@ -6,6 +6,23 @@ const assistantMarkdownComponents = {
   a({ children, node: _node, ...props }) {
     return <a {...props} target="_blank" rel="noreferrer">{children}</a>
   },
+  pre({ children, node }) {
+    // 从 code 子节点上提取语言（react-markdown 会写成 className，例如 language-js），渲染成右上角语言角标
+    const codeNode = Array.isArray(node?.children)
+      ? node.children.find((child) => child?.tagName === 'code')
+      : null
+    const className = codeNode?.properties?.className
+    const langClass = Array.isArray(className)
+      ? className.find((item) => typeof item === 'string' && item.startsWith('language-'))
+      : null
+    const lang = langClass ? langClass.replace('language-', '') : ''
+    return (
+      <div className="agent-markdown-code">
+        {lang && <span className="agent-markdown-code-lang">{lang}</span>}
+        <pre>{children}</pre>
+      </div>
+    )
+  },
   table({ children, node: _node }) {
     return (
       <div className="agent-markdown-table">
@@ -544,8 +561,10 @@ export function CollapsibleMarkdown({
 }
 
 function normalizeAssistantMarkdownSource(value) {
+  const BS = String.fromCharCode(92) // 反斜杠字符，用编码构造以规避源码转义歧义
   let text = String(value || '')
   const trimmed = text.trim()
+  // 兼容整段文本被当成 JSON 字符串返回（首尾带引号）的情况
   if (trimmed.startsWith('"') && trimmed.endsWith('"')) {
     try {
       const parsed = JSON.parse(trimmed)
@@ -556,23 +575,23 @@ function normalizeAssistantMarkdownSource(value) {
       text = String(value || '')
     }
   }
-  const escapedLineCount = (text.match(/\\n/g) || []).length
+  // 仅当字面 \n 明显多于真实换行时，才判定为换行被转义，再还原成真实换行，避免误伤代码片段里的 \n
+  const literalNewline = BS + 'n'
+  const literalCrLf = BS + 'r' + BS + 'n'
+  const escapedLineCount = (text.match(new RegExp(literalNewline, 'g')) || []).length
   const realLineCount = (text.match(/\n/g) || []).length
   if (escapedLineCount > realLineCount) {
-    text = text.replace(/\\r\\n/g, '\n').replace(/\\n/g, '\n')
+    text = text.split(literalCrLf).join('\n').split(literalNewline).join('\n')
   }
-  return text
-    .replace(/\r\n/g, '\n')
-    .replace(/([^#\n])(?=#{2,6}(?:\s|[^\s#]))/g, '$1\n\n')
-    .replace(/([^\n])-\s*(?=(?:\*\*|[\u4e00-\u9fa5]))/g, '$1\n- ')
-    .replace(/(^|\n)-\s*(?=(?:\*\*|[\u4e00-\u9fa5]))/g, '$1- ')
-    .replace(/([^\n])---(?=\s*(?:\n|$))/g, '$1\n\n---')
-    .replace(
-      /(^|\n)(#{2,6})\s*(结论|依据|下一步动作|风险提醒|建议)(?=\S)/g,
-      '$1$2 $3\n\n',
-    )
-    .replace(/(^|\n)(#{1,6})([^\s#\n])/g, '$1$2 $3')
-    .replace(/\n{3,}/g, '\n\n')
+  text = text.replace(/\r\n/g, '\n')
+  // 修正 “##标题” 这种漏了空格的标题写法（CommonMark 要求 # 后必须有空格）
+  text = text.replace(/(^|\n)(#{1,6})([^\s#\n])/g, '$1$2 $3')
+  // 只在标题、表格前补空行：这两类在 CommonMark/GFM 中不会自动中断段落，必须靠空行分隔才会被识别；
+  // 而列表、引用、代码块能自动中断段落，无需补空行，避免把列表项之间误变成松散列表，或破坏代码块闭合。
+  // 表格用“上一行不以 | 结尾”判断，避免在表格内部行之间误插空行。
+  text = text.replace(/([^\n])\n(?=#{1,6}\s)/g, '$1\n\n')
+  text = text.replace(/([^\n|])\n(?=\|)/g, '$1\n\n')
+  return text.replace(/\n{3,}/g, '\n\n')
 }
 
 function joinParagraphLines(lines) {
