@@ -15,11 +15,11 @@ import { FollowupPage } from '../features/followup/FollowupPage'
 import { KnowledgePage } from '../features/knowledge/KnowledgePage'
 import { LeadDetailPage } from '../features/lead/LeadDetailPage'
 import { LeadPage } from '../features/lead/LeadPage'
-import { SimpleModulePage } from '../features/module/SimpleModulePage'
 import { OpportunityPage } from '../features/opportunity/OpportunityPage'
 import { ProductPage } from '../features/product/ProductPage'
 import { SettingsPage } from '../features/settings/SettingsPage'
 import { MailPage } from '../features/mail/MailPage'
+import { SalesTaskPage } from '../features/task/SalesTaskPage'
 
 export const DEFAULT_ROUTE = 'dashboard'
 
@@ -67,8 +67,7 @@ export const routeGroups = [
         label: '销售任务',
         icon: ClipboardCheck,
         permission: 'menu.tasks',
-        component: SimpleModulePage,
-        pageType: 'tasks',
+        component: SalesTaskPage,
       },
       {
         key: 'channels',

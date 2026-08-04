@@ -1,6 +1,7 @@
 package com.hz.crm.application.followup;
 
 import com.baomidou.mybatisplus.core.conditions.query.QueryWrapper;
+import com.hz.crm.application.task.SalesTaskApplicationService;
 import com.hz.crm.application.followup.dto.FollowupQuery;
 import com.hz.crm.application.followup.dto.FollowupResponse;
 import com.hz.crm.application.followup.dto.FollowupSaveRequest;
@@ -50,6 +51,9 @@ public class FollowupApplicationService {
 
     @Autowired(required = false)
     private UserNameResolver userNameResolver;
+
+    @Autowired
+    private SalesTaskApplicationService salesTaskApplicationService;
 
     @Transactional(readOnly = true)
     public PageData<FollowupResponse> page(Long tenantId, Long userId, String dataScope, FollowupQuery query) {
@@ -126,6 +130,7 @@ public class FollowupApplicationService {
         } else {
             followupRecordMapper.updateById(entity);
         }
+        salesTaskApplicationService.syncFollowupTask(tenantId, operatorId, dataScope, entity);
         FollowupResponse response = toResponse(entity);
         fillOwnerName(tenantId, response);
         return response;

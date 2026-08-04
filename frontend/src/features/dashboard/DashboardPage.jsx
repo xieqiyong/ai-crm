@@ -1,18 +1,21 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useState } from 'react'
 import {
   Activity,
+  AlertTriangle,
   ArrowRight,
   BriefcaseBusiness,
   CheckCircle2,
+  ClipboardCheck,
   CircleDollarSign,
   Network,
   Plus,
   RefreshCw,
   Target,
+  Trophy,
   Users,
 } from 'lucide-react'
 import { api } from '../../api'
-import { Badge, Button, Card, EChart, PageHeader } from '../../components'
+import { Button, Card, PageHeader } from '../../components'
 
 const emptyOverview = {
   leadCount: 0,
@@ -25,10 +28,15 @@ const emptyOverview = {
   todayChannelUserCount: 0,
   todayLeadConversionCount: 0,
   todayNewLeadCount: 0,
+  todayPendingTaskCount: 0,
+  overdueTaskCount: 0,
+  todayCompletedTaskCount: 0,
   leadStatusCounts: [],
   customerStatusCounts: [],
   opportunityStageCounts: [],
   channelStatusCounts: [],
+  todayFollowupRanking: [],
+  todayTaskCompletionRanking: [],
 }
 
 const leadColors = {
@@ -41,15 +49,6 @@ const leadColors = {
   INVALID: '#b8c2cc',
   DUPLICATE: '#f6903d',
   CLOSED: '#e8684a',
-}
-
-const opportunityColors = {
-  DISCOVERY: '#5b8ff9',
-  QUALIFICATION: '#5ad8a6',
-  PROPOSAL: '#f6bd16',
-  NEGOTIATION: '#f6903d',
-  WON: '#42b983',
-  LOST: '#e8684a',
 }
 
 const customerColors = ['#5b8ff9', '#5ad8a6', '#f6bd16', '#42b983', '#8b95a5', '#e8684a', '#6f5ef9']
@@ -87,16 +86,40 @@ function formatToday(date) {
   }).format(date)
 }
 
+function formatFollowupTime(value) {
+  if (!value) {
+    return '今日暂无跟进'
+  }
+  const date = new Date(value)
+  if (Number.isNaN(date.getTime())) {
+    return '今日暂无跟进'
+  }
+  return `最近 ${new Intl.DateTimeFormat('zh-CN', {
+    hour: '2-digit',
+    minute: '2-digit',
+  }).format(date)}`
+}
+
+function formatCompletionTime(value) {
+  if (!value) {
+    return '今日暂无完成'
+  }
+  const date = new Date(value)
+  if (Number.isNaN(date.getTime())) {
+    return '今日暂无完成'
+  }
+  return `最近 ${new Intl.DateTimeFormat('zh-CN', {
+    hour: '2-digit',
+    minute: '2-digit',
+  }).format(date)}`
+}
+
 function getCount(items, code) {
   return Number((items || []).find((item) => item.code === code)?.count || 0)
 }
 
 function totalCount(items) {
   return (items || []).reduce((sum, item) => sum + Number(item.count || 0), 0)
-}
-
-function hasData(items) {
-  return (items || []).some((item) => Number(item.count || 0) > 0)
 }
 
 function resolveStatusColor(colors, item, index, fallback) {
@@ -107,164 +130,6 @@ function resolveStatusColor(colors, item, index, fallback) {
     return colors[index % colors.length]
   }
   return fallback
-}
-
-function leadChartOption(items) {
-  return (theme) => ({
-    baseOption: {
-      animationDuration: 500,
-      color: items.map((item) => leadColors[item.code] || theme.brand),
-      tooltip: {
-        trigger: 'item',
-        backgroundColor: theme.surface,
-        borderColor: theme.line,
-        textStyle: { color: theme.text },
-        formatter: '{b}<br/>线索数量：{c} 条<br/>占比：{d}%',
-      },
-      legend: {
-        type: 'scroll',
-        orient: 'vertical',
-        top: 'middle',
-        right: 8,
-        width: '42%',
-        itemWidth: 9,
-        itemHeight: 9,
-        itemGap: 12,
-        textStyle: {
-          color: theme.muted,
-          fontSize: 12,
-        },
-        formatter: (name) => {
-          const count = items.find((item) => item.name === name)?.count || 0
-          return `${name}  ${formatNumber(count)}`
-        },
-      },
-      series: [{
-        name: '线索状态',
-        type: 'pie',
-        center: ['31%', '48%'],
-        radius: ['51%', '73%'],
-        avoidLabelOverlap: true,
-        padAngle: 2,
-        itemStyle: {
-          borderColor: theme.surface,
-          borderRadius: 6,
-          borderWidth: 2,
-        },
-        label: { show: false },
-        emphasis: {
-          scaleSize: 5,
-          label: { show: false },
-        },
-        data: items.map((item) => ({
-          name: item.name,
-          value: Number(item.count || 0),
-        })),
-      }],
-    },
-    media: [{
-      query: { maxWidth: 460 },
-      option: {
-        legend: {
-          orient: 'horizontal',
-          top: '78%',
-          right: 12,
-          left: 12,
-          width: 'auto',
-          itemGap: 10,
-        },
-        series: [{
-          center: ['50%', '38%'],
-          radius: ['40%', '61%'],
-        }],
-      },
-    }],
-  })
-}
-
-function opportunityChartOption(items) {
-  return (theme) => ({
-    animationDuration: 500,
-    grid: {
-      top: 12,
-      right: 72,
-      bottom: 18,
-      left: 82,
-      containLabel: false,
-    },
-    tooltip: {
-      trigger: 'item',
-      backgroundColor: theme.surface,
-      borderColor: theme.line,
-      textStyle: { color: theme.text },
-      formatter: (params) => {
-        const item = items[params.dataIndex] || {}
-        return `${item.name}<br/>商机数量：${formatNumber(item.count)} 个<br/>商机金额：${formatAmount(item.amount)}`
-      },
-    },
-    xAxis: {
-      type: 'value',
-      minInterval: 1,
-      axisLabel: {
-        color: theme.muted,
-        fontSize: 11,
-        formatter: (value) => formatNumber(value),
-      },
-      axisLine: { show: false },
-      axisTick: { show: false },
-      splitLine: {
-        lineStyle: {
-          color: theme.line,
-          type: 'dashed',
-        },
-      },
-    },
-    yAxis: {
-      type: 'category',
-      inverse: true,
-      data: items.map((item) => item.name),
-      axisLabel: {
-        color: theme.text,
-        fontSize: 12,
-      },
-      axisLine: { show: false },
-      axisTick: { show: false },
-    },
-    series: [{
-      name: '商机数量',
-      type: 'bar',
-      barWidth: 16,
-      showBackground: true,
-      backgroundStyle: {
-        color: theme.line,
-        borderRadius: 8,
-        opacity: 0.45,
-      },
-      label: {
-        show: true,
-        position: 'right',
-        color: theme.text,
-        fontSize: 12,
-        fontWeight: 700,
-        formatter: ({ value }) => `${formatNumber(value)} 个`,
-      },
-      itemStyle: {
-        borderRadius: [0, 8, 8, 0],
-        color: (params) => opportunityColors[items[params.dataIndex]?.code] || theme.brand,
-      },
-      data: items.map((item) => Number(item.count || 0)),
-    }],
-  })
-}
-
-function EmptyChart({ icon: Icon, title }) {
-  return (
-    <div className="dashboard-chart-empty">
-      <span><Icon size={22} /></span>
-      <b>{title}</b>
-      <small>新增业务数据后，这里会自动生成图表</small>
-    </div>
-  )
 }
 
 function StatusPanel({ title, description, icon: Icon, items, total, colors, onOpen }) {
@@ -300,6 +165,76 @@ function StatusPanel({ title, description, icon: Icon, items, total, colors, onO
   )
 }
 
+function FollowupRankingPanel({ items, onOpen }) {
+  const records = items || []
+  const maxCount = records.reduce((max, item) => Math.max(max, Number(item.followupCount || 0)), 0)
+  return (
+    <Card className="dashboard-status-panel dashboard-ranking-card">
+      <div className="card-heading">
+        <div>
+          <h2><Trophy size={17} />今日跟进排行榜</h2>
+        </div>
+        <button onClick={onOpen}>查看 <ArrowRight size={14} /></button>
+      </div>
+      <div className="dashboard-ranking-list">
+        {records.map((item) => {
+          const count = Number(item.followupCount || 0)
+          const width = maxCount > 0 ? count / maxCount * 100 : 0
+          return (
+            <div className="dashboard-ranking-row" key={item.userId || item.rankNo}>
+              <span className={`dashboard-rank-no rank-${item.rankNo}`}>{item.rankNo}</span>
+              <div className="dashboard-rank-main">
+                <div className="dashboard-rank-title">
+                  <b>{item.userName || '未命名用户'}</b>
+                  <em>{formatFollowupTime(item.lastFollowupAt)}</em>
+                </div>
+                <i><span style={{ width: `${width}%` }} /></i>
+              </div>
+              <strong>{formatNumber(count)}</strong>
+            </div>
+          )
+        })}
+        {!records.length && <div className="dashboard-status-empty">暂无可展示人员</div>}
+      </div>
+    </Card>
+  )
+}
+
+function TaskCompletionRankingPanel({ items, onOpen }) {
+  const records = items || []
+  const maxCount = records.reduce((max, item) => Math.max(max, Number(item.completedTaskCount || 0)), 0)
+  return (
+    <Card className="dashboard-status-panel dashboard-ranking-card">
+      <div className="card-heading">
+        <div>
+          <h2><ClipboardCheck size={17} />今日任务完成榜</h2>
+        </div>
+        <button onClick={onOpen}>查看 <ArrowRight size={14} /></button>
+      </div>
+      <div className="dashboard-ranking-list">
+        {records.map((item) => {
+          const count = Number(item.completedTaskCount || 0)
+          const width = maxCount > 0 ? count / maxCount * 100 : 0
+          return (
+            <div className="dashboard-ranking-row" key={item.userId || item.rankNo}>
+              <span className={`dashboard-rank-no rank-${item.rankNo}`}>{item.rankNo}</span>
+              <div className="dashboard-rank-main">
+                <div className="dashboard-rank-title">
+                  <b>{item.userName || '未命名用户'}</b>
+                  <em>{formatCompletionTime(item.lastCompletedAt)}</em>
+                </div>
+                <i><span style={{ width: `${width}%` }} /></i>
+              </div>
+              <strong>{formatNumber(count)}</strong>
+            </div>
+          )
+        })}
+        {!records.length && <div className="dashboard-status-empty">暂无可展示人员</div>}
+      </div>
+    </Card>
+  )
+}
+
 export function DashboardPage({ navigate, currentRole, notify }) {
   const [overview, setOverview] = useState(emptyOverview)
   const [loading, setLoading] = useState(true)
@@ -329,68 +264,107 @@ export function DashboardPage({ navigate, currentRole, notify }) {
   const customerItems = overview.customerStatusCounts || []
   const opportunityItems = overview.opportunityStageCounts || []
   const channelItems = overview.channelStatusCounts || []
+  const followupRanking = overview.todayFollowupRanking || []
+  const taskCompletionRanking = overview.todayTaskCompletionRanking || []
   const leadTotal = totalCount(leadItems)
   const customerTotal = totalCount(customerItems)
   const channelTotal = totalCount(channelItems)
-  const leadOption = useMemo(() => leadChartOption(leadItems), [leadItems])
-  const opportunityOption = useMemo(() => opportunityChartOption(opportunityItems), [opportunityItems])
 
-  const statCards = [
+  const statGroups = [
     {
-      label: '线索总数',
-      value: formatNumber(overview.leadCount),
-      icon: Target,
-      tone: 'orange',
-      detail: `已转化 ${formatNumber(getCount(leadItems, 'CONVERTED'))} 条`,
+      title: '业务总览',
+      description: '看当前业务盘子有多大',
+      cards: [
+        {
+          label: '线索总数',
+          value: formatNumber(overview.leadCount),
+          icon: Target,
+          tone: 'orange',
+          detail: `已转化 ${formatNumber(getCount(leadItems, 'CONVERTED'))} 条`,
+        },
+        {
+          label: '客户总数',
+          value: formatNumber(overview.customerCount),
+          icon: Users,
+          tone: 'blue',
+          detail: `已合作 ${formatNumber(getCount(customerItems, 'COOPERATED'))} 家`,
+        },
+        {
+          label: '商机总数',
+          value: formatNumber(overview.opportunityCount),
+          icon: BriefcaseBusiness,
+          tone: 'purple',
+          detail: `已成交 ${formatNumber(getCount(opportunityItems, 'WON'))} 个`,
+        },
+        {
+          label: '商机金额',
+          value: formatAmount(overview.opportunityAmount),
+          icon: CircleDollarSign,
+          tone: 'green',
+          detail: `成交金额 ${formatAmount(overview.wonAmount)}`,
+        },
+      ],
     },
     {
-      label: '客户总数',
-      value: formatNumber(overview.customerCount),
-      icon: Users,
-      tone: 'blue',
-      detail: `已合作 ${formatNumber(getCount(customerItems, 'COOPERATED'))} 家`,
+      title: '今日动作',
+      description: '看今天新增、跟进和转化',
+      cards: [
+        {
+          label: '今日跟进数',
+          value: formatNumber(overview.todayFollowupCount),
+          icon: Activity,
+          tone: 'blue',
+          detail: '按今日实际跟进时间统计',
+        },
+        {
+          label: '今日渠道新增用户数',
+          value: formatNumber(overview.todayChannelUserCount),
+          icon: Network,
+          tone: 'purple',
+          detail: '按今日渠道入库时间统计',
+        },
+        {
+          label: '今日线索转化数',
+          value: formatNumber(overview.todayLeadConversionCount),
+          icon: CheckCircle2,
+          tone: 'green',
+          detail: '按今日线索转化时间统计',
+        },
+        {
+          label: '今日新增线索数',
+          value: formatNumber(overview.todayNewLeadCount),
+          icon: Plus,
+          tone: 'orange',
+          detail: '按今日线索创建时间统计',
+        },
+      ],
     },
     {
-      label: '商机总数',
-      value: formatNumber(overview.opportunityCount),
-      icon: BriefcaseBusiness,
-      tone: 'purple',
-      detail: `已成交 ${formatNumber(getCount(opportunityItems, 'WON'))} 个`,
-    },
-    {
-      label: '商机金额',
-      value: formatAmount(overview.opportunityAmount),
-      icon: CircleDollarSign,
-      tone: 'green',
-      detail: `成交金额 ${formatAmount(overview.wonAmount)}`,
-    },
-    {
-      label: '今日跟进数',
-      value: formatNumber(overview.todayFollowupCount),
-      icon: Activity,
-      tone: 'blue',
-      detail: '按今日实际跟进时间统计',
-    },
-    {
-      label: '今日渠道新增用户数',
-      value: formatNumber(overview.todayChannelUserCount),
-      icon: Network,
-      tone: 'purple',
-      detail: '按今日渠道入库时间统计',
-    },
-    {
-      label: '今日线索转化数',
-      value: formatNumber(overview.todayLeadConversionCount),
-      icon: CheckCircle2,
-      tone: 'green',
-      detail: '按今日线索转化时间统计',
-    },
-    {
-      label: '今日新增线索数',
-      value: formatNumber(overview.todayNewLeadCount),
-      icon: Plus,
-      tone: 'orange',
-      detail: '按今日线索创建时间统计',
+      title: '任务预警',
+      description: '看待办压力和执行结果',
+      cards: [
+        {
+          label: '今日待办任务',
+          value: formatNumber(overview.todayPendingTaskCount),
+          icon: ClipboardCheck,
+          tone: 'purple',
+          detail: '按今日任务截止时间统计',
+        },
+        {
+          label: '逾期任务',
+          value: formatNumber(overview.overdueTaskCount),
+          icon: AlertTriangle,
+          tone: 'orange',
+          detail: '未完成且已超过截止时间',
+        },
+        {
+          label: '今日完成任务',
+          value: formatNumber(overview.todayCompletedTaskCount),
+          icon: CheckCircle2,
+          tone: 'green',
+          detail: '按今日任务完成时间统计',
+        },
+      ],
     },
   ]
 
@@ -418,16 +392,26 @@ export function DashboardPage({ navigate, currentRole, notify }) {
             <p>快速查看当前业务盘面的关键数据</p>
           </div>
         </div>
-        <div className="stats-grid">
-          {statCards.map(({ label, value, icon: Icon, tone, detail }) => (
-            <Card className="stat-card" key={label}>
-              <div className={`stat-icon ${tone}`}><Icon size={20} /></div>
-              <div className="stat-copy">
-                <span>{label}</span>
-                <strong>{value}</strong>
-                <small><CheckCircle2 size={13} /><em>{detail}</em></small>
+        <div className="dashboard-stat-groups">
+          {statGroups.map((group) => (
+            <div className="dashboard-stat-group" key={group.title}>
+              <div className="dashboard-stat-group-head">
+                <b>{group.title}</b>
+                <span>{group.description}</span>
               </div>
-            </Card>
+              <div className="stats-grid">
+                {group.cards.map(({ label, value, icon: Icon, tone, detail }) => (
+                  <Card className="stat-card" key={label}>
+                    <div className={`stat-icon ${tone}`}><Icon size={20} /></div>
+                    <div className="stat-copy">
+                      <span>{label}</span>
+                      <strong>{value}</strong>
+                      <small><CheckCircle2 size={13} /><em>{detail}</em></small>
+                    </div>
+                  </Card>
+                ))}
+              </div>
+            </div>
           ))}
         </div>
       </section>
@@ -435,62 +419,6 @@ export function DashboardPage({ navigate, currentRole, notify }) {
       <section className="dashboard-layer">
         <div className="dashboard-layer-heading">
           <span>02</span>
-          <div>
-            <h2>业务分布图</h2>
-            <p>从线索结构和商机阶段观察销售推进情况</p>
-          </div>
-        </div>
-        <div className="dashboard-chart-grid">
-          <Card className="dashboard-chart-card">
-            <div className="card-heading">
-              <div>
-                <h2>线索状态分布</h2>
-                <p>按当前线索状态聚合数量与占比</p>
-              </div>
-              <Badge tone="info">共 {formatNumber(overview.leadCount)} 条</Badge>
-            </div>
-            {hasData(leadItems) ? (
-              <div className="dashboard-donut-wrap">
-                <EChart
-                  option={leadOption}
-                  className="dashboard-echart"
-                  ariaLabel="线索状态分布环形图"
-                />
-                <div className="dashboard-donut-total">
-                  <strong>{formatNumber(overview.leadCount)}</strong>
-                  <small>线索总数</small>
-                </div>
-              </div>
-            ) : (
-              <EmptyChart icon={Target} title="暂无线索统计" />
-            )}
-          </Card>
-
-          <Card className="dashboard-chart-card">
-            <div className="card-heading">
-              <div>
-                <h2>商机阶段分布</h2>
-                <p>按推进阶段查看商机数量，悬停可查看金额</p>
-              </div>
-              <button onClick={() => navigate('opportunities')}>查看商机 <ArrowRight size={15} /></button>
-            </div>
-            {hasData(opportunityItems) ? (
-              <EChart
-                option={opportunityOption}
-                className="dashboard-echart"
-                ariaLabel="商机阶段分布横向柱状图"
-              />
-            ) : (
-              <EmptyChart icon={BriefcaseBusiness} title="暂无商机统计" />
-            )}
-          </Card>
-
-        </div>
-      </section>
-
-      <section className="dashboard-layer">
-        <div className="dashboard-layer-heading">
-          <span>03</span>
           <div>
             <h2>各状态统计</h2>
             <p>展开查看线索、客户与渠道的完整状态明细</p>
@@ -523,6 +451,14 @@ export function DashboardPage({ navigate, currentRole, notify }) {
             total={channelTotal}
             colors={channelColors}
             onOpen={() => navigate('channels')}
+          />
+          <FollowupRankingPanel
+            items={followupRanking}
+            onOpen={() => navigate('followups')}
+          />
+          <TaskCompletionRankingPanel
+            items={taskCompletionRanking}
+            onOpen={() => navigate('tasks')}
           />
         </div>
       </section>

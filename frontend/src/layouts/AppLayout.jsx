@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import {
   Bell, ChevronDown, HelpCircle, LogOut, Menu, PanelLeftClose, PanelLeftOpen, Search, Zap,
 } from 'lucide-react'
@@ -78,8 +78,12 @@ export function AppLayout({
   const [notifications, setNotifications] = useState([])
   const [notificationLoading, setNotificationLoading] = useState(false)
   const [unreadCount, setUnreadCount] = useState(resolveUnreadCount(currentUser))
+  const [notificationPopup, setNotificationPopup] = useState(null)
   const [sidebarCollapsed, setSidebarCollapsed] = useState(readSidebarCollapsed)
   const [collapsedGroups, setCollapsedGroups] = useState(readCollapsedGroups)
+  const unreadCountRef = useRef(resolveUnreadCount(currentUser))
+  const unreadInitializedRef = useRef(false)
+  const popupShownIdRef = useRef('')
 
   useEffect(() => {
     try {
@@ -122,17 +126,42 @@ export function AppLayout({
   useEffect(() => {
     let canceled = false
     let timer
+    const showLatestNotificationPopup = async () => {
+      try {
+        const data = await api.notification.page({ pageNo: 1, pageSize: 5 })
+        if (canceled) return
+        const latest = (data?.records || []).find((item) => !item.readAt)
+        if (!latest || String(latest.id) === popupShownIdRef.current) return
+        popupShownIdRef.current = String(latest.id)
+        setNotificationPopup(latest)
+      } catch {
+        return
+      }
+    }
     const loadUnread = () => {
       api.notification.unreadCount()
         .then((data) => {
-          if (!canceled) setUnreadCount(Number(data?.unreadCount || 0))
+          if (canceled) return
+          const nextCount = Number(data?.unreadCount || 0)
+          const previousCount = unreadCountRef.current
+          unreadCountRef.current = nextCount
+          setUnreadCount(nextCount)
+          if (unreadInitializedRef.current && nextCount > previousCount) {
+            showLatestNotificationPopup()
+          }
+          unreadInitializedRef.current = true
         })
         .catch(() => {
-          if (!canceled) setUnreadCount(resolveUnreadCount(currentUser))
+          if (!canceled) {
+            const nextCount = resolveUnreadCount(currentUser)
+            unreadCountRef.current = nextCount
+            setUnreadCount(nextCount)
+            unreadInitializedRef.current = true
+          }
         })
     }
     loadUnread()
-    timer = window.setInterval(loadUnread, 60000)
+    timer = window.setInterval(loadUnread, 30000)
     return () => {
       canceled = true
       window.clearInterval(timer)
@@ -163,7 +192,12 @@ export function AppLayout({
       setNotifications((values) => values.map((value) => (
         value.id === item.id ? { ...value, readAt: new Date().toISOString() } : value
       )))
-      setUnreadCount((value) => Math.max(0, value - 1))
+      const nextCount = Math.max(0, unreadCountRef.current - 1)
+      unreadCountRef.current = nextCount
+      setUnreadCount(nextCount)
+      if (notificationPopup?.id === item.id) {
+        setNotificationPopup(null)
+      }
     } catch (err) {
       onNotify(err.message || '通知状态更新失败', 'info')
     }
@@ -174,7 +208,9 @@ export function AppLayout({
       await api.notification.readAll()
       const readAt = new Date().toISOString()
       setNotifications((values) => values.map((value) => ({ ...value, readAt })))
+      unreadCountRef.current = 0
       setUnreadCount(0)
+      setNotificationPopup(null)
       onNotify('全部通知已标记为已读')
     } catch (err) {
       onNotify(err.message || '通知状态更新失败', 'info')
@@ -321,6 +357,30 @@ export function AppLayout({
         onReadAll={readAllNotifications}
         onClose={() => setNotificationOpen(false)}
       />
+      <NotificationPopup
+        item={notificationPopup}
+        onOpen={() => {
+          setNotificationPopup(null)
+          openNotifications()
+        }}
+      />
+    </div>
+  )
+}
+
+function NotificationPopup({ item, onOpen }) {
+  if (!item) return null
+  return (
+    <div className={`notification-popup ${item.level === 'WARNING' ? 'danger' : item.level === 'IMPORTANT' ? 'warning' : ''}`}>
+      <div className="notification-popup-head">
+        <span>{item.level === 'WARNING' ? '风险提醒' : item.level === 'IMPORTANT' ? '重要通知' : '系统通知'}</span>
+      </div>
+      <b>{item.title}</b>
+      <p>{item.content}</p>
+      <div className="notification-popup-foot">
+        <small>{formatNotificationTime(item.createdAt)}</small>
+        <button type="button" onClick={onOpen}>查看</button>
+      </div>
     </div>
   )
 }

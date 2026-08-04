@@ -77,6 +77,14 @@ crm:
       expose-token: ${CRM_PASSWORD_RESET_EXPOSE_TOKEN:true}
   redis:
     enabled: ${CRM_REDIS_ENABLED:true}
+  task:
+    reminder:
+      enabled: ${CRM_TASK_REMINDER_ENABLED:true}
+      dispatch-delay-ms: ${CRM_TASK_REMINDER_DISPATCH_DELAY_MS:30000}
+      initial-delay-ms: ${CRM_TASK_REMINDER_INITIAL_DELAY_MS:10000}
+      batch-size: ${CRM_TASK_REMINDER_BATCH_SIZE:50}
+      max-retry: ${CRM_TASK_REMINDER_MAX_RETRY:3}
+      retry-delay-seconds: ${CRM_TASK_REMINDER_RETRY_DELAY_SECONDS:60}
   channel:
     upload-dir: ${CRM_CHANNEL_UPLOAD_DIR:./uploads/channel}
   wecom:

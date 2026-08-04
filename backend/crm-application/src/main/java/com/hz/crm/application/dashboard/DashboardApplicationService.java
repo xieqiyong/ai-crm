@@ -2,7 +2,9 @@ package com.hz.crm.application.dashboard;
 
 import com.baomidou.mybatisplus.core.conditions.query.QueryWrapper;
 import com.hz.crm.application.dashboard.dto.DashboardCountItem;
+import com.hz.crm.application.dashboard.dto.DashboardFollowupRankItem;
 import com.hz.crm.application.dashboard.dto.DashboardOverviewResponse;
+import com.hz.crm.application.dashboard.dto.DashboardTaskRankItem;
 import com.hz.crm.common.time.DateTimes;
 import com.hz.crm.domain.channel.ChannelRecordEntity;
 import com.hz.crm.domain.channel.ChannelStatus;
@@ -10,6 +12,7 @@ import com.hz.crm.domain.channel.mapper.ChannelRecordMapper;
 import com.hz.crm.domain.customer.CustomerEntity;
 import com.hz.crm.domain.customer.CustomerStatus;
 import com.hz.crm.domain.customer.mapper.CustomerMapper;
+import com.hz.crm.domain.followup.FollowupRankingProjection;
 import com.hz.crm.domain.followup.FollowupRecordEntity;
 import com.hz.crm.domain.followup.mapper.FollowupRecordMapper;
 import com.hz.crm.domain.lead.LeadEntity;
@@ -18,6 +21,10 @@ import com.hz.crm.domain.lead.mapper.LeadMapper;
 import com.hz.crm.domain.opportunity.OpportunityEntity;
 import com.hz.crm.domain.opportunity.OpportunityStage;
 import com.hz.crm.domain.opportunity.mapper.OpportunityMapper;
+import com.hz.crm.domain.task.SalesTaskEntity;
+import com.hz.crm.domain.task.SalesTaskStatus;
+import com.hz.crm.domain.task.TaskCompletionRankingProjection;
+import com.hz.crm.domain.task.mapper.SalesTaskMapper;
 import java.math.BigDecimal;
 import java.time.LocalDateTime;
 import java.util.ArrayList;
@@ -44,10 +51,14 @@ public class DashboardApplicationService {
     @Autowired
     private FollowupRecordMapper followupRecordMapper;
 
+    @Autowired
+    private SalesTaskMapper salesTaskMapper;
+
     @Transactional(readOnly = true)
     public DashboardOverviewResponse overview(Long tenantId, Long userId, String dataScope) {
         Long ownerId = "SELF".equals(dataScope) ? userId : null;
-        LocalDateTime todayStart = DateTimes.now().toLocalDate().atStartOfDay();
+        LocalDateTime now = DateTimes.now();
+        LocalDateTime todayStart = now.toLocalDate().atStartOfDay();
         LocalDateTime tomorrowStart = todayStart.plusDays(1);
         DashboardOverviewResponse response = new DashboardOverviewResponse();
         response.setLeadCount(count(leadMapper.selectCount(leadBase(tenantId, ownerId))));
@@ -61,11 +72,94 @@ public class DashboardApplicationService {
         response.setTodayLeadConversionCount(
                 countTodayLeadConversion(tenantId, ownerId, todayStart, tomorrowStart));
         response.setTodayNewLeadCount(countTodayLead(tenantId, ownerId, todayStart, tomorrowStart));
+        response.setTodayPendingTaskCount(countTodayPendingTask(tenantId, ownerId, todayStart, tomorrowStart));
+        response.setOverdueTaskCount(countOverdueTask(tenantId, ownerId, now));
+        response.setTodayCompletedTaskCount(countTodayCompletedTask(tenantId, ownerId, todayStart, tomorrowStart));
         response.setLeadStatusCounts(buildLeadStatusCounts(tenantId, ownerId));
         response.setCustomerStatusCounts(buildCustomerStatusCounts(tenantId, ownerId));
         response.setOpportunityStageCounts(buildOpportunityStageCounts(tenantId, ownerId));
         response.setChannelStatusCounts(buildChannelStatusCounts(tenantId, ownerId));
+        response.setTodayFollowupRanking(buildTodayFollowupRanking(tenantId, todayStart, tomorrowStart));
+        response.setTodayTaskCompletionRanking(buildTodayTaskCompletionRanking(tenantId, todayStart, tomorrowStart));
         return response;
+    }
+
+    private List<DashboardTaskRankItem> buildTodayTaskCompletionRanking(
+            Long tenantId,
+            LocalDateTime todayStart,
+            LocalDateTime tomorrowStart) {
+        List<TaskCompletionRankingProjection> rows =
+                salesTaskMapper.selectTodayCompletionRanking(tenantId, todayStart, tomorrowStart, 10);
+        List<DashboardTaskRankItem> items = new ArrayList<DashboardTaskRankItem>();
+        int rankNo = 1;
+        for (TaskCompletionRankingProjection row : rows) {
+            DashboardTaskRankItem item = new DashboardTaskRankItem();
+            item.setRankNo(rankNo);
+            item.setUserId(row.getUserId());
+            item.setUserName(row.getUserName());
+            item.setCompletedTaskCount(
+                    row.getCompletedTaskCount() == null ? 0L : row.getCompletedTaskCount().longValue());
+            item.setLastCompletedAt(row.getLastCompletedAt());
+            items.add(item);
+            rankNo++;
+        }
+        return items;
+    }
+
+    private List<DashboardFollowupRankItem> buildTodayFollowupRanking(
+            Long tenantId,
+            LocalDateTime todayStart,
+            LocalDateTime tomorrowStart) {
+        List<FollowupRankingProjection> rows =
+                followupRecordMapper.selectTodayFollowupRanking(tenantId, todayStart, tomorrowStart, 10);
+        List<DashboardFollowupRankItem> items = new ArrayList<DashboardFollowupRankItem>();
+        int rankNo = 1;
+        for (FollowupRankingProjection row : rows) {
+            DashboardFollowupRankItem item = new DashboardFollowupRankItem();
+            item.setRankNo(rankNo);
+            item.setUserId(row.getUserId());
+            item.setUserName(row.getUserName());
+            item.setFollowupCount(row.getFollowupCount() == null ? 0L : row.getFollowupCount().longValue());
+            item.setLastFollowupAt(row.getLastFollowupAt());
+            items.add(item);
+            rankNo++;
+        }
+        return items;
+    }
+
+    private long countTodayPendingTask(
+            Long tenantId,
+            Long ownerId,
+            LocalDateTime todayStart,
+            LocalDateTime tomorrowStart) {
+        QueryWrapper<SalesTaskEntity> wrapper = salesTaskBase(tenantId, ownerId);
+        wrapper.in("status", SalesTaskStatus.PENDING.name(), SalesTaskStatus.IN_PROGRESS.name());
+        wrapper.ge("due_at", todayStart);
+        wrapper.lt("due_at", tomorrowStart);
+        return count(salesTaskMapper.selectCount(wrapper));
+    }
+
+    private long countOverdueTask(Long tenantId, Long ownerId, LocalDateTime now) {
+        QueryWrapper<SalesTaskEntity> wrapper = salesTaskBase(tenantId, ownerId);
+        wrapper.in(
+                "status",
+                SalesTaskStatus.PENDING.name(),
+                SalesTaskStatus.IN_PROGRESS.name(),
+                SalesTaskStatus.OVERDUE.name());
+        wrapper.lt("due_at", now);
+        return count(salesTaskMapper.selectCount(wrapper));
+    }
+
+    private long countTodayCompletedTask(
+            Long tenantId,
+            Long ownerId,
+            LocalDateTime todayStart,
+            LocalDateTime tomorrowStart) {
+        QueryWrapper<SalesTaskEntity> wrapper = salesTaskBase(tenantId, ownerId);
+        wrapper.eq("status", SalesTaskStatus.COMPLETED.name());
+        wrapper.ge("completed_at", todayStart);
+        wrapper.lt("completed_at", tomorrowStart);
+        return count(salesTaskMapper.selectCount(wrapper));
     }
 
     private long countTodayFollowup(
@@ -220,6 +314,14 @@ public class DashboardApplicationService {
 
     private QueryWrapper<FollowupRecordEntity> followupBase(Long tenantId, Long ownerId) {
         QueryWrapper<FollowupRecordEntity> wrapper = new QueryWrapper<FollowupRecordEntity>();
+        wrapper.eq("tenant_id", tenantId);
+        wrapper.eq("deleted", false);
+        applyOwnerScope(wrapper, ownerId);
+        return wrapper;
+    }
+
+    private QueryWrapper<SalesTaskEntity> salesTaskBase(Long tenantId, Long ownerId) {
+        QueryWrapper<SalesTaskEntity> wrapper = new QueryWrapper<SalesTaskEntity>();
         wrapper.eq("tenant_id", tenantId);
         wrapper.eq("deleted", false);
         applyOwnerScope(wrapper, ownerId);

@@ -70,3 +70,15 @@ export const followupApi = {
   save: (payload) => save('/api/followup', payload),
   delete: (id) => remove('/api/followup', id),
 }
+
+export const taskApi = {
+  page: (payload) => page('/api/task', payload),
+  detail: (id) => detail('/api/task', id),
+  targetOptions: (payload) => request('/api/task/target-options', { method: 'POST', body: JSON.stringify(payload || {}) }),
+  save: (payload) => save('/api/task', payload),
+  assign: (payload) => request('/api/task/assign', { method: 'POST', body: JSON.stringify(payload) }),
+  start: (id) => request('/api/task/start', { method: 'POST', body: JSON.stringify({ id }) }),
+  complete: (id) => request('/api/task/complete', { method: 'POST', body: JSON.stringify({ id }) }),
+  cancel: (payload) => request('/api/task/cancel', { method: 'POST', body: JSON.stringify(payload) }),
+  delete: (id) => remove('/api/task', id),
+}
