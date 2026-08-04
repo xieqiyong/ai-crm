@@ -68,9 +68,18 @@ if [ -z "$BACKEND_JAR" ]; then
   echo "未找到后端 Jar：backend/crm-web/target/crm-web-*.jar"
   exit 1
 fi
+MCP_JAR="$(find "$ROOT_DIR/backend/crm-mcp/target" -maxdepth 1 -name 'crm-mcp-*.jar' ! -name '*.original' | head -n 1)"
+if [ -z "$MCP_JAR" ]; then
+  echo "未找到MCP服务 Jar：backend/crm-mcp/target/crm-mcp-*.jar"
+  exit 1
+fi
 
 cp "$BACKEND_JAR" "$BUILD_DIR/backend/app.jar"
 cp "$DEPLOY_DIR/docker/backend/Dockerfile" "$BUILD_DIR/backend/Dockerfile"
+
+mkdir -p "$BUILD_DIR/mcp"
+cp "$MCP_JAR" "$BUILD_DIR/mcp/app.jar"
+cp "$DEPLOY_DIR/docker/mcp/Dockerfile" "$BUILD_DIR/mcp/Dockerfile"
 
 echo "构建前端 Dist"
 run_frontend_install
@@ -89,6 +98,7 @@ cp -R "$ROOT_DIR/crm-ai-runtime/app" "$BUILD_DIR/ai-runtime/app"
 
 echo "构建 Docker 镜像"
 docker build -t "crm-backend:$CRM_VERSION" "$BUILD_DIR/backend"
+docker build -t "crm-mcp:$CRM_VERSION" "$BUILD_DIR/mcp"
 docker build -t "crm-frontend:$CRM_VERSION" "$BUILD_DIR/frontend"
 docker build -t "crm-ai-runtime:$CRM_VERSION" "$BUILD_DIR/ai-runtime"
 
@@ -100,6 +110,7 @@ docker image inspect docker.1ms.run/minio/minio:latest >/dev/null 2>&1 || docker
 echo "保存离线镜像"
 docker save -o "$IMAGE_ARCHIVE" \
   "crm-backend:$CRM_VERSION" \
+  "crm-mcp:$CRM_VERSION" \
   "crm-frontend:$CRM_VERSION" \
   "crm-ai-runtime:$CRM_VERSION" \
   docker.1ms.run/postgres:16-alpine \
@@ -120,6 +131,7 @@ CRM_REDIS_PASSWORD_VALUE="${CRM_REDIS_PASSWORD:-$(random_text)}"
 CRM_JWT_SECRET_VALUE="${CRM_JWT_SECRET:-$(random_text)}"
 CRM_MINIO_SECRET_KEY_VALUE="${CRM_MINIO_SECRET_KEY:-$(random_text)}"
 CRM_AI_INTERNAL_TOKEN_VALUE="${CRM_AI_INTERNAL_TOKEN:-$(random_text)}"
+CRM_MCP_ACCESS_TOKEN_VALUE="${CRM_MCP_ACCESS_TOKEN:-}"
 
 cat > "$PACKAGE_DIR/.env" <<EOF
 # ============================================================
@@ -227,6 +239,30 @@ CRM_WECOM_SCHEDULE_INITIAL_DELAY_MS=${CRM_WECOM_SCHEDULE_INITIAL_DELAY_MS:-30000
 CRM_WECOM_FETCH_DETAIL_ENABLED=${CRM_WECOM_FETCH_DETAIL_ENABLED:-true}
 # 是否读取企业微信客户标签库，用于把标签ID转换成标签名称
 CRM_WECOM_FETCH_TAGS_ENABLED=${CRM_WECOM_FETCH_TAGS_ENABLED:-true}
+
+# -------------------- MCP业务工具服务 --------------------
+# MCP服务对外端口
+CRM_MCP_PORT=${CRM_MCP_PORT:-8091}
+# MCP服务JVM启动参数，通常保持为空；需要单独限制内存时填写
+CRM_MCP_JAVA_OPTS=${CRM_MCP_JAVA_OPTS:-}
+# MCP服务只做业务工具查询，默认不执行JPA表结构变更
+CRM_MCP_JPA_DDL_AUTO=${CRM_MCP_JPA_DDL_AUTO:-none}
+# MCP服务数据库连接池最大活动连接数
+CRM_MCP_DRUID_MAX_ACTIVE=${CRM_MCP_DRUID_MAX_ACTIVE:-10}
+# MCP访问令牌；保持为空时跳过鉴权，后续需要鉴权时再配置
+CRM_MCP_ACCESS_TOKEN=$CRM_MCP_ACCESS_TOKEN_VALUE
+# 是否启用CRM业务MCP服务，启用后默认通过独立crm-mcp容器的/mcp暴露给MCP客户端
+CRM_MCP_SERVER_ENABLED=${CRM_MCP_SERVER_ENABLED:-true}
+# MCP服务名称，供客户端识别
+CRM_MCP_SERVER_NAME=${CRM_MCP_SERVER_NAME:-crm-business-mcp}
+# MCP服务版本
+CRM_MCP_SERVER_VERSION=${CRM_MCP_SERVER_VERSION:-0.0.1}
+# MCP协议，默认STATELESS；需要长会话能力时可按Spring AI MCP配置调整
+CRM_MCP_SERVER_PROTOCOL=${CRM_MCP_SERVER_PROTOCOL:-STATELESS}
+# MCP Streamable HTTP入口路径
+CRM_MCP_SERVER_ENDPOINT=${CRM_MCP_SERVER_ENDPOINT:-/mcp}
+# MCP服务说明，会传递给MCP客户端
+CRM_MCP_SERVER_INSTRUCTIONS=${CRM_MCP_SERVER_INSTRUCTIONS:-智能营销管理系统业务MCP服务，只能返回真实CRM数据，禁止编造未返回的信息}
 
 # -------------------- Java Agent联网搜索 --------------------
 # 是否启用企业公开信息搜索

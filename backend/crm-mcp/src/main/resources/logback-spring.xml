@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <configuration scan="true" scanPeriod="60 seconds">
-    <springProperty scope="context" name="APP_NAME" source="spring.application.name" defaultValue="crm"/>
+    <springProperty scope="context" name="APP_NAME" source="spring.application.name" defaultValue="crm-mcp"/>
     <springProperty scope="context" name="LOG_PATH" source="crm.logging.path" defaultValue="./logs"/>
     <springProperty scope="context" name="MAX_HISTORY" source="crm.logging.max-history" defaultValue="30"/>
     <springProperty scope="context" name="MAX_FILE_SIZE" source="crm.logging.max-file-size" defaultValue="100MB"/>

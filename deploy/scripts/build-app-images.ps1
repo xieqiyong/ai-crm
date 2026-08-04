@@ -76,6 +76,7 @@ set -euo pipefail
 SCRIPT_DIR="`$(cd "`$(dirname "`$0")" && pwd)"
 CRM_VERSION="`${1:-$Version}"
 BACKEND_ARCHIVE="`$SCRIPT_DIR/crm-backend-`$CRM_VERSION.tar"
+MCP_ARCHIVE="`$SCRIPT_DIR/crm-mcp-`$CRM_VERSION.tar"
 FRONTEND_ARCHIVE="`$SCRIPT_DIR/crm-frontend-`$CRM_VERSION.tar"
 
 if [ ! -f "`$BACKEND_ARCHIVE" ]; then
@@ -88,13 +89,22 @@ if [ ! -f "`$FRONTEND_ARCHIVE" ]; then
   exit 1
 fi
 
+if [ ! -f "`$MCP_ARCHIVE" ]; then
+  echo "未找到MCP服务镜像：`$MCP_ARCHIVE"
+  exit 1
+fi
+
 echo "加载后端镜像：`$BACKEND_ARCHIVE"
 docker load -i "`$BACKEND_ARCHIVE"
+
+echo "加载MCP服务镜像：`$MCP_ARCHIVE"
+docker load -i "`$MCP_ARCHIVE"
 
 echo "加载前端镜像：`$FRONTEND_ARCHIVE"
 docker load -i "`$FRONTEND_ARCHIVE"
 
 docker image inspect "crm-backend:`$CRM_VERSION" >/dev/null
+docker image inspect "crm-mcp:`$CRM_VERSION" >/dev/null
 docker image inspect "crm-frontend:`$CRM_VERSION" >/dev/null
 
 echo "应用镜像加载完成：`$CRM_VERSION"
@@ -127,7 +137,7 @@ resolve_deploy_dir() {
     return
   fi
 
-  if [ -f "`$SCRIPT_DIR/docker-compose.yml" ]; then
+  if [ -f "`$SCRIPT_DIR/docker-compose.yml" ] && [ -f "`$SCRIPT_DIR/.env" ]; then
     echo "`$SCRIPT_DIR"
     return
   fi
@@ -155,6 +165,13 @@ fi
 
 cd "`$DEPLOY_DIR"
 
+SOURCE_COMPOSE="`$SCRIPT_DIR/docker-compose.yml"
+TARGET_COMPOSE="`$DEPLOY_DIR/docker-compose.yml"
+if [ -f "`$SOURCE_COMPOSE" ] && [ "`$SOURCE_COMPOSE" != "`$TARGET_COMPOSE" ]; then
+  cp "`$SOURCE_COMPOSE" "`$TARGET_COMPOSE"
+  echo "已同步docker-compose.yml"
+fi
+
 if [ ! -f ".env" ]; then
   echo "部署目录缺少.env：`$DEPLOY_DIR/.env"
   exit 1
@@ -171,11 +188,11 @@ mv "`$TMP_ENV" .env
 
 echo "部署目录：`$DEPLOY_DIR"
 echo "应用版本：`$CRM_VERSION"
-echo "重启后端和前端"
-compose up -d --no-deps --force-recreate crm-backend crm-frontend
+echo "重启后端、MCP服务和前端"
+compose up -d --no-deps --force-recreate crm-backend crm-mcp crm-frontend
 
 echo "当前应用容器状态"
-compose ps crm-backend crm-frontend
+compose ps crm-backend crm-mcp crm-frontend
 "@
 
     $DeployContent = @"
@@ -199,6 +216,7 @@ fi
 CRM_VERSION=$Version
 BUILD_TIME=$(Get-Date -Format "yyyy-MM-dd HH:mm:ss")
 BACKEND_IMAGE=crm-backend:$Version
+MCP_IMAGE=crm-mcp:$Version
 FRONTEND_IMAGE=crm-frontend:$Version
 "@
 
@@ -350,12 +368,16 @@ $OutputDir = Join-Path $RootDir "release\app-images\$Version"
 $ContextBaseDir = Join-Path $RootDir ".build\app-images"
 $ContextDir = Join-Path $ContextBaseDir ([Guid]::NewGuid().ToString("N"))
 $BackendContextDir = Join-Path $ContextDir "backend"
+$McpContextDir = Join-Path $ContextDir "mcp"
 $FrontendContextDir = Join-Path $ContextDir "frontend"
 $FrontendBuildDir = Join-Path $ContextDir "frontend-build"
 $BackendImage = "crm-backend:$Version"
+$McpImage = "crm-mcp:$Version"
 $FrontendImage = "crm-frontend:$Version"
 $BackendArchive = Join-Path $OutputDir "crm-backend-$Version.tar"
+$McpArchive = Join-Path $OutputDir "crm-mcp-$Version.tar"
 $FrontendArchive = Join-Path $OutputDir "crm-frontend-$Version.tar"
+$ComposeFile = Join-Path $OutputDir "docker-compose.yml"
 $ShouldUpload = $Upload.IsPresent -or $DeployRemote.IsPresent
 $OriginalJavaHome = $env:JAVA_HOME
 $OriginalPath = $env:Path
@@ -378,6 +400,7 @@ Invoke-CheckedCommand `
 
 New-Item -ItemType Directory -Force -Path $OutputDir | Out-Null
 New-Item -ItemType Directory -Force -Path $BackendContextDir | Out-Null
+New-Item -ItemType Directory -Force -Path $McpContextDir | Out-Null
 New-Item -ItemType Directory -Force -Path $FrontendContextDir | Out-Null
 New-Item -ItemType Directory -Force -Path $FrontendBuildDir | Out-Null
 
@@ -388,8 +411,8 @@ try {
     try {
         Invoke-CheckedCommand `
             -Command "mvn" `
-            -Arguments @("-DskipTests", "-pl", "crm-web", "-am", "clean", "package") `
-            -Description "构建后端Jar"
+            -Arguments @("-DskipTests", "-pl", "crm-web,crm-mcp", "-am", "clean", "package") `
+            -Description "构建后端和MCP服务Jar"
     } finally {
         Pop-Location
     }
@@ -403,6 +426,17 @@ try {
 
     if (-not $BackendJar) {
         throw "未找到后端Jar：backend\crm-web\target\crm-web-*.jar"
+    }
+
+    $McpJar = Get-ChildItem `
+        -LiteralPath (Join-Path $BackendDir "crm-mcp\target") `
+        -Filter "crm-mcp-*.jar" |
+        Where-Object { $_.Name -notlike "*.original" } |
+        Sort-Object LastWriteTime -Descending |
+        Select-Object -First 1
+
+    if (-not $McpJar) {
+        throw "未找到MCP服务Jar：backend\crm-mcp\target\crm-mcp-*.jar"
     }
 
     $FrontendBuildFiles = @(
@@ -458,6 +492,11 @@ try {
         -LiteralPath (Join-Path $DockerDir "backend\Dockerfile") `
         -Destination (Join-Path $BackendContextDir "Dockerfile")
 
+    Copy-Item -LiteralPath $McpJar.FullName -Destination (Join-Path $McpContextDir "app.jar")
+    Copy-Item `
+        -LiteralPath (Join-Path $DockerDir "mcp\Dockerfile") `
+        -Destination (Join-Path $McpContextDir "Dockerfile")
+
     Copy-Item -LiteralPath $FrontendDistDir -Destination (Join-Path $FrontendContextDir "dist") -Recurse
     Copy-Item `
         -LiteralPath (Join-Path $DockerDir "frontend\Dockerfile") `
@@ -476,6 +515,11 @@ try {
 
     Invoke-CheckedCommand `
         -Command "docker" `
+        -Arguments @("build", "--pull=false", "-t", $McpImage, $McpContextDir) `
+        -Description "构建MCP服务Docker镜像"
+
+    Invoke-CheckedCommand `
+        -Command "docker" `
         -Arguments @("build", "--pull=false", "-t", $FrontendImage, $FrontendContextDir) `
         -Description "构建前端Docker镜像"
 
@@ -486,16 +530,24 @@ try {
 
     Invoke-CheckedCommand `
         -Command "docker" `
+        -Arguments @("save", "-o", $McpArchive, $McpImage) `
+        -Description "导出MCP服务镜像"
+
+    Invoke-CheckedCommand `
+        -Command "docker" `
         -Arguments @("save", "-o", $FrontendArchive, $FrontendImage) `
         -Description "导出前端镜像"
 
     $BackendHash = Get-FileHash -LiteralPath $BackendArchive -Algorithm SHA256
+    $McpHash = Get-FileHash -LiteralPath $McpArchive -Algorithm SHA256
     $FrontendHash = Get-FileHash -LiteralPath $FrontendArchive -Algorithm SHA256
     $ChecksumFile = Join-Path $OutputDir "SHA256SUMS.txt"
     @(
         "$($BackendHash.Hash.ToLower())  $($BackendHash.Path | Split-Path -Leaf)"
+        "$($McpHash.Hash.ToLower())  $($McpHash.Path | Split-Path -Leaf)"
         "$($FrontendHash.Hash.ToLower())  $($FrontendHash.Path | Split-Path -Leaf)"
     ) | Set-Content -LiteralPath $ChecksumFile -Encoding ASCII
+    Copy-Item -LiteralPath (Join-Path $DeployDir "docker-compose.yml") -Destination $ComposeFile
     $ServerScripts = New-ServerScripts -OutputDir $OutputDir -Version $Version
 
     if ($ShouldUpload) {
@@ -506,7 +558,7 @@ try {
             -RemoteUser $RemoteUser `
             -RemotePassword $RemotePassword
 
-        $UploadFiles = @($BackendArchive, $FrontendArchive, $ChecksumFile) + $ServerScripts
+        $UploadFiles = @($BackendArchive, $McpArchive, $FrontendArchive, $ChecksumFile, $ComposeFile) + $ServerScripts
         Invoke-RemoteUpload `
             -Files $UploadFiles `
             -RemoteHost $RemoteHost `
@@ -538,13 +590,16 @@ try {
     Write-Host ""
     Write-Host "构建完成" -ForegroundColor Green
     Write-Host "后端镜像：$BackendImage"
+    Write-Host "MCP服务镜像：$McpImage"
     Write-Host "前端镜像：$FrontendImage"
     Write-Host "输出目录：$OutputDir"
     Write-Host ""
     Write-Host "上传以下文件到服务器：" -ForegroundColor Yellow
     Write-Host "  $BackendArchive"
+    Write-Host "  $McpArchive"
     Write-Host "  $FrontendArchive"
     Write-Host "  $ChecksumFile"
+    Write-Host "  $ComposeFile"
     foreach ($ServerScript in $ServerScripts) {
         Write-Host "  $ServerScript"
     }

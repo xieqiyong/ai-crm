@@ -1,0 +1,70 @@
+server:
+  port: ${CRM_MCP_PORT:8091}
+
+spring:
+  application:
+    name: crm-mcp
+  ai:
+    mcp:
+      server:
+        enabled: ${CRM_MCP_SERVER_ENABLED:true}
+        name: ${CRM_MCP_SERVER_NAME:crm-business-mcp}
+        version: ${CRM_MCP_SERVER_VERSION:0.0.1}
+        type: SYNC
+        protocol: ${CRM_MCP_SERVER_PROTOCOL:STATELESS}
+        instructions: ${CRM_MCP_SERVER_INSTRUCTIONS:智能营销管理系统业务MCP服务，只能返回真实CRM数据，禁止编造未返回的信息}
+        annotation-scanner:
+          enabled: true
+        streamable-http:
+          mcp-endpoint: ${CRM_MCP_SERVER_ENDPOINT:/mcp}
+        stateless:
+          mcp-endpoint: ${CRM_MCP_SERVER_ENDPOINT:/mcp}
+  datasource:
+    url: ${CRM_MCP_DB_URL:${CRM_DB_URL:jdbc:postgresql://localhost:5432/crm}}
+    username: ${CRM_MCP_DB_USERNAME:${CRM_DB_USERNAME:app_user}}
+    password: ${CRM_MCP_DB_PASSWORD:${CRM_DB_PASSWORD:app123456}}
+    driver-class-name: org.postgresql.Driver
+    druid:
+      initial-size: ${CRM_DRUID_INITIAL_SIZE:1}
+      min-idle: ${CRM_DRUID_MIN_IDLE:1}
+      max-active: ${CRM_DRUID_MAX_ACTIVE:10}
+      max-wait: ${CRM_DRUID_MAX_WAIT:60000}
+      time-between-eviction-runs-millis: ${CRM_DRUID_EVICTION_INTERVAL:60000}
+      min-evictable-idle-time-millis: ${CRM_DRUID_MIN_EVICTABLE_IDLE_TIME:300000}
+      validation-query: ${CRM_DRUID_VALIDATION_QUERY:select 1}
+      max-open-prepared-statements: 20
+      pool-prepared-statements: false
+      max-pool-prepared-statement-per-connection-size: 0
+  data:
+    jpa:
+      repositories:
+        enabled: false
+  jpa:
+    database-platform: org.hibernate.dialect.PostgreSQLDialect
+    hibernate:
+      ddl-auto: ${CRM_MCP_JPA_DDL_AUTO:none}
+    open-in-view: false
+
+mybatis-plus:
+  configuration:
+    map-underscore-to-camel-case: true
+
+logging:
+  config: classpath:logback-spring.xml
+  level:
+    root: ${CRM_LOG_LEVEL:INFO}
+
+crm:
+  logging:
+    path: ${CRM_LOG_PATH:./logs}
+    max-history: ${CRM_LOG_MAX_HISTORY:30}
+    max-file-size: ${CRM_LOG_MAX_FILE_SIZE:100MB}
+  mcp:
+    access-token: ${CRM_MCP_ACCESS_TOKEN:}
+    endpoint: ${CRM_MCP_SERVER_ENDPOINT:/mcp}
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info

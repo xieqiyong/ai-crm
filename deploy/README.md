@@ -8,6 +8,7 @@ deploy
 ├── env.example
 ├── docker
 │   ├── backend
+│   ├── mcp
 │   └── frontend
 └── scripts
     ├── build-offline-package.sh
@@ -61,12 +62,14 @@ GIT_CREDENTIALS_ID=liusu
 脚本会自动完成：
 
 1. 构建后端 `crm-web` Jar。
-2. 构建前端 Vite 静态文件。
-3. 构建 `crm-backend` Docker 镜像。
-4. 构建 `crm-frontend` Docker 镜像。
-5. 构建 `crm-ai-runtime` Python AI Runtime 镜像。
-6. 拉取并打包 PostgreSQL、Redis 镜像。
-7. 生成可离线部署的压缩包。
+2. 构建 MCP 服务 `crm-mcp` Jar。
+3. 构建前端 Vite 静态文件。
+4. 构建 `crm-backend` Docker 镜像。
+5. 构建 `crm-mcp` Docker 镜像。
+6. 构建 `crm-frontend` Docker 镜像。
+7. 构建 `crm-ai-runtime` Python AI Runtime 镜像。
+8. 拉取并打包 PostgreSQL、Redis、MinIO 镜像。
+9. 生成可离线部署的压缩包。
 
 离线包输出位置：
 
@@ -244,9 +247,11 @@ bash scripts/deploy-offline.sh --no-load
 ```bash
 docker compose ps
 docker compose logs -f crm-backend
+docker compose logs -f crm-mcp
 docker compose logs -f crm-ai-runtime
 docker compose logs -f crm-frontend
 docker compose restart crm-backend
+docker compose restart crm-mcp
 docker compose restart crm-ai-runtime
 docker compose down
 ```
@@ -256,8 +261,10 @@ docker compose down
 ```bash
 docker-compose ps
 docker-compose logs -f crm-backend
+docker-compose logs -f crm-mcp
 docker-compose logs -f crm-ai-runtime
 docker-compose restart crm-backend
+docker-compose restart crm-mcp
 docker-compose restart crm-ai-runtime
 docker-compose down
 ```
@@ -267,6 +274,7 @@ docker-compose down
 - 目标服务器不需要联网拉镜像，镜像已包含在 `images/crm-images.tar`。
 - 目标服务器必须保留 `data`、`logs`、`uploads` 目录。
 - PostgreSQL 和 Redis 默认只在 Docker 网络内访问，不暴露到公网。
+- `crm-mcp` 是独立服务，默认暴露 `CRM_MCP_PORT`，生产环境建议配置 `CRM_MCP_ACCESS_TOKEN` 并限制网络访问。
 - 富文本图片默认落本地 `uploads`，开启 MinIO 时设置 `CRM_MINIO_ENABLED=true`。
 - MinIO 默认通过前端 Nginx 的 `/minio` 路径提供图片访问。
 - 前端通过 Nginx 代理 `/api`、`/uploads`、`/minio` 到后端或 MinIO 服务。
