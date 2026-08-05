@@ -275,7 +275,10 @@ public class VolcengineAsrClient {
             return text;
         }
         text = firstText(response, "text", "result");
-        return text == null ? "" : text;
+        if (StringUtils.hasText(text)) {
+            return text;
+        }
+        return buildTranscriptFromUtterances(resolveUtterances(response, data));
     }
 
     private JSONArray resolveUtterances(JSONObject response, JSONObject data) {
@@ -295,6 +298,28 @@ public class VolcengineAsrClient {
             return value;
         }
         return object.getString(secondKey);
+    }
+
+    private String buildTranscriptFromUtterances(JSONArray utterances) {
+        if (utterances == null || utterances.isEmpty()) {
+            return "";
+        }
+        StringBuilder builder = new StringBuilder();
+        for (int index = 0; index < utterances.size(); index++) {
+            JSONObject item = utterances.getJSONObject(index);
+            String text = firstText(item, "text", "result");
+            if (!StringUtils.hasText(text)) {
+                text = firstText(item, "sentence", "utterance");
+            }
+            if (!StringUtils.hasText(text)) {
+                continue;
+            }
+            if (builder.length() > 0) {
+                builder.append('\n');
+            }
+            builder.append(text.trim());
+        }
+        return builder.toString();
     }
 
     private String shrink(String value) {

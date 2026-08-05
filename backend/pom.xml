@@ -43,10 +43,12 @@
         <nacos.version>3.2.1-2026.03.30</nacos.version>
         <druid.version>1.2.28</druid.version>
         <minio.version>8.5.17</minio.version>
+        <okhttp.version>5.3.2</okhttp.version>
+        <okio.version>3.16.4</okio.version>
         <elasticsearch.version>9.3.3</elasticsearch.version>
         <lombok.version>1.18.42</lombok.version>
         <jakarta-validation.version>3.1.1</jakarta-validation.version>
-        <kotlin-stdlib.version>1.8.21</kotlin-stdlib.version>
+        <kotlin-stdlib.version>2.2.21</kotlin-stdlib.version>
         <httpcore5.version>5.4</httpcore5.version>
         <redisson.version>3.52.0</redisson.version>
         <poi.version>5.5.1</poi.version>
@@ -95,6 +97,26 @@
                 <version>${minio.version}</version>
             </dependency>
             <dependency>
+                <groupId>com.squareup.okhttp3</groupId>
+                <artifactId>okhttp</artifactId>
+                <version>${okhttp.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>com.squareup.okhttp3</groupId>
+                <artifactId>okhttp-jvm</artifactId>
+                <version>${okhttp.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>com.squareup.okio</groupId>
+                <artifactId>okio</artifactId>
+                <version>${okio.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>com.squareup.okio</groupId>
+                <artifactId>okio-jvm</artifactId>
+                <version>${okio.version}</version>
+            </dependency>
+            <dependency>
                 <groupId>co.elastic.clients</groupId>
                 <artifactId>elasticsearch-java</artifactId>
                 <version>${elasticsearch.version}</version>
@@ -108,6 +130,11 @@
                 <groupId>jakarta.validation</groupId>
                 <artifactId>jakarta.validation-api</artifactId>
                 <version>${jakarta-validation.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>org.jetbrains.kotlin</groupId>
+                <artifactId>kotlin-stdlib</artifactId>
+                <version>${kotlin-stdlib.version}</version>
             </dependency>
             <dependency>
                 <groupId>org.jetbrains.kotlin</groupId>

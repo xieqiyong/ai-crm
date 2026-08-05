@@ -32,7 +32,7 @@ public class AttachmentStorageService {
 
     private volatile boolean bucketReady;
 
-    @Value("${crm.storage.minio.enabled:false}")
+    @Value("${crm.storage.minio.enabled:true}")
     private boolean minioEnabled;
 
     @Value("${crm.storage.minio.bucket:crm}")
@@ -41,7 +41,7 @@ public class AttachmentStorageService {
     @Value("${crm.storage.minio.public-read:true}")
     private boolean minioPublicRead;
 
-    @Value("${crm.storage.minio.endpoint:http://localhost:9000}")
+    @Value("${crm.storage.minio.endpoint:http://192.168.50.105:9000}")
     private String minioEndpoint;
 
     @Value("${crm.storage.minio.public-url:}")

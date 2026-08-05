@@ -32,7 +32,7 @@ import {
 const SCENE_OPTIONS = [
   { value: 'LEAD_ANALYZE', label: '线索分析' },
   { value: 'CHANNEL_ANALYZE', label: '渠道内容分析' },
-  { value: 'CUSTOMER_PROFILE', label: '客户画像分析' },
+  { value: 'CUSTOMER_DEEP_SUMMARY', label: 'AI客户深度总结' },
   { value: 'OPPORTUNITY_ASSIST', label: '商机推进分析' },
   { value: 'GENERAL_ASSISTANT', label: '通用营销助手' },
 ]

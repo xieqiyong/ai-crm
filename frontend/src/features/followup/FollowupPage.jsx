@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { Edit2, MessageCircleMore, Plus, RefreshCw, Search, Trash2 } from 'lucide-react'
+import { Edit2, MessageCircleMore, Paperclip, Plus, RefreshCw, Search, Trash2 } from 'lucide-react'
 import { api } from '../../api'
 import {
   Badge,
@@ -17,6 +17,7 @@ import {
   followupTypeText,
   formatDateTime,
   hasRichContent,
+  startFollowupMediaUpload,
   targetTypeText,
   toFollowupForm,
   toFollowupPayload,
@@ -84,15 +85,28 @@ export function FollowupPage({ can, notify, navigate }) {
     }
     try {
       const saved = await api.followup.save(toFollowupPayload(form))
-      const mediaFiles = form.mediaFiles || []
-      if (mediaFiles.length) {
-        await Promise.all(mediaFiles.map((file) => api.followup.uploadMedia(saved?.id || form.id, file)))
-      }
-      notify((form.mediaFiles || []).length ? '跟进记录已保存，音视频转写任务已创建' : '跟进记录已保存', 'success')
+      const mediaStarted = startFollowupMediaUpload(saved?.id || form.id, form.mediaFiles, notify, () => {
+        load(form.id ? query : { ...query, pageNo: 1 })
+      })
+      notify(mediaStarted ? '跟进记录已保存，音视频正在后台上传' : '跟进记录已保存', 'success')
       setEditing(null)
       load(form.id ? query : { ...query, pageNo: 1 })
     } catch (error) {
       notify(error.message || '跟进记录保存失败', 'info')
+    }
+  }
+
+  const uploadMedia = async (row, files) => {
+    const mediaFiles = Array.from(files || [])
+    if (!row?.id || !mediaFiles.length) return
+    try {
+      startFollowupMediaUpload(row.id, mediaFiles, notify, () => {
+        load(query)
+      })
+      notify('音视频正在后台上传', 'success')
+      load(query)
+    } catch (error) {
+      notify(error.message || '音视频上传失败', 'info')
     }
   }
 
@@ -201,6 +215,21 @@ export function FollowupPage({ can, notify, navigate }) {
                         <button className="icon-button" onClick={() => setEditing(toFollowupForm(row))}>
                           <Edit2 size={17} />
                         </button>
+                      )}
+                      {canWrite && (
+                        <label className="icon-button followup-table-upload">
+                          <Paperclip size={17} />
+                          <input
+                            type="file"
+                            multiple
+                            accept="audio/*,video/*"
+                            onChange={(event) => {
+                              const files = event.target.files
+                              event.target.value = ''
+                              uploadMedia(row, files)
+                            }}
+                          />
+                        </label>
                       )}
                       {canDelete && (
                         <button className="icon-button" onClick={() => remove(row)}>

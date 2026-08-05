@@ -91,8 +91,9 @@ public class OpportunityApplicationService {
         if (request == null || trimToNull(request.getName()) == null) {
             throw new BusinessException("OPPORTUNITY_003", "商机名称不能为空");
         }
+        CustomerEntity customer = null;
         if (request.getCustomerId() != null) {
-            CustomerEntity customer = findCustomer(tenantId, request.getCustomerId());
+            customer = findCustomer(tenantId, request.getCustomerId());
             checkDataScope(operatorId, dataScope, customer.getOwnerId());
         }
         OpportunityEntity entity;
@@ -117,7 +118,7 @@ public class OpportunityApplicationService {
         entity.setStage(request.getStage() == null ? OpportunityStage.DISCOVERY : request.getStage());
         entity.setProbability(request.getProbability());
         entity.setExpectedCloseDate(request.getExpectedCloseDate());
-        Long targetOwnerId = request.getOwnerId() == null ? operatorId : request.getOwnerId();
+        Long targetOwnerId = resolveOwnerId(operatorId, request.getOwnerId(), customer);
         checkDataScope(operatorId, dataScope, targetOwnerId);
         entity.setOwnerId(targetOwnerId);
         entity.setRemark(trimToNull(request.getRemark()));
@@ -339,6 +340,13 @@ public class OpportunityApplicationService {
                 .multiply(entity.getUnitPrice())
                 .multiply(entity.getDiscountRate())
                 .divide(new BigDecimal("100"), 2, RoundingMode.HALF_UP);
+    }
+
+    private Long resolveOwnerId(Long operatorId, Long requestOwnerId, CustomerEntity customer) {
+        if (customer != null && customer.getOwnerId() != null) {
+            return customer.getOwnerId();
+        }
+        return requestOwnerId == null ? operatorId : requestOwnerId;
     }
 
     private void checkDataScope(Long userId, String dataScope, Long ownerId) {

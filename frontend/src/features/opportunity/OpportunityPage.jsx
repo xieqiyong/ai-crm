@@ -446,6 +446,15 @@ function OpportunityFormModal({
   const update = (patch) => onChange({ ...form, ...patch })
   const hasSelectedOwner = ownerOptions.some((item) => String(item.id) === String(form.ownerId || ''))
   const hasSelectedCustomer = (customerOptions || []).some((item) => String(item.id) === String(form.customerId || ''))
+  const selectedCustomer = (customerOptions || []).find((item) => String(item.id) === String(form.customerId || ''))
+  const selectedCustomerOwner = selectedCustomer ? ownerName(selectedCustomer) : ''
+  const changeCustomer = (customerId) => {
+    const customer = (customerOptions || []).find((item) => String(item.id) === String(customerId || ''))
+    update({
+      customerId,
+      ownerId: customer?.ownerId || '',
+    })
+  }
   return (
     <Modal
       open={open}
@@ -469,7 +478,7 @@ function OpportunityFormModal({
           </select>
         </Field>
         <Field label="关联客户">
-          <select value={form.customerId || ''} onChange={(event) => update({ customerId: event.target.value })}>
+          <select value={form.customerId || ''} onChange={(event) => changeCustomer(event.target.value)}>
             <option value="">暂不关联客户</option>
             {form.customerId && !hasSelectedCustomer && <option value={form.customerId}>当前客户</option>}
             {(customerOptions || []).map((item) => (
@@ -477,12 +486,16 @@ function OpportunityFormModal({
             ))}
           </select>
         </Field>
-        <Field label="负责人" hint="不选则由后台设置为当前登录用户">
-          <select value={form.ownerId || ''} onChange={(event) => update({ ownerId: event.target.value })}>
-            <option value="">默认当前登录用户</option>
-            {form.ownerId && !hasSelectedOwner && <option value={form.ownerId}>当前负责人</option>}
-            {ownerOptions.map((item) => <option value={item.id} key={item.id}>{ownerOptionLabel(item)}</option>)}
-          </select>
+        <Field label="负责人" hint={form.customerId ? '已关联客户时，商机负责人跟随客户负责人。' : '未关联客户时可手动选择，不选则为当前登录用户。'}>
+          {form.customerId ? (
+            <input value={selectedCustomerOwner || ownerName(form) || (form.ownerId ? '当前客户负责人' : '客户暂未设置负责人')} disabled />
+          ) : (
+            <select value={form.ownerId || ''} onChange={(event) => update({ ownerId: event.target.value })}>
+              <option value="">默认当前登录用户</option>
+              {form.ownerId && !hasSelectedOwner && <option value={form.ownerId}>当前负责人</option>}
+              {ownerOptions.map((item) => <option value={item.id} key={item.id}>{ownerOptionLabel(item)}</option>)}
+            </select>
+          )}
         </Field>
         <Field label="商机金额">
           <input value={form.amount || ''} onChange={(event) => update({ amount: event.target.value })} placeholder="例如 120000" />

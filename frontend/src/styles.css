@@ -355,6 +355,21 @@
   margin-top: 8px;
 }
 
+.followup-inline-upload,
+.followup-table-upload {
+  position: relative;
+  overflow: hidden;
+  cursor: pointer;
+}
+
+.followup-inline-upload input,
+.followup-table-upload input {
+  position: absolute;
+  inset: 0;
+  opacity: 0;
+  cursor: pointer;
+}
+
 .followup-media-results {
   display: grid;
   gap: 8px;
@@ -535,6 +550,24 @@
 .followup-media-picker {
   display: grid;
   gap: 10px;
+}
+
+.followup-content-editor {
+  display: grid;
+  gap: 10px;
+}
+
+.followup-media-picker.embedded {
+  padding: 10px;
+  border: 1px solid var(--line);
+  border-radius: 13px;
+  background: color-mix(in srgb, var(--brand) 3%, var(--surface));
+}
+
+.followup-media-picker.embedded .followup-media-upload {
+  min-height: 78px;
+  border-radius: 11px;
+  background: var(--surface);
 }
 
 .followup-media-upload {
@@ -1603,6 +1636,12 @@ h1, h2, h3, p { margin-top: 0; }
 .wecom-snapshot-head h3 { margin: 4px 0 0; font-size: 17px; }
 .wecom-snapshot-head p { margin: 4px 0 0; color: var(--muted); font-size: 12px; }
 .wecom-snapshot-head small { flex: 0 0 auto; max-width: 48%; padding: 6px 9px; border: 1px solid var(--line); border-radius: 8px; background: var(--surface); color: var(--muted); font-size: 11px; word-break: break-all; }
+.wecom-group-overview { display: grid; gap: 8px; padding: 14px 17px; border-bottom: 1px solid var(--line); background: color-mix(in srgb, var(--info) 4%, var(--surface)); }
+.wecom-group-overview > span { color: var(--muted); font-size: 12px; font-weight: 800; }
+.wecom-group-overview > div { display: flex; flex-wrap: wrap; gap: 8px; }
+.wecom-group-overview b { width: fit-content; max-width: 100%; padding: 6px 10px; border: 1px solid color-mix(in srgb, var(--brand) 24%, var(--line)); border-radius: 999px; background: var(--surface); color: var(--brand-dark); font-size: 12px; word-break: break-word; }
+.wecom-group-overview small { color: var(--muted); font-size: 12px; line-height: 1.6; }
+.wecom-group-overview.empty b { border-color: var(--line); color: var(--muted); }
 .wecom-snapshot-section { padding: 14px 17px; border-bottom: 1px solid var(--line); }
 .wecom-snapshot-section:last-child { border-bottom: 0; }
 .wecom-snapshot-section-head { display: flex; align-items: center; justify-content: space-between; margin-bottom: 10px; }

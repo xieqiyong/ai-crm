@@ -89,7 +89,7 @@ crm:
     upload-dir: ${CRM_CHANNEL_UPLOAD_DIR:./uploads/channel}
   media:
     transcription:
-      enabled: ${CRM_MEDIA_TRANSCRIPTION_ENABLED:false}
+      enabled: ${CRM_MEDIA_TRANSCRIPTION_ENABLED:true}
       max-file-size-bytes: ${CRM_MEDIA_TRANSCRIPTION_MAX_FILE_SIZE_BYTES:536870912}
       dispatch-delay-ms: ${CRM_MEDIA_TRANSCRIPTION_DISPATCH_DELAY_MS:30000}
       initial-delay-ms: ${CRM_MEDIA_TRANSCRIPTION_INITIAL_DELAY_MS:10000}
@@ -100,11 +100,11 @@ crm:
       ffmpeg-path: ${CRM_MEDIA_TRANSCRIPTION_FFMPEG_PATH:ffmpeg}
       ffmpeg-timeout-ms: ${CRM_MEDIA_TRANSCRIPTION_FFMPEG_TIMEOUT_MS:600000}
       volcengine:
-        enabled: ${CRM_VOLCENGINE_ASR_ENABLED:false}
+        enabled: ${CRM_VOLCENGINE_ASR_ENABLED:true}
         base-url: ${CRM_VOLCENGINE_ASR_BASE_URL:https://openspeech.bytedance.com/api/v1/auc}
         appid: ${CRM_VOLCENGINE_ASR_APPID:8286999944}
         token: ${CRM_VOLCENGINE_ASR_TOKEN:Rz4tuArOiXPKuFS1k74NkqgYqPjETTOE}
-        cluster: ${CRM_VOLCENGINE_ASR_CLUSTER:volcano_tts}
+        cluster: ${CRM_VOLCENGINE_ASR_CLUSTER:volc_auc_common}
         language: ${CRM_VOLCENGINE_ASR_LANGUAGE:zh-CN}
         timeout-ms: ${CRM_VOLCENGINE_ASR_TIMEOUT_MS:15000}
   wecom:
@@ -130,11 +130,11 @@ crm:
     upload-dir: ${CRM_STORAGE_UPLOAD_DIR:./uploads}
     public-path: ${CRM_STORAGE_PUBLIC_PATH:/uploads}
     minio:
-      enabled: ${CRM_MINIO_ENABLED:false}
-      endpoint: ${CRM_MINIO_ENDPOINT:http://localhost:9000}
+      enabled: ${CRM_MINIO_ENABLED:true}
+      endpoint: ${CRM_MINIO_ENDPOINT:http://180.76.225.232:9000}
       public-url: ${CRM_MINIO_PUBLIC_URL:}
-      access-key: ${CRM_MINIO_ACCESS_KEY:}
-      secret-key: ${CRM_MINIO_SECRET_KEY:}
+      access-key: ${CRM_MINIO_ACCESS_KEY:admin}
+      secret-key: ${CRM_MINIO_SECRET_KEY:Xqy2018101992}
       bucket: ${CRM_MINIO_BUCKET:crm}
       public-read: ${CRM_MINIO_PUBLIC_READ:true}
   search:

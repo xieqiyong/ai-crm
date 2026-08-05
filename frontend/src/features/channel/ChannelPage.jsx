@@ -1458,6 +1458,8 @@ function WecomSourceSnapshot({ value }) {
         )}
       </div>
 
+      <WecomGroupOverview groups={groups} />
+
       <SnapshotSection title="同步摘要" count={snapshotEntries(summary).length}>
         <div className="wecom-profile-grid">
           {snapshotEntries(summary).map(([label, fieldValue]) => (
@@ -1513,6 +1515,31 @@ function WecomSourceSnapshot({ value }) {
         </div>
       </SnapshotSection>
     </section>
+  )
+}
+
+function WecomGroupOverview({ groups = [] }) {
+  const visibleGroups = Array.isArray(groups) ? groups : []
+  if (!visibleGroups.length) {
+    return (
+      <div className="wecom-group-overview empty">
+        <span>所在客户群</span>
+        <b>未同步到客户群关系</b>
+        <small>企微接口本次没有返回该客户所在群，或当前同步账号无客户群读取权限。</small>
+      </div>
+    )
+  }
+  return (
+    <div className="wecom-group-overview">
+      <span>所在客户群</span>
+      <div>
+        {visibleGroups.map((item, index) => (
+          <b key={`${item?.['客户群ID'] || 'group'}-${index}`}>
+            {item?.['客户群名称'] || item?.['客户群ID'] || `客户群 ${index + 1}`}
+          </b>
+        ))}
+      </div>
+    </div>
   )
 }
 
