@@ -20,6 +20,10 @@ public class CustomerDeepSummaryResponse {
 
     private boolean success;
 
+    private boolean running;
+
+    private String runStatus;
+
     private String message;
 
     private String summary;

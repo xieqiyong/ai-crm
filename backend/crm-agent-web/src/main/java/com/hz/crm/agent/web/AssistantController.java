@@ -64,6 +64,14 @@ public class AssistantController {
                 principal.getTenantId(), principal.getUserId(), principal.getDataScope(), request));
     }
 
+    @PostMapping("/customer/deep-summary/status")
+    @PreAuthorize("hasAuthority('*') or (hasAuthority('crm:assistant:use') and hasAuthority('crm:customer:view'))")
+    public ApiResult<CustomerDeepSummaryResponse> customerSummaryStatus(
+            @Valid @RequestBody CustomerDeepSummaryRequest request, JwtPrincipal principal) {
+        return ApiResult.ok(customerDeepSummaryService.status(
+                principal.getTenantId(), principal.getUserId(), principal.getDataScope(), request));
+    }
+
     @PostMapping("/lead/analyze")
     @PreAuthorize("hasAuthority('*') or (hasAuthority('crm:assistant:use') "
             + "and (hasAuthority('crm:lead:view') or hasAuthority('crm:lead:manage')))")

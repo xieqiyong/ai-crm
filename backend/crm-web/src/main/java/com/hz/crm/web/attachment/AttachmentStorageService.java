@@ -16,6 +16,8 @@ import java.nio.file.Paths;
 import java.time.format.DateTimeFormatter;
 import java.util.Locale;
 import java.util.UUID;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
@@ -24,6 +26,8 @@ import org.springframework.web.multipart.MultipartFile;
 
 @Service
 public class AttachmentStorageService {
+
+    private static final Logger log = LoggerFactory.getLogger(AttachmentStorageService.class);
 
     private static final DateTimeFormatter DAY_FORMATTER = DateTimeFormatter.ofPattern("yyyyMMdd");
 
@@ -80,10 +84,35 @@ public class AttachmentStorageService {
         validateMedia(file);
         String originalName = resolveOriginalName(file);
         String storageKey = buildStorageKey(CurrentUserContext.current().getTenantId(), originalName, "media/raw", ".dat");
+        long start = System.currentTimeMillis();
+        log.info(
+                "音视频文件开始存储，tenantId={}，fileName={}，contentType={}，size={}，storageKey={}，storageType={}",
+                CurrentUserContext.current().getTenantId(),
+                originalName,
+                file.getContentType(),
+                Long.valueOf(file.getSize()),
+                storageKey,
+                minioEnabled && minioClient != null ? "MINIO" : "LOCAL");
         if (minioEnabled && minioClient != null) {
-            return uploadToMinio(file, originalName, storageKey);
+            AttachmentUploadResponse response = uploadToMinio(file, originalName, storageKey);
+            log.info(
+                    "音视频文件存储完成，tenantId={}，fileName={}，storageKey={}，url={}，耗时={}ms",
+                    CurrentUserContext.current().getTenantId(),
+                    originalName,
+                    storageKey,
+                    shrink(response.getUrl(), 300),
+                    Long.valueOf(System.currentTimeMillis() - start));
+            return response;
         }
-        return uploadToLocal(file, originalName, storageKey);
+        AttachmentUploadResponse response = uploadToLocal(file, originalName, storageKey);
+        log.info(
+                "音视频文件存储完成，tenantId={}，fileName={}，storageKey={}，url={}，耗时={}ms",
+                CurrentUserContext.current().getTenantId(),
+                originalName,
+                storageKey,
+                shrink(response.getUrl(), 300),
+                Long.valueOf(System.currentTimeMillis() - start));
+        return response;
     }
 
     public AttachmentUploadResponse uploadGeneratedFile(
@@ -100,10 +129,36 @@ public class AttachmentStorageService {
         }
         String safeName = StringUtils.hasText(originalName) ? originalName : filePath.getFileName().toString();
         String storageKey = buildStorageKey(tenantId, safeName, StringUtils.hasText(prefix) ? prefix : "media/generated");
+        long start = System.currentTimeMillis();
+        log.info(
+                "生成媒体文件开始存储，tenantId={}，fileName={}，contentType={}，storageKey={}，storageType={}",
+                tenantId,
+                safeName,
+                contentType,
+                storageKey,
+                minioEnabled && minioClient != null ? "MINIO" : "LOCAL");
         if (minioEnabled && minioClient != null) {
-            return uploadPathToMinio(filePath, safeName, contentType, storageKey);
+            AttachmentUploadResponse response = uploadPathToMinio(filePath, safeName, contentType, storageKey);
+            log.info(
+                    "生成媒体文件存储完成，tenantId={}，fileName={}，size={}，storageKey={}，url={}，耗时={}ms",
+                    tenantId,
+                    safeName,
+                    response.getSize(),
+                    storageKey,
+                    shrink(response.getUrl(), 300),
+                    Long.valueOf(System.currentTimeMillis() - start));
+            return response;
         }
-        return uploadPathToLocal(filePath, safeName, contentType, storageKey);
+        AttachmentUploadResponse response = uploadPathToLocal(filePath, safeName, contentType, storageKey);
+        log.info(
+                "生成媒体文件存储完成，tenantId={}，fileName={}，size={}，storageKey={}，url={}，耗时={}ms",
+                tenantId,
+                safeName,
+                response.getSize(),
+                storageKey,
+                shrink(response.getUrl(), 300),
+                Long.valueOf(System.currentTimeMillis() - start));
+        return response;
     }
 
     public InputStream openStoredObject(String storageKey) {
@@ -112,13 +167,16 @@ public class AttachmentStorageService {
         }
         try {
             if (minioEnabled && minioClient != null) {
+                log.info("开始读取MinIO文件，bucket={}，storageKey={}", minioBucket, storageKey);
                 return minioClient.getObject(GetObjectArgs.builder()
                         .bucket(minioBucket)
                         .object(storageKey)
                         .build());
             }
+            log.info("开始读取本地文件，storageKey={}", storageKey);
             return Files.newInputStream(resolveLocalPath(storageKey));
         } catch (Exception ex) {
+            log.warn("读取存储文件失败，storageKey={}", storageKey, ex);
             throw new BusinessException("ATTACHMENT_014", "读取存储文件失败：" + ex.getMessage());
         }
     }
@@ -379,5 +437,13 @@ public class AttachmentStorageService {
             text = text.substring(0, text.length() - 1);
         }
         return text;
+    }
+
+    private String shrink(String value, int maxLength) {
+        if (!StringUtils.hasText(value)) {
+            return value;
+        }
+        String text = value.trim();
+        return text.length() > maxLength ? text.substring(0, maxLength) : text;
     }
 }

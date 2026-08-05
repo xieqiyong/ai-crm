@@ -169,6 +169,24 @@ export function CustomerDetailPage({ routeParams, can, notify, navigate }) {
   const canCreateOpportunity = can('crm:opportunity:manage') || can('crm:opportunity:create')
   const canUseAi = can('crm:assistant:use') && can('crm:customer:view')
 
+  const applySummaryStatus = (response) => {
+    if (!response) return
+    setSummary(response)
+    setSummarizing(Boolean(response.running))
+    if (response.summary) {
+      setData((current) => {
+        if (!current || String(current.id) !== String(response.customerId)) {
+          return current
+        }
+        return {
+          ...current,
+          aiSummary: response.summary,
+          aiAnalyzedAt: response.analyzedAt,
+        }
+      })
+    }
+  }
+
   const load = async () => {
     if (!customerId) {
       setLoading(false)
@@ -181,6 +199,18 @@ export function CustomerDetailPage({ routeParams, can, notify, navigate }) {
       notify(err.message || '客户详情加载失败', 'info')
     } finally {
       setLoading(false)
+    }
+  }
+
+  const loadSummaryStatus = async (id = customerId, silent = true) => {
+    if (!id || !canUseAi) return
+    try {
+      const response = await api.assistant.customerSummaryStatus({ customerId: id })
+      applySummaryStatus(response)
+    } catch (err) {
+      if (!silent) {
+        notify(err.message || '客户 AI 深度总结状态加载失败', 'info')
+      }
     }
   }
 
@@ -202,8 +232,19 @@ export function CustomerDetailPage({ routeParams, can, notify, navigate }) {
     if (data?.id) {
       loadOpportunities(data.id)
       setSummary(data.aiSummary ? { summary: data.aiSummary, analyzedAt: data.aiAnalyzedAt } : null)
+      loadSummaryStatus(data.id, true)
     }
-  }, [data?.id])
+  }, [data?.id, canUseAi])
+
+  useEffect(() => {
+    if (!data?.id || !canUseAi || !summarizing) {
+      return undefined
+    }
+    const timer = window.setInterval(() => {
+      loadSummaryStatus(data.id, true)
+    }, 5000)
+    return () => window.clearInterval(timer)
+  }, [data?.id, canUseAi, summarizing])
 
   const saveCustomer = async (form) => {
     const validationMessage = validateCustomerForm(form, industryOptions)
@@ -286,13 +327,13 @@ export function CustomerDetailPage({ routeParams, can, notify, navigate }) {
     setSummarizing(true)
     try {
       const response = await api.assistant.summarizeCustomer({ customerId: data.id })
-      setSummary(response)
-      setData({ ...data, aiSummary: response.summary, aiAnalyzedAt: response.analyzedAt })
+      applySummaryStatus(response)
       notify(response.message || '客户总结已生成', response.success ? 'success' : 'info')
     } catch (err) {
       notify(err.message || '客户 AI 深度总结失败', 'info')
-    } finally {
       setSummarizing(false)
+    } finally {
+      loadSummaryStatus(data.id, true)
     }
   }
 
@@ -559,7 +600,7 @@ function CustomerOverview({
           </div>
           {canUseAi && (
             <Button icon={Sparkles} onClick={onSummarize} disabled={summarizing}>
-              {summarizing ? '总结中' : '生成深度总结'}
+              {summarizing ? '生成中，稍后查看' : summary?.summary ? '重新生成深度总结' : '生成深度总结'}
             </Button>
           )}
           {summary?.message && (

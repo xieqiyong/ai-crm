@@ -6,6 +6,7 @@ import com.hz.crm.domain.media.MediaTranscriptionTaskEntity;
 import com.hz.crm.web.attachment.AttachmentStorageService;
 import com.hz.crm.web.attachment.AttachmentUploadResponse;
 import java.io.BufferedReader;
+import java.io.IOException;
 import java.io.InputStream;
 import java.io.InputStreamReader;
 import java.lang.management.ManagementFactory;
@@ -80,13 +81,32 @@ public class MediaTranscriptionTaskProcessor {
         if (!mediaTranscriptionApplicationService.claim(task, processorId)) {
             return;
         }
+        long start = System.currentTimeMillis();
+        log.info(
+                "媒体转写任务开始处理，taskId={}，tenantId={}，followupId={}，status={}，providerTaskId={}，processorId={}",
+                task.getId(),
+                task.getTenantId(),
+                task.getBusinessId(),
+                task.getStatus(),
+                task.getProviderTaskId(),
+                processorId);
         try {
             if (!StringUtils.hasText(task.getProviderTaskId())) {
                 prepareAudio(task);
                 submit(task);
+                log.info(
+                        "媒体转写任务本轮处理完成，taskId={}，followupId={}，阶段=提交火山，耗时={}ms",
+                        task.getId(),
+                        task.getBusinessId(),
+                        Long.valueOf(System.currentTimeMillis() - start));
                 return;
             }
             query(task);
+            log.info(
+                    "媒体转写任务本轮处理完成，taskId={}，followupId={}，阶段=查询火山，耗时={}ms",
+                    task.getId(),
+                    task.getBusinessId(),
+                    Long.valueOf(System.currentTimeMillis() - start));
         } catch (RuntimeException ex) {
             mediaTranscriptionApplicationService.markFailed(task, ex.getMessage());
             log.warn("媒体转写任务处理失败，taskId={}，followupId={}", task.getId(), task.getBusinessId(), ex);
@@ -95,10 +115,22 @@ public class MediaTranscriptionTaskProcessor {
 
     private void prepareAudio(MediaTranscriptionTaskEntity task) {
         if (StringUtils.hasText(task.getAudioStorageKey()) && StringUtils.hasText(task.getAudioFileUrl())) {
+            log.info(
+                    "媒体转写任务音频已准备，跳过准备阶段，taskId={}，followupId={}，audioStorageKey={}",
+                    task.getId(),
+                    task.getBusinessId(),
+                    task.getAudioStorageKey());
             return;
         }
         if (!isVideo(task)) {
             String format = resolveFormat(task.getFileName(), task.getFileFormat());
+            log.info(
+                    "媒体转写任务原文件为音频，直接进入火山提交准备，taskId={}，followupId={}，fileName={}，format={}，url={}",
+                    task.getId(),
+                    task.getBusinessId(),
+                    task.getFileName(),
+                    format,
+                    shrink(task.getFileUrl()));
             mediaTranscriptionApplicationService.markReady(
                     task,
                     task.getFileName(),
@@ -118,10 +150,40 @@ public class MediaTranscriptionTaskProcessor {
         mediaTranscriptionApplicationService.markExtracting(task);
         Path sourceFile = null;
         Path audioFile = null;
+        long start = System.currentTimeMillis();
         try {
+            log.info(
+                    "媒体转写任务开始下载原始视频，taskId={}，followupId={}，storageKey={}，fileName={}，size={}",
+                    task.getId(),
+                    task.getBusinessId(),
+                    task.getStorageKey(),
+                    task.getFileName(),
+                    task.getFileSize());
             sourceFile = downloadToTemp(task);
+            log.info(
+                    "媒体转写任务原始视频下载完成，taskId={}，followupId={}，tempPath={}，size={}，耗时={}ms",
+                    task.getId(),
+                    task.getBusinessId(),
+                    sourceFile,
+                    Long.valueOf(Files.size(sourceFile)),
+                    Long.valueOf(System.currentTimeMillis() - start));
             audioFile = Files.createTempFile("crm-media-audio-", ".wav");
+            long extractStart = System.currentTimeMillis();
+            log.info(
+                    "媒体转写任务开始抽取音频，taskId={}，followupId={}，ffmpegPath={}，sourcePath={}，audioPath={}",
+                    task.getId(),
+                    task.getBusinessId(),
+                    ffmpegPath,
+                    sourceFile,
+                    audioFile);
             extractAudio(sourceFile, audioFile);
+            log.info(
+                    "媒体转写任务抽取音频完成，taskId={}，followupId={}，audioPath={}，audioSize={}，耗时={}ms",
+                    task.getId(),
+                    task.getBusinessId(),
+                    audioFile,
+                    Long.valueOf(Files.size(audioFile)),
+                    Long.valueOf(System.currentTimeMillis() - extractStart));
             String audioName = buildAudioName(task);
             AttachmentUploadResponse audio = attachmentStorageService.uploadGeneratedFile(
                     task.getTenantId(),
@@ -143,6 +205,13 @@ public class MediaTranscriptionTaskProcessor {
             task.setAudioStorageKey(audio.getStorageKey());
             task.setAudioFileUrl(audio.getUrl());
             task.setAudioFileFormat("wav");
+            log.info(
+                    "媒体转写任务视频音频准备完成，taskId={}，followupId={}，audioStorageKey={}，audioUrl={}，总耗时={}ms",
+                    task.getId(),
+                    task.getBusinessId(),
+                    audio.getStorageKey(),
+                    shrink(audio.getUrl()),
+                    Long.valueOf(System.currentTimeMillis() - start));
         } catch (Exception ex) {
             if (ex instanceof BusinessException) {
                 throw (BusinessException) ex;
@@ -155,15 +224,36 @@ public class MediaTranscriptionTaskProcessor {
     }
 
     private void submit(MediaTranscriptionTaskEntity task) {
+        long start = System.currentTimeMillis();
+        log.info(
+                "媒体转写任务开始提交火山，taskId={}，followupId={}，audioFileName={}，audioFormat={}，audioUrl={}",
+                task.getId(),
+                task.getBusinessId(),
+                task.getAudioFileName(),
+                task.getAudioFileFormat(),
+                shrink(task.getAudioFileUrl()));
         VolcengineAsrSubmitResult result = volcengineAsrClient.submit(task);
         mediaTranscriptionApplicationService.markSubmitted(
                 task,
                 result.getProviderTaskId(),
                 result.getRequestId(),
                 result.getRawResultJson());
+        log.info(
+                "媒体转写任务提交火山返回，taskId={}，followupId={}，providerTaskId={}，requestId={}，耗时={}ms",
+                task.getId(),
+                task.getBusinessId(),
+                result.getProviderTaskId(),
+                result.getRequestId(),
+                Long.valueOf(System.currentTimeMillis() - start));
     }
 
     private void query(MediaTranscriptionTaskEntity task) {
+        long start = System.currentTimeMillis();
+        log.info(
+                "媒体转写任务开始查询火山，taskId={}，followupId={}，providerTaskId={}",
+                task.getId(),
+                task.getBusinessId(),
+                task.getProviderTaskId());
         VolcengineAsrQueryResult result = volcengineAsrClient.query(task);
         if (result.isFinished()) {
             mediaTranscriptionApplicationService.markSuccess(
@@ -171,10 +261,23 @@ public class MediaTranscriptionTaskProcessor {
                     result.getTranscriptText(),
                     result.getUtterancesJson(),
                     result.getRawResultJson());
+            log.info(
+                    "媒体转写任务查询火山完成，taskId={}，followupId={}，providerTaskId={}，textLength={}，耗时={}ms",
+                    task.getId(),
+                    task.getBusinessId(),
+                    task.getProviderTaskId(),
+                    Integer.valueOf(StringUtils.hasText(result.getTranscriptText()) ? result.getTranscriptText().length() : 0),
+                    Long.valueOf(System.currentTimeMillis() - start));
             return;
         }
         if (result.isProcessing()) {
             mediaTranscriptionApplicationService.markProcessing(task, result.getRawResultJson());
+            log.info(
+                    "媒体转写任务查询火山未完成，taskId={}，followupId={}，providerTaskId={}，耗时={}ms",
+                    task.getId(),
+                    task.getBusinessId(),
+                    task.getProviderTaskId(),
+                    Long.valueOf(System.currentTimeMillis() - start));
             return;
         }
         throw new BusinessException("MEDIA_TRANSCRIBE_002", result.getErrorMessage());
@@ -207,7 +310,14 @@ public class MediaTranscriptionTaskProcessor {
                 "wav",
                 audioFile.toString());
         builder.redirectErrorStream(true);
-        Process process = builder.start();
+        Process process;
+        try {
+            process = builder.start();
+        } catch (IOException ex) {
+            throw new BusinessException(
+                    "MEDIA_TRANSCRIBE_006",
+                    "未找到ffmpeg，请确认后端容器内已安装ffmpeg，或在Nacos配置crm.media.transcription.ffmpeg-path为ffmpeg完整路径：" + ffmpegPath);
+        }
         StringBuilder output = new StringBuilder();
         Thread reader = new Thread(new Runnable() {
             @Override

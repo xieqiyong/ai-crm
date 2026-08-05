@@ -79,3 +79,4 @@ postgres-data/
 agent-runtime/
 skills-runtime/
 release
+.build

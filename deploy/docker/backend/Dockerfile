@@ -8,6 +8,10 @@ ENV CRM_SERVER_PORT=8080
 ENV CRM_LOG_PATH=/app/logs
 ENV CRM_AGENT_WORKSPACE=/app/data/agent-runtime
 
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends ffmpeg \
+    && rm -rf /var/lib/apt/lists/*
+
 COPY app.jar /app/app.jar
 
 EXPOSE 8080

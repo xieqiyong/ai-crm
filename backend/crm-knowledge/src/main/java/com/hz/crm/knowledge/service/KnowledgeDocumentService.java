@@ -348,8 +348,9 @@ public class KnowledgeDocumentService {
             response.setMessage("当前租户尚未建立可用知识索引");
             return response;
         }
-        List<KnowledgeSearchHit> vectorHits =
-                collectMilvusHits(tenantId, generation, request, tune.vectorCandidates);
+        List<KnowledgeSearchHit> vectorHits = tune.vectorWeight <= 0D
+                ? new ArrayList<KnowledgeSearchHit>()
+                : collectMilvusHits(tenantId, generation, request, tune.vectorCandidates);
         List<KnowledgeSearchHit> keywordHits =
                 collectElasticsearchHits(tenantId, generation, request, tune.keywordCandidates);
         List<KnowledgeSearchHit> databaseHits = new ArrayList<KnowledgeSearchHit>();
@@ -1132,7 +1133,7 @@ public class KnowledgeDocumentService {
             hits = knowledgeMilvusClient.search(
                     generation.getMilvusCollection(), tenantId, embedding, candidateCount);
         } catch (RuntimeException ex) {
-            log.warn("知识库向量检索失败，tenantId={}", tenantId, ex);
+            log.info("知识库向量检索降级，tenantId={}，原因={}", tenantId, shrink(ex.getMessage(), 300));
             return result;
         }
         for (KnowledgeSearchHit hit : hits) {

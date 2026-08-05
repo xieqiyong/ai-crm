@@ -58,6 +58,10 @@ export const assistantApi = {
     method: 'POST',
     body: JSON.stringify(payload || {}),
   }),
+  customerSummaryStatus: (payload) => request('/api/assistant/customer/deep-summary/status', {
+    method: 'POST',
+    body: JSON.stringify(payload || {}),
+  }),
   analyzeLead: (payload) => request('/api/assistant/lead/analyze', {
     method: 'POST',
     body: JSON.stringify(payload),

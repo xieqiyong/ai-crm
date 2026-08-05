@@ -19,6 +19,8 @@ import java.util.Collections;
 import java.util.List;
 import java.util.Map;
 import java.util.LinkedHashMap;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -26,6 +28,8 @@ import org.springframework.util.StringUtils;
 
 @Service
 public class MediaTranscriptionApplicationService {
+
+    private static final Logger log = LoggerFactory.getLogger(MediaTranscriptionApplicationService.class);
 
     public static final String BUSINESS_TYPE_FOLLOWUP = "FOLLOWUP";
 
@@ -94,6 +98,19 @@ public class MediaTranscriptionApplicationService {
         entity.setOwnerId(followup.getOwnerId());
         entity.setCreatorId(operatorId);
         mediaTranscriptionTaskMapper.insert(entity);
+        log.info(
+                "媒体转写任务创建完成，tenantId={}，operatorId={}，taskId={}，followupId={}，targetType={}，targetId={}，provider={}，status={}，fileName={}，contentType={}，size={}",
+                tenantId,
+                operatorId,
+                entity.getId(),
+                followup.getId(),
+                entity.getTargetType(),
+                entity.getTargetId(),
+                entity.getProvider(),
+                entity.getStatus(),
+                entity.getFileName(),
+                entity.getContentType(),
+                entity.getFileSize());
         return toResponse(entity);
     }
 
@@ -148,7 +165,7 @@ public class MediaTranscriptionApplicationService {
         LocalDateTime staleLockedAt = now.minusMinutes(30);
         LocalDateTime retryBefore = now.minusSeconds(Math.max(10, retryDelaySeconds));
         int safeBatchSize = Math.max(1, Math.min(batchSize, 50));
-        return mediaTranscriptionTaskMapper.selectList(Wrappers.<MediaTranscriptionTaskEntity>lambdaQuery()
+        List<MediaTranscriptionTaskEntity> tasks = mediaTranscriptionTaskMapper.selectList(Wrappers.<MediaTranscriptionTaskEntity>lambdaQuery()
                 .eq(MediaTranscriptionTaskEntity::isDeleted, false)
                 .and(wrapper -> wrapper
                         .in(MediaTranscriptionTaskEntity::getStatus,
@@ -166,6 +183,14 @@ public class MediaTranscriptionApplicationService {
                         .le(MediaTranscriptionTaskEntity::getLockedAt, staleLockedAt))
                 .orderByAsc(MediaTranscriptionTaskEntity::getCreatedAt)
                 .last("limit " + safeBatchSize));
+        if (!tasks.isEmpty()) {
+            log.info("媒体转写待处理任务读取完成，数量={}，batchSize={}，maxRetry={}，retryDelaySeconds={}",
+                    Integer.valueOf(tasks.size()),
+                    Integer.valueOf(safeBatchSize),
+                    Integer.valueOf(maxRetry),
+                    Integer.valueOf(retryDelaySeconds));
+        }
+        return tasks;
     }
 
     @Transactional
@@ -186,12 +211,28 @@ public class MediaTranscriptionApplicationService {
                 .set(MediaTranscriptionTaskEntity::getLockedAt, now)
                 .set(MediaTranscriptionTaskEntity::getLockedBy, processorId)
                 .set(MediaTranscriptionTaskEntity::getUpdatedAt, now);
-        return mediaTranscriptionTaskMapper.update(null, wrapper) == 1;
+        boolean success = mediaTranscriptionTaskMapper.update(null, wrapper) == 1;
+        if (success) {
+            log.info(
+                    "媒体转写任务锁定成功，tenantId={}，taskId={}，followupId={}，status={}，processorId={}",
+                    task.getTenantId(),
+                    task.getId(),
+                    task.getBusinessId(),
+                    task.getStatus(),
+                    processorId);
+        }
+        return success;
     }
 
     @Transactional
     public void markExtracting(MediaTranscriptionTaskEntity task) {
         updateStatus(task, STATUS_EXTRACTING, 10, null);
+        log.info(
+                "媒体转写任务进入视频抽音频阶段，tenantId={}，taskId={}，followupId={}，fileName={}",
+                task.getTenantId(),
+                task.getId(),
+                task.getBusinessId(),
+                task.getFileName());
     }
 
     @Transactional
@@ -211,6 +252,15 @@ public class MediaTranscriptionApplicationService {
                 .set(MediaTranscriptionTaskEntity::getProgress, Integer.valueOf(25))
                 .set(MediaTranscriptionTaskEntity::getErrorMessage, null)
                 .set(MediaTranscriptionTaskEntity::getUpdatedAt, now));
+        log.info(
+                "媒体转写任务音频准备完成，tenantId={}，taskId={}，followupId={}，audioFileName={}，audioFormat={}，audioSize={}，audioUrl={}",
+                task.getTenantId(),
+                task.getId(),
+                task.getBusinessId(),
+                audioFileName,
+                audioFileFormat,
+                audioFileSize,
+                shrink(audioFileUrl, 300));
     }
 
     @Transactional
@@ -229,6 +279,13 @@ public class MediaTranscriptionApplicationService {
                 .set(MediaTranscriptionTaskEntity::getLockedBy, null)
                 .set(MediaTranscriptionTaskEntity::getErrorMessage, null)
                 .set(MediaTranscriptionTaskEntity::getUpdatedAt, now));
+        log.info(
+                "媒体转写任务提交火山完成，tenantId={}，taskId={}，followupId={}，providerTaskId={}，requestId={}",
+                task.getTenantId(),
+                task.getId(),
+                task.getBusinessId(),
+                providerTaskId,
+                requestId);
     }
 
     @Transactional
@@ -243,6 +300,12 @@ public class MediaTranscriptionApplicationService {
                 .set(MediaTranscriptionTaskEntity::getLockedAt, null)
                 .set(MediaTranscriptionTaskEntity::getLockedBy, null)
                 .set(MediaTranscriptionTaskEntity::getUpdatedAt, now));
+        log.info(
+                "媒体转写任务火山处理中，tenantId={}，taskId={}，followupId={}，providerTaskId={}",
+                task.getTenantId(),
+                task.getId(),
+                task.getBusinessId(),
+                task.getProviderTaskId());
     }
 
     @Transactional
@@ -261,6 +324,14 @@ public class MediaTranscriptionApplicationService {
                 .set(MediaTranscriptionTaskEntity::getLockedBy, null)
                 .set(MediaTranscriptionTaskEntity::getErrorMessage, null)
                 .set(MediaTranscriptionTaskEntity::getUpdatedAt, now));
+        log.info(
+                "媒体转写任务完成，tenantId={}，taskId={}，followupId={}，providerTaskId={}，textLength={}，utterancesLength={}",
+                task.getTenantId(),
+                task.getId(),
+                task.getBusinessId(),
+                task.getProviderTaskId(),
+                Integer.valueOf(StringUtils.hasText(transcriptText) ? transcriptText.length() : 0),
+                Integer.valueOf(StringUtils.hasText(utterancesJson) ? utterancesJson.length() : 0));
     }
 
     @Transactional
@@ -276,6 +347,14 @@ public class MediaTranscriptionApplicationService {
                 .set(MediaTranscriptionTaskEntity::getLockedAt, null)
                 .set(MediaTranscriptionTaskEntity::getLockedBy, null)
                 .set(MediaTranscriptionTaskEntity::getUpdatedAt, now));
+        log.warn(
+                "媒体转写任务失败，tenantId={}，taskId={}，followupId={}，providerTaskId={}，retryCount={}，error={}",
+                task.getTenantId(),
+                task.getId(),
+                task.getBusinessId(),
+                task.getProviderTaskId(),
+                Integer.valueOf(retryCount),
+                shrink(errorMessage, 500));
     }
 
     @Transactional

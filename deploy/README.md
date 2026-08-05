@@ -169,6 +169,33 @@ Windows 本地执行：
 .\deploy\scripts\build-app-images.ps1 crm-v2 -DeployRemote -RemotePath /app/builds/products/crm -RemoteDeployDir /app/builds/products/crm/crm-app
 ```
 
+如果不想每次上传和远程重启都输入密码，建议先配置 SSH Key 免密。
+
+本地生成密钥：
+
+```powershell
+ssh-keygen -t ed25519 -f $env:USERPROFILE\.ssh\crm_deploy_ed25519
+```
+
+把公钥写入服务器：
+
+```powershell
+type $env:USERPROFILE\.ssh\crm_deploy_ed25519.pub | ssh root@192.168.50.105 "mkdir -p ~/.ssh && cat >> ~/.ssh/authorized_keys && chmod 700 ~/.ssh && chmod 600 ~/.ssh/authorized_keys"
+```
+
+之后使用私钥打包、上传并部署：
+
+```powershell
+.\deploy\scripts\build-app-images.ps1 crm-v2 -DeployRemote -SshKey "$env:USERPROFILE\.ssh\crm_deploy_ed25519" -RemotePath /app/builds/products/crm -RemoteDeployDir /app/builds/products/crm/crm-app
+```
+
+也可以设置环境变量，后续命令不用重复写 `-SshKey`：
+
+```powershell
+$env:CRM_DEPLOY_SSH_KEY="$env:USERPROFILE\.ssh\crm_deploy_ed25519"
+.\deploy\scripts\build-app-images.ps1 crm-v2 -DeployRemote -RemotePath /app/builds/products/crm -RemoteDeployDir /app/builds/products/crm/crm-app
+```
+
 脚本会构建并上传：
 
 - `crm-backend-crm-v2.tar`

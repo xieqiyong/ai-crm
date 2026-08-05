@@ -13,6 +13,8 @@ import java.net.HttpURLConnection;
 import java.net.URL;
 import java.nio.charset.StandardCharsets;
 import java.util.Locale;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.stereotype.Component;
@@ -21,6 +23,8 @@ import org.springframework.util.StringUtils;
 @Component
 @ConditionalOnProperty(prefix = "crm.media.transcription.volcengine", name = "enabled", havingValue = "true")
 public class VolcengineAsrClient {
+
+    private static final Logger log = LoggerFactory.getLogger(VolcengineAsrClient.class);
 
     @Value("${crm.media.transcription.volcengine.base-url:https://openspeech.bytedance.com/api/v1/auc}")
     private String baseUrl;
@@ -45,15 +49,33 @@ public class VolcengineAsrClient {
 
     public VolcengineAsrSubmitResult submit(MediaTranscriptionTaskEntity task) {
         validateConfig();
+        long start = System.currentTimeMillis();
+        String requestUrl = resolveUrl("/submit");
+        log.info(
+                "火山转写提交接口请求开始，taskId={}，followupId={}，requestUrl={}，audioFormat={}，audioUrl={}",
+                task.getId(),
+                task.getBusinessId(),
+                requestUrl,
+                resolveAudioFormat(task),
+                shrink(StringUtils.hasText(task.getAudioFileUrl()) ? task.getAudioFileUrl() : task.getFileUrl()));
         try {
             String requestBody = buildSubmitBody(task);
-            HttpURLConnection connection = openConnection(resolveUrl("/submit"));
+            HttpURLConnection connection = openConnection(requestUrl);
             writeRequest(connection, requestBody);
-            String responseText = readResponse(connection, connection.getResponseCode());
-            JSONObject response = parseResponse(connection.getResponseCode(), responseText);
+            int statusCode = connection.getResponseCode();
+            String responseText = readResponse(connection, statusCode);
+            JSONObject response = parseResponse(statusCode, responseText);
             JSONObject data = resolveData(response);
             int code = resolveCode(response, data);
             if (code != 1000) {
+                log.warn(
+                        "火山转写提交接口业务失败，taskId={}，followupId={}，httpStatus={}，code={}，message={}，耗时={}ms",
+                        task.getId(),
+                        task.getBusinessId(),
+                        Integer.valueOf(statusCode),
+                        Integer.valueOf(code),
+                        shrink(resolveMessage(response, data)),
+                        Long.valueOf(System.currentTimeMillis() - start));
                 throw new BusinessException("MEDIA_ASR_002", "火山转写提交失败：" + resolveMessage(response, data));
             }
             String taskId = firstText(data, "id", "task_id");
@@ -67,10 +89,32 @@ public class VolcengineAsrClient {
             result.setProviderTaskId(taskId);
             result.setRequestId(firstText(response, "request_id", "reqid"));
             result.setRawResultJson(response.toJSONString());
+            log.info(
+                    "火山转写提交接口请求完成，taskId={}，followupId={}，httpStatus={}，code={}，providerTaskId={}，requestId={}，responseLength={}，耗时={}ms",
+                    task.getId(),
+                    task.getBusinessId(),
+                    Integer.valueOf(statusCode),
+                    Integer.valueOf(code),
+                    result.getProviderTaskId(),
+                    result.getRequestId(),
+                    Integer.valueOf(responseText == null ? 0 : responseText.length()),
+                    Long.valueOf(System.currentTimeMillis() - start));
             return result;
         } catch (BusinessException ex) {
+            log.warn(
+                    "火山转写提交接口请求失败，taskId={}，followupId={}，message={}，耗时={}ms",
+                    task.getId(),
+                    task.getBusinessId(),
+                    ex.getMessage(),
+                    Long.valueOf(System.currentTimeMillis() - start));
             throw ex;
         } catch (Exception ex) {
+            log.warn(
+                    "火山转写提交接口请求异常，taskId={}，followupId={}，耗时={}ms",
+                    task.getId(),
+                    task.getBusinessId(),
+                    Long.valueOf(System.currentTimeMillis() - start),
+                    ex);
             throw new BusinessException("MEDIA_ASR_004", "火山转写提交异常：" + ex.getMessage());
         }
     }
@@ -80,16 +124,25 @@ public class VolcengineAsrClient {
         if (!StringUtils.hasText(task.getProviderTaskId())) {
             throw new BusinessException("MEDIA_ASR_005", "火山转写任务编号不能为空");
         }
+        long start = System.currentTimeMillis();
+        String requestUrl = resolveUrl("/query");
+        log.info(
+                "火山转写查询接口请求开始，taskId={}，followupId={}，providerTaskId={}，requestUrl={}",
+                task.getId(),
+                task.getBusinessId(),
+                task.getProviderTaskId(),
+                requestUrl);
         try {
             JSONObject body = new JSONObject();
             body.put("appid", appid);
             body.put("token", token);
             body.put("cluster", cluster);
             body.put("id", task.getProviderTaskId());
-            HttpURLConnection connection = openConnection(resolveUrl("/query"));
+            HttpURLConnection connection = openConnection(requestUrl);
             writeRequest(connection, JSON.toJSONString(body));
-            String responseText = readResponse(connection, connection.getResponseCode());
-            JSONObject response = parseResponse(connection.getResponseCode(), responseText);
+            int statusCode = connection.getResponseCode();
+            String responseText = readResponse(connection, statusCode);
+            JSONObject response = parseResponse(statusCode, responseText);
             JSONObject data = resolveData(response);
             int code = resolveCode(response, data);
             VolcengineAsrQueryResult result = new VolcengineAsrQueryResult();
@@ -99,17 +152,60 @@ public class VolcengineAsrClient {
                 result.setTranscriptText(resolveTranscript(response, data));
                 JSONArray utterances = resolveUtterances(response, data);
                 result.setUtterancesJson(utterances == null ? null : utterances.toJSONString());
+                log.info(
+                        "火山转写查询接口返回完成，taskId={}，followupId={}，providerTaskId={}，httpStatus={}，code={}，textLength={}，utterancesCount={}，responseLength={}，耗时={}ms",
+                        task.getId(),
+                        task.getBusinessId(),
+                        task.getProviderTaskId(),
+                        Integer.valueOf(statusCode),
+                        Integer.valueOf(code),
+                        Integer.valueOf(StringUtils.hasText(result.getTranscriptText()) ? result.getTranscriptText().length() : 0),
+                        Integer.valueOf(utterances == null ? 0 : utterances.size()),
+                        Integer.valueOf(responseText == null ? 0 : responseText.length()),
+                        Long.valueOf(System.currentTimeMillis() - start));
                 return result;
             }
             if (code == 2000 || code == 2001) {
                 result.setProcessing(true);
+                log.info(
+                        "火山转写查询接口返回处理中，taskId={}，followupId={}，providerTaskId={}，httpStatus={}，code={}，responseLength={}，耗时={}ms",
+                        task.getId(),
+                        task.getBusinessId(),
+                        task.getProviderTaskId(),
+                        Integer.valueOf(statusCode),
+                        Integer.valueOf(code),
+                        Integer.valueOf(responseText == null ? 0 : responseText.length()),
+                        Long.valueOf(System.currentTimeMillis() - start));
                 return result;
             }
             result.setErrorMessage("火山转写查询失败：" + resolveMessage(response, data));
+            log.warn(
+                    "火山转写查询接口业务失败，taskId={}，followupId={}，providerTaskId={}，httpStatus={}，code={}，message={}，耗时={}ms",
+                    task.getId(),
+                    task.getBusinessId(),
+                    task.getProviderTaskId(),
+                    Integer.valueOf(statusCode),
+                    Integer.valueOf(code),
+                    shrink(result.getErrorMessage()),
+                    Long.valueOf(System.currentTimeMillis() - start));
             return result;
         } catch (BusinessException ex) {
+            log.warn(
+                    "火山转写查询接口请求失败，taskId={}，followupId={}，providerTaskId={}，message={}，耗时={}ms",
+                    task.getId(),
+                    task.getBusinessId(),
+                    task.getProviderTaskId(),
+                    ex.getMessage(),
+                    Long.valueOf(System.currentTimeMillis() - start));
             throw ex;
         } catch (Exception ex) {
+            log.warn(
+                    "火山转写查询接口请求异常，taskId={}，followupId={}，providerTaskId={}，耗时={}ms",
+                    task.getId(),
+                    task.getBusinessId(),
+                    task.getProviderTaskId(),
+                    Long.valueOf(System.currentTimeMillis() - start),
+                    ex);
             throw new BusinessException("MEDIA_ASR_006", "火山转写查询异常：" + ex.getMessage());
         }
     }

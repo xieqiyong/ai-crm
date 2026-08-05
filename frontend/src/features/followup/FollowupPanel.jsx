@@ -28,6 +28,7 @@ export const targetTypeText = {
 }
 
 const transcriptionStatusText = {
+  UPLOADING: '上传中',
   PENDING: '待处理',
   EXTRACTING: '抽取音频',
   READY: '等待提交',
@@ -40,6 +41,8 @@ const transcriptionStatusText = {
 const pendingTranscriptionStatuses = new Set(['PENDING'])
 
 const runningTranscriptionStatuses = new Set(['EXTRACTING', 'READY', 'SUBMITTED', 'PROCESSING'])
+
+const uploadingTranscriptionStatuses = new Set(['UPLOADING'])
 
 const emptyPage = {
   total: 0,
@@ -84,7 +87,7 @@ function isVideoFile(file) {
 
 function hasRunningTranscriptions(records) {
   return (records || []).some((record) => (record.mediaTranscriptions || []).some((item) => (
-    runningTranscriptionStatuses.has(item.status)
+    runningTranscriptionStatuses.has(item.status) || uploadingTranscriptionStatuses.has(item.status)
   )))
 }
 
@@ -104,7 +107,7 @@ async function uploadFollowupMedia(followupId, mediaFiles = []) {
   return results
 }
 
-export function startFollowupMediaUpload(followupId, mediaFiles = [], notify, onDone) {
+export function startFollowupMediaUpload(followupId, mediaFiles = [], notify, onDone, onFailed) {
   const files = Array.from(mediaFiles || [])
   if (!followupId || !files.length) return false
   uploadFollowupMedia(followupId, files)
@@ -114,8 +117,38 @@ export function startFollowupMediaUpload(followupId, mediaFiles = [], notify, on
     })
     .catch((error) => {
       notify?.(error.message || '音视频上传失败', 'info')
+      onFailed?.(error)
     })
   return true
+}
+
+export function buildLocalMediaUploads(mediaFiles = [], status = 'UPLOADING', errorMessage = '') {
+  const files = Array.from(mediaFiles || [])
+  const now = Date.now()
+  return files.map((file, index) => ({
+    id: `local-media-${now}-${index}-${file.name}`,
+    fileName: file.name,
+    contentType: file.type,
+    fileSize: file.size,
+    status,
+    progress: status === 'FAILED' ? 100 : 8,
+    errorMessage,
+    localUpload: true,
+  }))
+}
+
+export function mergeFollowupMediaUploads(records = [], localMediaUploads = {}) {
+  return (records || []).map((record) => {
+    const localItems = localMediaUploads[String(record.id)] || []
+    if (!localItems.length) {
+      return record
+    }
+    const mediaTranscriptions = Array.isArray(record.mediaTranscriptions) ? record.mediaTranscriptions : []
+    return {
+      ...record,
+      mediaTranscriptions: [...localItems, ...mediaTranscriptions],
+    }
+  })
 }
 
 function toDateTimeInput(value) {
@@ -190,11 +223,15 @@ export function FollowupPanel({
   const [loading, setLoading] = useState(false)
   const [editing, setEditing] = useState(null)
   const [visibleSize, setVisibleSize] = useState(pageSize)
+  const [localMediaUploads, setLocalMediaUploads] = useState({})
   const pendingPollingCountRef = useRef(0)
 
-  const load = async (requestedPageSize = visibleSize) => {
+  const load = async (requestedPageSize = visibleSize, options = {}) => {
     if (!canView || !targetType || !targetId) return
-    setLoading(true)
+    const silent = Boolean(options.silent)
+    if (!silent) {
+      setLoading(true)
+    }
     try {
       const data = await api.followup.page({
         targetType,
@@ -204,15 +241,71 @@ export function FollowupPanel({
       })
       setPage(data || emptyPage)
     } catch (error) {
-      notify(error.message || '跟进记录加载失败', 'info')
+      if (!silent) {
+        notify(error.message || '跟进记录加载失败', 'info')
+      }
     } finally {
-      setLoading(false)
+      if (!silent) {
+        setLoading(false)
+      }
     }
+  }
+
+  const appendLocalUploads = (followupId, mediaFiles) => {
+    const items = buildLocalMediaUploads(mediaFiles)
+    if (!followupId || !items.length) return
+    setLocalMediaUploads((current) => ({
+      ...current,
+      [String(followupId)]: [...(current[String(followupId)] || []), ...items],
+    }))
+  }
+
+  const clearLocalUploads = (followupId) => {
+    if (!followupId) return
+    setLocalMediaUploads((current) => {
+      const next = { ...current }
+      delete next[String(followupId)]
+      return next
+    })
+  }
+
+  const failLocalUploads = (followupId, error) => {
+    if (!followupId) return
+    setLocalMediaUploads((current) => {
+      const items = current[String(followupId)] || []
+      if (!items.length) return current
+      return {
+        ...current,
+        [String(followupId)]: items.map((item) => ({
+          ...item,
+          status: 'FAILED',
+          progress: 100,
+          errorMessage: error?.message || '音视频上传失败',
+        })),
+      }
+    })
+  }
+
+  const startMediaUploadForFollowup = (followupId, mediaFiles) => {
+    const files = Array.from(mediaFiles || [])
+    if (!followupId || !files.length) return false
+    appendLocalUploads(followupId, files)
+    return startFollowupMediaUpload(
+      followupId,
+      files,
+      notify,
+      () => {
+        pendingPollingCountRef.current = 0
+        load(visibleSize, { silent: true }).finally(() => clearLocalUploads(followupId))
+      },
+      (error) => failLocalUploads(followupId, error),
+    )
   }
 
   useEffect(() => {
     pendingPollingCountRef.current = 0
     setVisibleSize(pageSize)
+    setLocalMediaUploads({})
     if (!canView || !targetType || !targetId) {
       setPage(emptyPage)
       return
@@ -221,7 +314,7 @@ export function FollowupPanel({
   }, [canView, targetType, targetId, pageSize])
 
   useEffect(() => {
-    const records = page.records || []
+    const records = mergeFollowupMediaUploads(page.records || [], localMediaUploads)
     const active = hasRunningTranscriptions(records)
     const pending = hasPendingTranscriptions(records)
     if (!canView || !targetType || !targetId || (!active && !pending)) {
@@ -235,10 +328,10 @@ export function FollowupPanel({
       if (!active) {
         pendingPollingCountRef.current += 1
       }
-      load(visibleSize)
+      load(visibleSize, { silent: true })
     }, 8000)
     return () => window.clearInterval(timer)
-  }, [canView, targetType, targetId, visibleSize, page.records])
+  }, [canView, targetType, targetId, visibleSize, page.records, localMediaUploads])
 
   const save = async (form) => {
     if (!hasRichContent(form.content)) {
@@ -247,13 +340,10 @@ export function FollowupPanel({
     }
     try {
       const saved = await api.followup.save(toFollowupPayload(form))
-      const mediaStarted = startFollowupMediaUpload(saved?.id || form.id, form.mediaFiles, notify, () => {
-        pendingPollingCountRef.current = 0
-        load(visibleSize)
-      })
+      const mediaStarted = startMediaUploadForFollowup(saved?.id || form.id, form.mediaFiles)
       notify(mediaStarted ? '跟进记录已保存，音视频正在后台上传' : '跟进记录已保存', 'success')
       setEditing(null)
-      load(visibleSize)
+      load(visibleSize, { silent: mediaStarted })
     } catch (error) {
       notify(error.message || '跟进记录保存失败', 'info')
     }
@@ -263,18 +353,15 @@ export function FollowupPanel({
     const mediaFiles = Array.from(files || [])
     if (!row?.id || !mediaFiles.length) return
     try {
-      startFollowupMediaUpload(row.id, mediaFiles, notify, () => {
-        pendingPollingCountRef.current = 0
-        load(visibleSize)
-      })
+      startMediaUploadForFollowup(row.id, mediaFiles)
       notify('音视频正在后台上传', 'success')
-      load(visibleSize)
+      load(visibleSize, { silent: true })
     } catch (error) {
       notify(error.message || '音视频上传失败', 'info')
     }
   }
 
-  const records = page.records || []
+  const records = mergeFollowupMediaUploads(page.records || [], localMediaUploads)
   const total = Number(page.total || 0)
   const hasMore = compact && records.length < total
   const showMore = () => {
@@ -342,7 +429,7 @@ export function FollowupPanel({
 }
 
 export function FollowupTimeline({ records = [], loading, compact = false, onEdit, onUploadMedia }) {
-  if (loading) {
+  if (loading && !records.length) {
     return (
       <div className="followup-empty">
         <RefreshCw size={24} />
@@ -407,18 +494,24 @@ export function FollowupTimeline({ records = [], loading, compact = false, onEdi
   )
 }
 
-function FollowupMediaTranscriptions({ items = [] }) {
+export function FollowupMediaTranscriptions({ items = [], compact = false }) {
   const records = Array.isArray(items) ? items : []
   if (!records.length) return null
   return (
-    <div className="followup-media-results">
+    <div className={`followup-media-results ${compact ? 'compact' : ''}`}>
       {records.map((item) => {
         const success = item.status === 'SUCCESS'
         const failed = item.status === 'FAILED'
-        const running = runningTranscriptionStatuses.has(item.status) || pendingTranscriptionStatuses.has(item.status)
+        const uploading = uploadingTranscriptionStatuses.has(item.status)
+        const running = runningTranscriptionStatuses.has(item.status)
+          || pendingTranscriptionStatuses.has(item.status)
+          || uploading
         const Icon = isVideoFile({ type: item.contentType, name: item.fileName }) ? FileVideo2 : FileAudio2
         return (
-          <div className={`followup-media-result ${success ? 'success' : ''} ${failed ? 'failed' : ''}`} key={item.id}>
+          <div
+            className={`followup-media-result ${success ? 'success' : ''} ${failed ? 'failed' : ''} ${uploading ? 'uploading' : ''}`}
+            key={item.id}
+          >
             <div className="followup-media-result-head">
               <span><Icon size={15} />{item.fileName || '音视频文件'}</span>
               <small>{transcriptionStatusText[item.status] || item.status || '待处理'}</small>
@@ -429,7 +522,7 @@ function FollowupMediaTranscriptions({ items = [] }) {
               </div>
             )}
             {failed && item.errorMessage && <p className="followup-media-error">{item.errorMessage}</p>}
-            {success && item.transcriptText && (
+            {success && item.transcriptText && !compact && (
               <div className="followup-media-text">
                 <b>转写文本</b>
                 <p>{item.transcriptText}</p>

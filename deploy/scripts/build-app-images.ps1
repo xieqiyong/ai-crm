@@ -16,6 +16,8 @@
 
     [string]$RemotePassword = $env:CRM_DEPLOY_PASSWORD,
 
+    [string]$SshKey = $env:CRM_DEPLOY_SSH_KEY,
+
     [string]$RemoteDeployDir = ""
 )
 
@@ -234,10 +236,20 @@ function Invoke-RemoteCommand {
         [string]$Description,
         [string]$RemoteHost,
         [string]$RemoteUser,
-        [string]$RemotePassword
+        [string]$RemotePassword,
+        [string]$SshKey
     )
 
     $RemoteTarget = "$RemoteUser@$RemoteHost"
+    if (-not [string]::IsNullOrWhiteSpace($SshKey)) {
+        Assert-CommandExists -Command "ssh" -Description "OpenSSH ssh"
+        Invoke-CheckedCommand `
+            -Command "ssh" `
+            -Arguments @("-i", $SshKey, "-o", "IdentitiesOnly=yes", $RemoteTarget, $CommandText) `
+            -Description $Description
+        return
+    }
+
     if (-not [string]::IsNullOrWhiteSpace($RemotePassword) -and (Get-Command "plink" -ErrorAction SilentlyContinue)) {
         Invoke-CheckedCommand `
             -Command "plink" `
@@ -259,11 +271,21 @@ function Invoke-RemoteUpload {
         [string]$RemoteHost,
         [string]$RemoteUser,
         [string]$RemotePath,
-        [string]$RemotePassword
+        [string]$RemotePassword,
+        [string]$SshKey
     )
 
     $RemoteTarget = "$RemoteUser@$RemoteHost"
     $RemoteDestination = "${RemoteTarget}:$RemotePath/"
+    if (-not [string]::IsNullOrWhiteSpace($SshKey)) {
+        Assert-CommandExists -Command "scp" -Description "OpenSSH scp"
+        Invoke-CheckedCommand `
+            -Command "scp" `
+            -Arguments (@("-i", $SshKey, "-o", "IdentitiesOnly=yes") + $Files + @($RemoteDestination)) `
+            -Description "上传应用镜像和部署脚本"
+        return
+    }
+
     if (-not [string]::IsNullOrWhiteSpace($RemotePassword) -and (Get-Command "pscp" -ErrorAction SilentlyContinue)) {
         Invoke-CheckedCommand `
             -Command "pscp" `
@@ -356,6 +378,12 @@ if ($Version -notmatch "^[A-Za-z0-9_][A-Za-z0-9_.-]{0,127}$") {
 }
 if ([string]::IsNullOrWhiteSpace($RemotePath) -or -not $RemotePath.StartsWith("/")) {
     throw "远程上传目录必须是Linux绝对路径"
+}
+if (-not [string]::IsNullOrWhiteSpace($SshKey)) {
+    if (-not (Test-Path -LiteralPath $SshKey -PathType Leaf)) {
+        throw "SSH私钥文件不存在：$SshKey"
+    }
+    $SshKey = (Resolve-Path -LiteralPath $SshKey).Path
 }
 
 $ScriptDir = Split-Path -Parent $MyInvocation.MyCommand.Path
@@ -556,7 +584,8 @@ try {
             -Description "创建远程上传目录" `
             -RemoteHost $RemoteHost `
             -RemoteUser $RemoteUser `
-            -RemotePassword $RemotePassword
+            -RemotePassword $RemotePassword `
+            -SshKey $SshKey
 
         $UploadFiles = @($BackendArchive, $McpArchive, $FrontendArchive, $ChecksumFile, $ComposeFile) + $ServerScripts
         Invoke-RemoteUpload `
@@ -564,14 +593,16 @@ try {
             -RemoteHost $RemoteHost `
             -RemoteUser $RemoteUser `
             -RemotePath $RemotePath `
-            -RemotePassword $RemotePassword
+            -RemotePassword $RemotePassword `
+            -SshKey $SshKey
 
         Invoke-RemoteCommand `
             -CommandText "chmod +x '$RemotePath/load-app-images.sh' '$RemotePath/restart-crm-app.sh' '$RemotePath/deploy-crm-app.sh'" `
             -Description "授权远程部署脚本" `
             -RemoteHost $RemoteHost `
             -RemoteUser $RemoteUser `
-            -RemotePassword $RemotePassword
+            -RemotePassword $RemotePassword `
+            -SshKey $SshKey
     }
 
     if ($DeployRemote.IsPresent) {
@@ -584,7 +615,8 @@ try {
             -Description "远程加载镜像并重启应用" `
             -RemoteHost $RemoteHost `
             -RemoteUser $RemoteUser `
-            -RemotePassword $RemotePassword
+            -RemotePassword $RemotePassword `
+            -SshKey $SshKey
     }
 
     Write-Host ""

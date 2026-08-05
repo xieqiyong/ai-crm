@@ -13,10 +13,13 @@ import {
 } from '../../components'
 import {
   FollowupFormModal,
+  FollowupMediaTranscriptions,
+  buildLocalMediaUploads,
   emptyFollowupForm,
   followupTypeText,
   formatDateTime,
   hasRichContent,
+  mergeFollowupMediaUploads,
   startFollowupMediaUpload,
   targetTypeText,
   toFollowupForm,
@@ -50,6 +53,7 @@ export function FollowupPage({ can, notify, navigate }) {
   const [page, setPage] = useState(emptyPage)
   const [loading, setLoading] = useState(false)
   const [editing, setEditing] = useState(null)
+  const [localMediaUploads, setLocalMediaUploads] = useState({})
 
   const load = async (nextQuery = query) => {
     if (!canView) return
@@ -69,6 +73,56 @@ export function FollowupPage({ can, notify, navigate }) {
     load()
   }, [])
 
+  const appendLocalUploads = (followupId, mediaFiles) => {
+    const items = buildLocalMediaUploads(mediaFiles)
+    if (!followupId || !items.length) return
+    setLocalMediaUploads((current) => ({
+      ...current,
+      [String(followupId)]: [...(current[String(followupId)] || []), ...items],
+    }))
+  }
+
+  const clearLocalUploads = (followupId) => {
+    if (!followupId) return
+    setLocalMediaUploads((current) => {
+      const next = { ...current }
+      delete next[String(followupId)]
+      return next
+    })
+  }
+
+  const failLocalUploads = (followupId, error) => {
+    if (!followupId) return
+    setLocalMediaUploads((current) => {
+      const items = current[String(followupId)] || []
+      if (!items.length) return current
+      return {
+        ...current,
+        [String(followupId)]: items.map((item) => ({
+          ...item,
+          status: 'FAILED',
+          progress: 100,
+          errorMessage: error?.message || '音视频上传失败',
+        })),
+      }
+    })
+  }
+
+  const startMediaUploadForFollowup = (followupId, mediaFiles, nextQuery) => {
+    const files = Array.from(mediaFiles || [])
+    if (!followupId || !files.length) return false
+    appendLocalUploads(followupId, files)
+    return startFollowupMediaUpload(
+      followupId,
+      files,
+      notify,
+      () => {
+        load(nextQuery).finally(() => clearLocalUploads(followupId))
+      },
+      (error) => failLocalUploads(followupId, error),
+    )
+  }
+
   const search = (event) => {
     event.preventDefault()
     load({ ...query, pageNo: 1 })
@@ -85,12 +139,11 @@ export function FollowupPage({ can, notify, navigate }) {
     }
     try {
       const saved = await api.followup.save(toFollowupPayload(form))
-      const mediaStarted = startFollowupMediaUpload(saved?.id || form.id, form.mediaFiles, notify, () => {
-        load(form.id ? query : { ...query, pageNo: 1 })
-      })
+      const nextQuery = form.id ? query : { ...query, pageNo: 1 }
+      const mediaStarted = startMediaUploadForFollowup(saved?.id || form.id, form.mediaFiles, nextQuery)
       notify(mediaStarted ? '跟进记录已保存，音视频正在后台上传' : '跟进记录已保存', 'success')
       setEditing(null)
-      load(form.id ? query : { ...query, pageNo: 1 })
+      load(nextQuery)
     } catch (error) {
       notify(error.message || '跟进记录保存失败', 'info')
     }
@@ -100,9 +153,7 @@ export function FollowupPage({ can, notify, navigate }) {
     const mediaFiles = Array.from(files || [])
     if (!row?.id || !mediaFiles.length) return
     try {
-      startFollowupMediaUpload(row.id, mediaFiles, notify, () => {
-        load(query)
-      })
+      startMediaUploadForFollowup(row.id, mediaFiles, query)
       notify('音视频正在后台上传', 'success')
       load(query)
     } catch (error) {
@@ -127,7 +178,7 @@ export function FollowupPage({ can, notify, navigate }) {
     }
   }
 
-  const records = page.records || []
+  const records = mergeFollowupMediaUploads(page.records || [], localMediaUploads)
   const currentPage = page.pageNo || query.pageNo || 1
   const pageSize = page.pageSize || query.pageSize || 20
   const totalPages = Math.max(1, Math.ceil((page.total || 0) / pageSize))
@@ -201,7 +252,12 @@ export function FollowupPage({ can, notify, navigate }) {
                     <small>{targetTypeText[row.targetType] || row.targetType} · {row.targetId}</small>
                   </td>
                   <td><Badge tone="info">{followupTypeText[row.followupType] || row.followupType}</Badge></td>
-                  <td><div className="followup-table-content"><RichTextViewer value={row.content} empty="-" /></div></td>
+                  <td>
+                    <div className="followup-table-content">
+                      <RichTextViewer value={row.content} empty="-" />
+                      <FollowupMediaTranscriptions items={row.mediaTranscriptions} compact />
+                    </div>
+                  </td>
                   <td>{row.result || '-'}</td>
                   <td>
                     <span>{row.nextPlan || '-'}</span>
@@ -249,7 +305,7 @@ export function FollowupPage({ can, notify, navigate }) {
               <span>可以从客户详情、线索详情、商机详情或当前页面写跟进。</span>
             </div>
           )}
-          {loading && (
+          {loading && !records.length && (
             <div className="empty-table">
               <RefreshCw size={26} />
               <b>正在加载跟进记录</b>

@@ -392,6 +392,11 @@
   background: color-mix(in srgb, var(--danger) 7%, var(--surface));
 }
 
+.followup-media-result.uploading {
+  border-color: color-mix(in srgb, var(--brand) 34%, var(--line));
+  background: color-mix(in srgb, var(--brand) 7%, var(--surface));
+}
+
 .followup-media-result-head {
   display: flex;
   align-items: center;
@@ -461,6 +466,26 @@
   font-size: 13px;
   line-height: 1.8;
   white-space: pre-wrap;
+}
+
+.followup-media-results.compact {
+  gap: 6px;
+  margin-top: 8px;
+}
+
+.followup-media-results.compact .followup-media-result {
+  padding: 7px 8px;
+  border-radius: 10px;
+}
+
+.followup-media-results.compact .followup-media-result-head span,
+.followup-media-results.compact .followup-media-result-head small {
+  font-size: 11px;
+}
+
+.followup-media-results.compact .followup-media-progress {
+  height: 4px;
+  margin-top: 6px;
 }
 
 .followup-load-more {

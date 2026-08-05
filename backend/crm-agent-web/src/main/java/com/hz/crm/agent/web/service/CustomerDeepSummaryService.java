@@ -4,9 +4,12 @@ import com.alibaba.fastjson2.JSON;
 import com.alibaba.fastjson2.JSONArray;
 import com.alibaba.fastjson2.JSONObject;
 import com.baomidou.mybatisplus.core.conditions.query.QueryWrapper;
+import com.baomidou.mybatisplus.core.toolkit.Wrappers;
 import com.hz.crm.agent.runtime.core.AgentRuntimeRequest;
 import com.hz.crm.agent.runtime.domain.AgentEntity;
+import com.hz.crm.agent.runtime.domain.AgentRunEntity;
 import com.hz.crm.agent.runtime.dto.AgentRuntimeEvent;
+import com.hz.crm.agent.runtime.mapper.AgentRunMapper;
 import com.hz.crm.agent.runtime.service.AgentDefinitionService;
 import com.hz.crm.agent.runtime.service.AgentRuntimeFacade;
 import com.hz.crm.agent.web.dto.CustomerDeepSummaryRequest;
@@ -27,23 +30,35 @@ import com.hz.crm.domain.opportunity.OpportunityProductEntity;
 import com.hz.crm.domain.opportunity.mapper.OpportunityMapper;
 import com.hz.crm.domain.opportunity.mapper.OpportunityProductMapper;
 import java.time.Duration;
+import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.beans.factory.annotation.Qualifier;
+import org.springframework.beans.factory.annotation.Value;
+import org.springframework.core.task.TaskExecutor;
 import org.springframework.stereotype.Service;
-import org.springframework.transaction.annotation.Transactional;
 import org.springframework.util.StringUtils;
+import reactor.core.publisher.Flux;
 
 @Service
 public class CustomerDeepSummaryService {
 
+    private static final Logger log = LoggerFactory.getLogger(CustomerDeepSummaryService.class);
+
     private static final String CUSTOMER_DEEP_SUMMARY_SCENE = "CUSTOMER_DEEP_SUMMARY";
 
     private static final String CUSTOMER_RESULT_FUNCTION = "customer_deep_summary_result";
+
+    private static final String BUSINESS_TYPE_CUSTOMER = "CUSTOMER";
+
+    private static final String RUN_STATUS_RUNNING = "RUNNING";
 
     @Autowired
     private CustomerMapper customerMapper;
@@ -66,7 +81,19 @@ public class CustomerDeepSummaryService {
     @Autowired
     private AgentRuntimeFacade agentRuntimeFacade;
 
-    @Transactional
+    @Autowired
+    private AgentRunMapper agentRunMapper;
+
+    @Autowired
+    @Qualifier("customerSummaryTaskExecutor")
+    private TaskExecutor customerSummaryTaskExecutor;
+
+    @Value("${crm.agent.customer-summary.timeout-seconds:600}")
+    private long customerSummaryTimeoutSeconds;
+
+    @Value("${crm.agent.customer-summary.running-expire-minutes:30}")
+    private long customerSummaryRunningExpireMinutes;
+
     public CustomerDeepSummaryResponse summarize(
             Long tenantId, Long userId, String dataScope, CustomerDeepSummaryRequest request) {
         if (request == null || request.getCustomerId() == null) {
@@ -78,6 +105,7 @@ public class CustomerDeepSummaryService {
         List<OpportunityProductEntity> opportunityProducts = queryOpportunityProducts(tenantId, opportunities);
         List<FollowupRecordEntity> followups = queryFollowups(tenantId, userId, dataScope, customer.getId());
         CustomerDeepSummaryResponse response = baseResponse(customer, opportunities, followups);
+        fillSavedSummary(response, customer);
         AgentEntity agent = agentDefinitionService.findEnabledByScene(tenantId, CUSTOMER_DEEP_SUMMARY_SCENE);
         if (agent == null || !StringUtils.hasText(agent.getApiKey())) {
             response.setAvailable(false);
@@ -88,31 +116,27 @@ public class CustomerDeepSummaryService {
             saveSummary(customer, response.getSummary());
             return response;
         }
+        AgentRunEntity runningRun = findRunningRun(tenantId, customer.getId());
+        if (runningRun != null) {
+            response.setAvailable(true);
+            response.setSuccess(true);
+            response.setRunning(true);
+            response.setMessage("客户 AI 深度总结正在生成中，请稍后查看结果");
+            fillRun(response, runningRun);
+            return response;
+        }
         AgentRuntimeRequest runtimeRequest = null;
         try {
             runtimeRequest = buildRuntimeRequest(
                     tenantId, userId, customer, opportunities, opportunityProducts, followups, agent, request);
-            List<AgentRuntimeEvent> events = agentRuntimeFacade
-                    .run(runtimeRequest)
-                    .collectList()
-                    .block(Duration.ofSeconds(90));
-            JSONObject result = resolveCapturedResult(runtimeRequest);
-            if (result == null && !hasToolCall(events, CUSTOMER_RESULT_FUNCTION)) {
-                throw new BusinessException("CUSTOMER_AI_002", "客户深度总结智能体未调用标准结果函数，请检查场景提示词");
-            }
-            if (result == null) {
-                result = parseResult(resolveOutput(events));
-            }
-            if (result == null) {
-                throw new BusinessException("CUSTOMER_AI_003", "客户深度总结智能体已调用结果函数，但函数参数无法解析");
-            }
+            Flux<AgentRuntimeEvent> eventFlux = agentRuntimeFacade.run(runtimeRequest);
+            startSummaryTask(runtimeRequest, eventFlux, customer.getId());
             response.setAvailable(true);
             response.setSuccess(true);
-            response.setMessage("客户 AI 深度总结完成");
+            response.setRunning(true);
+            response.setMessage("客户 AI 深度总结已开始生成，请稍后查看结果");
             response.setRunId(runtimeRequest.getRunId());
             response.setConversationId(runtimeRequest.getConversationId());
-            fillStructuredResult(response, result);
-            saveSummary(customer, response.getSummary());
             return response;
         } catch (RuntimeException ex) {
             response.setAvailable(true);
@@ -126,6 +150,102 @@ public class CustomerDeepSummaryService {
         }
     }
 
+    public CustomerDeepSummaryResponse status(
+            Long tenantId, Long userId, String dataScope, CustomerDeepSummaryRequest request) {
+        if (request == null || request.getCustomerId() == null) {
+            throw new BusinessException("CUSTOMER_AI_001", "客户编号不能为空");
+        }
+        CustomerEntity customer = findCustomer(tenantId, request.getCustomerId());
+        checkDataScope(userId, dataScope, customer.getOwnerId());
+        List<OpportunityEntity> opportunities = queryOpportunities(tenantId, userId, dataScope, customer.getId());
+        List<FollowupRecordEntity> followups = queryFollowups(tenantId, userId, dataScope, customer.getId());
+        CustomerDeepSummaryResponse response = baseResponse(customer, opportunities, followups);
+        fillSavedSummary(response, customer);
+        AgentEntity agent = agentDefinitionService.findEnabledByScene(tenantId, CUSTOMER_DEEP_SUMMARY_SCENE);
+        response.setAvailable(agent != null && StringUtils.hasText(agent.getApiKey()));
+        response.setSuccess(true);
+        AgentRunEntity runningRun = findRunningRun(tenantId, customer.getId());
+        AgentRunEntity latestRun = runningRun == null ? findLatestRun(tenantId, customer.getId()) : runningRun;
+        fillRun(response, latestRun);
+        if (runningRun != null) {
+            response.setRunning(true);
+            response.setMessage("客户 AI 深度总结正在生成中，请稍后查看结果");
+            return response;
+        }
+        response.setRunning(false);
+        if (StringUtils.hasText(customer.getAiSummary())) {
+            response.setMessage("展示最近一次客户 AI 深度总结");
+        } else if (latestRun != null && "FAILED".equals(latestRun.getStatus())) {
+            response.setSuccess(false);
+            response.setMessage("最近一次客户 AI 深度总结失败：" + latestRun.getErrorMessage());
+        } else if (latestRun != null && "STOPPED".equals(latestRun.getStatus())) {
+            response.setSuccess(false);
+            response.setMessage("最近一次客户 AI 深度总结已终止或超时");
+        } else {
+            response.setMessage("暂无客户 AI 深度总结");
+        }
+        return response;
+    }
+
+    private void startSummaryTask(
+            AgentRuntimeRequest runtimeRequest, Flux<AgentRuntimeEvent> eventFlux, Long customerId) {
+        customerSummaryTaskExecutor.execute(new Runnable() {
+            @Override
+            public void run() {
+                runSummaryTask(runtimeRequest, eventFlux, customerId);
+            }
+        });
+    }
+
+    private void runSummaryTask(
+            AgentRuntimeRequest runtimeRequest, Flux<AgentRuntimeEvent> eventFlux, Long customerId) {
+        long start = System.currentTimeMillis();
+        try {
+            log.info(
+                    "客户深度总结后台任务开始，tenantId={}，userId={}，customerId={}，runId={}，conversationId={}",
+                    runtimeRequest.getTenantId(),
+                    runtimeRequest.getUserId(),
+                    customerId,
+                    runtimeRequest.getRunId(),
+                    runtimeRequest.getConversationId());
+            List<AgentRuntimeEvent> events = eventFlux
+                    .collectList()
+                    .block(Duration.ofSeconds(resolveSummaryTimeoutSeconds()));
+            JSONObject result = resolveCapturedResult(runtimeRequest);
+            if (result == null && !hasToolCall(events, CUSTOMER_RESULT_FUNCTION)) {
+                throw new BusinessException("CUSTOMER_AI_002", "客户深度总结智能体未调用标准结果函数，请检查场景提示词");
+            }
+            if (result == null) {
+                result = parseResult(resolveOutput(events));
+            }
+            if (result == null) {
+                throw new BusinessException("CUSTOMER_AI_003", "客户深度总结智能体已调用结果函数，但函数参数无法解析");
+            }
+            CustomerDeepSummaryResponse response = new CustomerDeepSummaryResponse();
+            fillStructuredResult(response, result);
+            CustomerEntity customer = findCustomer(runtimeRequest.getTenantId(), customerId);
+            saveSummary(customer, response.getSummary());
+            log.info(
+                    "客户深度总结后台任务完成，tenantId={}，userId={}，customerId={}，runId={}，summaryLength={}，耗时={}ms",
+                    runtimeRequest.getTenantId(),
+                    runtimeRequest.getUserId(),
+                    customerId,
+                    runtimeRequest.getRunId(),
+                    Integer.valueOf(response.getSummary() == null ? 0 : response.getSummary().length()),
+                    Long.valueOf(System.currentTimeMillis() - start));
+        } catch (RuntimeException ex) {
+            markRunFailed(runtimeRequest, ex);
+            log.warn(
+                    "客户深度总结后台任务失败，tenantId={}，userId={}，customerId={}，runId={}，耗时={}ms",
+                    runtimeRequest.getTenantId(),
+                    runtimeRequest.getUserId(),
+                    customerId,
+                    runtimeRequest.getRunId(),
+                    Long.valueOf(System.currentTimeMillis() - start),
+                    ex);
+        }
+    }
+
     private CustomerDeepSummaryResponse baseResponse(
             CustomerEntity customer, List<OpportunityEntity> opportunities, List<FollowupRecordEntity> followups) {
         CustomerDeepSummaryResponse response = new CustomerDeepSummaryResponse();
@@ -134,6 +254,93 @@ public class CustomerDeepSummaryService {
         response.setFollowupCount(followups == null ? 0 : followups.size());
         response.setAnalyzedAt(DateTimes.now());
         return response;
+    }
+
+    private void fillSavedSummary(CustomerDeepSummaryResponse response, CustomerEntity customer) {
+        if (response == null || customer == null) {
+            return;
+        }
+        response.setSummary(customer.getAiSummary());
+        if (customer.getAiAnalyzedAt() != null) {
+            response.setAnalyzedAt(customer.getAiAnalyzedAt());
+        }
+    }
+
+    private void fillRun(CustomerDeepSummaryResponse response, AgentRunEntity run) {
+        if (response == null || run == null) {
+            return;
+        }
+        response.setRunId(run.getId());
+        response.setConversationId(run.getConversationId());
+        response.setRunStatus(run.getStatus());
+        response.setRunning(RUN_STATUS_RUNNING.equals(run.getStatus()));
+    }
+
+    private AgentRunEntity findRunningRun(Long tenantId, Long customerId) {
+        if (tenantId == null || customerId == null) {
+            return null;
+        }
+        QueryWrapper<AgentRunEntity> wrapper = new QueryWrapper<AgentRunEntity>();
+        wrapper.eq("tenant_id", tenantId);
+        wrapper.eq("deleted", false);
+        wrapper.eq("scene_code", CUSTOMER_DEEP_SUMMARY_SCENE);
+        wrapper.eq("business_type", BUSINESS_TYPE_CUSTOMER);
+        wrapper.eq("business_id", String.valueOf(customerId));
+        wrapper.eq("status", RUN_STATUS_RUNNING);
+        wrapper.ge("updated_at", DateTimes.now().minusMinutes(resolveRunningExpireMinutes()));
+        wrapper.orderByDesc("created_at").last("limit 1");
+        return agentRunMapper.selectOne(wrapper);
+    }
+
+    private AgentRunEntity findLatestRun(Long tenantId, Long customerId) {
+        if (tenantId == null || customerId == null) {
+            return null;
+        }
+        QueryWrapper<AgentRunEntity> wrapper = new QueryWrapper<AgentRunEntity>();
+        wrapper.eq("tenant_id", tenantId);
+        wrapper.eq("deleted", false);
+        wrapper.eq("scene_code", CUSTOMER_DEEP_SUMMARY_SCENE);
+        wrapper.eq("business_type", BUSINESS_TYPE_CUSTOMER);
+        wrapper.eq("business_id", String.valueOf(customerId));
+        wrapper.orderByDesc("created_at").last("limit 1");
+        return agentRunMapper.selectOne(wrapper);
+    }
+
+    private long resolveSummaryTimeoutSeconds() {
+        if (customerSummaryTimeoutSeconds < 60L) {
+            return 60L;
+        }
+        return customerSummaryTimeoutSeconds;
+    }
+
+    private long resolveRunningExpireMinutes() {
+        if (customerSummaryRunningExpireMinutes < 5L) {
+            return 5L;
+        }
+        return customerSummaryRunningExpireMinutes;
+    }
+
+    private void markRunFailed(AgentRuntimeRequest runtimeRequest, RuntimeException ex) {
+        if (runtimeRequest == null || runtimeRequest.getRunId() == null || runtimeRequest.getTenantId() == null) {
+            return;
+        }
+        AgentRunEntity run = agentRunMapper.selectOne(Wrappers.<AgentRunEntity>lambdaQuery()
+                .eq(AgentRunEntity::getTenantId, runtimeRequest.getTenantId())
+                .eq(AgentRunEntity::getId, runtimeRequest.getRunId())
+                .eq(AgentRunEntity::isDeleted, false)
+                .last("limit 1"));
+        if (run == null) {
+            return;
+        }
+        LocalDateTime now = DateTimes.now();
+        run.setStatus("FAILED");
+        run.setErrorMessage(shrink(ex == null ? "客户深度总结失败" : ex.getMessage(), 1000));
+        run.setFinishedAt(now);
+        run.setUpdatedAt(now);
+        if (run.getStartedAt() != null) {
+            run.setElapsedMs(Long.valueOf(Duration.between(run.getStartedAt(), now).toMillis()));
+        }
+        agentRunMapper.updateById(run);
     }
 
     private AgentRuntimeRequest buildRuntimeRequest(
