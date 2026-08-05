@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { CalendarDays, Edit2, MessageCircleMore, Plus, RefreshCw } from 'lucide-react'
+import { CalendarDays, Edit2, FileAudio2, FileVideo2, MessageCircleMore, Paperclip, Plus, RefreshCw, X } from 'lucide-react'
 import { api } from '../../api'
 import {
   Button,
@@ -27,6 +27,18 @@ export const targetTypeText = {
   OPPORTUNITY: '商机',
 }
 
+const transcriptionStatusText = {
+  PENDING: '待处理',
+  EXTRACTING: '抽取音频',
+  READY: '等待提交',
+  SUBMITTED: '已提交',
+  PROCESSING: '转写中',
+  SUCCESS: '已完成',
+  FAILED: '失败',
+}
+
+const runningTranscriptionStatuses = new Set(['PENDING', 'EXTRACTING', 'READY', 'SUBMITTED', 'PROCESSING'])
+
 const emptyPage = {
   total: 0,
   pageNo: 1,
@@ -44,6 +56,7 @@ export const emptyFollowupForm = {
   nextPlan: '',
   nextFollowTime: '',
   ownerId: '',
+  mediaFiles: [],
 }
 
 export function formatDateTime(value) {
@@ -51,6 +64,36 @@ export function formatDateTime(value) {
   const date = new Date(value)
   if (Number.isNaN(date.getTime())) return '-'
   return date.toLocaleString('zh-CN', { hour12: false })
+}
+
+function formatFileSize(value) {
+  const size = Number(value || 0)
+  if (!size) return '-'
+  if (size >= 1024 * 1024) return `${(size / 1024 / 1024).toFixed(1)}MB`
+  if (size >= 1024) return `${(size / 1024).toFixed(1)}KB`
+  return `${size}B`
+}
+
+function isVideoFile(file) {
+  const type = String(file?.type || '').toLowerCase()
+  const name = String(file?.name || '').toLowerCase()
+  return type.startsWith('video/') || /\.(mp4|mov|mkv|webm|avi)$/.test(name)
+}
+
+function hasRunningTranscriptions(records) {
+  return (records || []).some((record) => (record.mediaTranscriptions || []).some((item) => (
+    runningTranscriptionStatuses.has(item.status)
+  )))
+}
+
+async function uploadFollowupMedia(followupId, mediaFiles = []) {
+  const files = Array.from(mediaFiles || [])
+  if (!followupId || !files.length) return []
+  const results = []
+  for (const file of files) {
+    results.push(await api.followup.uploadMedia(followupId, file))
+  }
+  return results
 }
 
 function toDateTimeInput(value) {
@@ -73,12 +116,14 @@ export function toFollowupForm(row) {
     nextPlan: row.nextPlan || '',
     nextFollowTime: toDateTimeInput(row.nextFollowTime),
     ownerId: row.ownerId || '',
+    mediaFiles: [],
   }
 }
 
 export function toFollowupPayload(form) {
   return {
-    ...form,
+    id: form.id,
+    targetType: form.targetType || 'CUSTOMER',
     targetId: form.targetId || null,
     followupType: form.followupType || 'PHONE',
     followupAt: form.followupAt || null,
@@ -151,14 +196,22 @@ export function FollowupPanel({
     load(pageSize)
   }, [canView, targetType, targetId, pageSize])
 
+  useEffect(() => {
+    const records = page.records || []
+    if (!canView || !targetType || !targetId || !hasRunningTranscriptions(records)) return undefined
+    const timer = window.setInterval(() => load(visibleSize), 8000)
+    return () => window.clearInterval(timer)
+  }, [canView, targetType, targetId, visibleSize, page.records])
+
   const save = async (form) => {
     if (!hasRichContent(form.content)) {
       notify('跟进内容不能为空', 'info')
       return
     }
     try {
-      await api.followup.save(toFollowupPayload(form))
-      notify('跟进记录已保存', 'success')
+      const saved = await api.followup.save(toFollowupPayload(form))
+      await uploadFollowupMedia(saved?.id || form.id, form.mediaFiles)
+      notify((form.mediaFiles || []).length ? '跟进记录已保存，音视频转写任务已创建' : '跟进记录已保存', 'success')
       setEditing(null)
       load(visibleSize)
     } catch (error) {
@@ -266,6 +319,7 @@ export function FollowupTimeline({ records = [], loading, compact = false, onEdi
             {row.result && <em>结果：{row.result}</em>}
             {row.nextPlan && <em>下次计划：{row.nextPlan}</em>}
             {row.nextFollowTime && <em>下次跟进：{formatDateTime(row.nextFollowTime)}</em>}
+            <FollowupMediaTranscriptions items={row.mediaTranscriptions} />
             <div className="followup-meta">
               <small>{targetTypeText[row.targetType] || row.targetType}：{row.targetName || row.targetId}</small>
               <small>负责人：{ownerName(row)}</small>
@@ -282,6 +336,41 @@ export function FollowupTimeline({ records = [], loading, compact = false, onEdi
   )
 }
 
+function FollowupMediaTranscriptions({ items = [] }) {
+  const records = Array.isArray(items) ? items : []
+  if (!records.length) return null
+  return (
+    <div className="followup-media-results">
+      {records.map((item) => {
+        const success = item.status === 'SUCCESS'
+        const failed = item.status === 'FAILED'
+        const running = runningTranscriptionStatuses.has(item.status)
+        const Icon = isVideoFile({ type: item.contentType, name: item.fileName }) ? FileVideo2 : FileAudio2
+        return (
+          <div className={`followup-media-result ${success ? 'success' : ''} ${failed ? 'failed' : ''}`} key={item.id}>
+            <div className="followup-media-result-head">
+              <span><Icon size={15} />{item.fileName || '音视频文件'}</span>
+              <small>{transcriptionStatusText[item.status] || item.status || '待处理'}</small>
+            </div>
+            {running && (
+              <div className="followup-media-progress">
+                <i style={{ width: `${Math.max(5, Number(item.progress || 0))}%` }} />
+              </div>
+            )}
+            {failed && item.errorMessage && <p className="followup-media-error">{item.errorMessage}</p>}
+            {success && item.transcriptText && (
+              <div className="followup-media-text">
+                <b>转写文本</b>
+                <p>{item.transcriptText}</p>
+              </div>
+            )}
+          </div>
+        )
+      })}
+    </div>
+  )
+}
+
 export function FollowupFormModal({
   open,
   form,
@@ -293,6 +382,16 @@ export function FollowupFormModal({
 }) {
   if (!open || !form) return null
   const update = (patch) => onChange({ ...form, ...patch })
+  const mediaFiles = Array.from(form.mediaFiles || [])
+  const chooseMediaFiles = (event) => {
+    const files = Array.from(event.target.files || [])
+    event.target.value = ''
+    if (!files.length) return
+    update({ mediaFiles: [...mediaFiles, ...files] })
+  }
+  const removeMediaFile = (index) => {
+    update({ mediaFiles: mediaFiles.filter((_, itemIndex) => itemIndex !== index) })
+  }
   return (
     <Modal
       open={open}
@@ -346,6 +445,31 @@ export function FollowupFormModal({
             value={form.nextFollowTime || ''}
             onChange={(event) => update({ nextFollowTime: event.target.value })}
           />
+        </Field>
+        <Field label="会议录音或视频" className="wide-field">
+          <div className="followup-media-picker">
+            <label className="followup-media-upload">
+              <Paperclip size={16} />
+              <span>选择音视频文件</span>
+              <small>支持 mp3、wav、m4a、mp4、mov 等格式，保存后自动创建转写任务</small>
+              <input type="file" multiple accept="audio/*,video/*" onChange={chooseMediaFiles} />
+            </label>
+            {mediaFiles.length > 0 && (
+              <div className="followup-media-files">
+                {mediaFiles.map((file, index) => {
+                  const Icon = isVideoFile(file) ? FileVideo2 : FileAudio2
+                  return (
+                    <div key={`${file.name}-${file.size}-${index}`}>
+                      <Icon size={15} />
+                      <span>{file.name}</span>
+                      <small>{formatFileSize(file.size)}</small>
+                      <button type="button" onClick={() => removeMediaFile(index)}><X size={13} /></button>
+                    </div>
+                  )
+                })}
+              </div>
+            )}
+          </div>
         </Field>
       </div>
     </Modal>

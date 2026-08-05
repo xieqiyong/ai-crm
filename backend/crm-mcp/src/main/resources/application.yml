@@ -59,6 +59,17 @@ crm:
     path: ${CRM_LOG_PATH:./logs}
     max-history: ${CRM_LOG_MAX_HISTORY:30}
     max-file-size: ${CRM_LOG_MAX_FILE_SIZE:100MB}
+  nacos:
+    enabled: ${CRM_NACOS_ENABLED:false}
+    server-addr: ${CRM_NACOS_SERVER_ADDR:localhost:8848}
+    namespace: ${CRM_NACOS_NAMESPACE:}
+    group: ${CRM_NACOS_GROUP:DEFAULT_GROUP}
+    data-id: ${CRM_MCP_NACOS_DATA_ID:${CRM_NACOS_DATA_ID:crm-mcp.yaml}}
+    shared-data-ids: ${CRM_NACOS_SHARED_DATA_IDS:}
+    username: ${CRM_NACOS_USERNAME:}
+    password: ${CRM_NACOS_PASSWORD:}
+    timeout-ms: ${CRM_NACOS_TIMEOUT_MS:5000}
+    fail-fast: ${CRM_NACOS_FAIL_FAST:true}
   mcp:
     access-token: ${CRM_MCP_ACCESS_TOKEN:}
     endpoint: ${CRM_MCP_SERVER_ENDPOINT:/mcp}

@@ -83,8 +83,12 @@ export function FollowupPage({ can, notify, navigate }) {
       return
     }
     try {
-      await api.followup.save(toFollowupPayload(form))
-      notify('跟进记录已保存', 'success')
+      const saved = await api.followup.save(toFollowupPayload(form))
+      const mediaFiles = form.mediaFiles || []
+      if (mediaFiles.length) {
+        await Promise.all(mediaFiles.map((file) => api.followup.uploadMedia(saved?.id || form.id, file)))
+      }
+      notify((form.mediaFiles || []).length ? '跟进记录已保存，音视频转写任务已创建' : '跟进记录已保存', 'success')
       setEditing(null)
       load(form.id ? query : { ...query, pageNo: 1 })
     } catch (error) {

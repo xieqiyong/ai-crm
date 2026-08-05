@@ -42,8 +42,11 @@ if [ "$LOAD_IMAGES" = true ]; then
   docker load -i "$IMAGE_ARCHIVE"
 fi
 
+echo "导入 Nacos 配置"
+sh scripts/import-nacos-config.sh
+
 echo "启动智能营销管理系统"
-compose up -d
+compose up -d --no-build --pull never
 
 echo "当前容器状态"
 compose ps

@@ -189,7 +189,7 @@ mv "`$TMP_ENV" .env
 echo "部署目录：`$DEPLOY_DIR"
 echo "应用版本：`$CRM_VERSION"
 echo "重启后端、MCP服务和前端"
-compose up -d --no-deps --force-recreate crm-backend crm-mcp crm-frontend
+compose up -d --no-deps --force-recreate --no-build --pull never crm-backend crm-mcp crm-frontend
 
 echo "当前应用容器状态"
 compose ps crm-backend crm-mcp crm-frontend

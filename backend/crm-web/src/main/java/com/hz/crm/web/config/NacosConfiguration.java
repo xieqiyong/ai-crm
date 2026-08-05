@@ -18,12 +18,24 @@ public class NacosConfiguration {
     @Value("${crm.nacos.namespace:}")
     private String namespace;
 
+    @Value("${crm.nacos.username:}")
+    private String username;
+
+    @Value("${crm.nacos.password:}")
+    private String password;
+
     @Bean
     public ConfigService nacosConfigService() throws Exception {
         Properties properties = new Properties();
         properties.put("serverAddr", serverAddr);
         if (namespace != null && namespace.trim().length() > 0) {
             properties.put("namespace", namespace);
+        }
+        if (username != null && username.trim().length() > 0) {
+            properties.put("username", username.trim());
+        }
+        if (password != null && password.trim().length() > 0) {
+            properties.put("password", password.trim());
         }
         return NacosFactory.createConfigService(properties);
     }

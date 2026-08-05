@@ -68,6 +68,13 @@ export const followupApi = {
   page: (payload) => page('/api/followup', payload),
   detail: (id) => detail('/api/followup', id),
   save: (payload) => save('/api/followup', payload),
+  uploadMedia: (followupId, file) => {
+    const form = new FormData()
+    form.append('followupId', followupId)
+    form.append('file', file)
+    return request('/api/followup/media/upload', { method: 'POST', body: form })
+  },
+  mediaList: (followupId) => request('/api/followup/media/list', { method: 'POST', body: JSON.stringify({ id: followupId }) }),
   delete: (id) => remove('/api/followup', id),
 }
 

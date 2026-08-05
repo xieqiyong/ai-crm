@@ -1,10 +1,12 @@
 package com.hz.crm.application.followup;
 
 import com.baomidou.mybatisplus.core.conditions.query.QueryWrapper;
-import com.hz.crm.application.task.SalesTaskApplicationService;
 import com.hz.crm.application.followup.dto.FollowupQuery;
 import com.hz.crm.application.followup.dto.FollowupResponse;
 import com.hz.crm.application.followup.dto.FollowupSaveRequest;
+import com.hz.crm.application.media.MediaTranscriptionApplicationService;
+import com.hz.crm.application.media.dto.MediaTranscriptionResponse;
+import com.hz.crm.application.task.SalesTaskApplicationService;
 import com.hz.crm.common.api.PageData;
 import com.hz.crm.common.exception.BusinessException;
 import com.hz.crm.common.id.SnowflakeIdGenerator;
@@ -55,6 +57,9 @@ public class FollowupApplicationService {
     @Autowired
     private SalesTaskApplicationService salesTaskApplicationService;
 
+    @Autowired
+    private MediaTranscriptionApplicationService mediaTranscriptionApplicationService;
+
     @Transactional(readOnly = true)
     public PageData<FollowupResponse> page(Long tenantId, Long userId, String dataScope, FollowupQuery query) {
         FollowupQuery safeQuery = query == null ? new FollowupQuery() : query;
@@ -74,6 +79,7 @@ public class FollowupApplicationService {
             records.add(toResponse(entity));
         }
         fillOwnerNames(tenantId, records);
+        fillMediaTranscriptions(tenantId, records);
         return PageData.of(total, pageNo, pageSize, records);
     }
 
@@ -83,6 +89,7 @@ public class FollowupApplicationService {
         checkDataScope(userId, dataScope, entity.getOwnerId());
         FollowupResponse response = toResponse(entity);
         fillOwnerName(tenantId, response);
+        fillMediaTranscriptions(tenantId, response);
         return response;
     }
 
@@ -133,6 +140,7 @@ public class FollowupApplicationService {
         salesTaskApplicationService.syncFollowupTask(tenantId, operatorId, dataScope, entity);
         FollowupResponse response = toResponse(entity);
         fillOwnerName(tenantId, response);
+        fillMediaTranscriptions(tenantId, response);
         return response;
     }
 
@@ -338,6 +346,12 @@ public class FollowupApplicationService {
         fillOwnerNames(tenantId, records);
     }
 
+    private void fillMediaTranscriptions(Long tenantId, FollowupResponse response) {
+        List<FollowupResponse> records = new ArrayList<FollowupResponse>();
+        records.add(response);
+        fillMediaTranscriptions(tenantId, records);
+    }
+
     private void fillOwnerNames(Long tenantId, List<FollowupResponse> records) {
         if (userNameResolver == null || records == null || records.isEmpty()) {
             return;
@@ -355,6 +369,29 @@ public class FollowupApplicationService {
         for (FollowupResponse response : records) {
             if (response.getOwnerId() != null) {
                 response.setOwnerName(names.get(response.getOwnerId()));
+            }
+        }
+    }
+
+    private void fillMediaTranscriptions(Long tenantId, List<FollowupResponse> records) {
+        if (records == null || records.isEmpty()) {
+            return;
+        }
+        Set<Long> followupIds = new HashSet<Long>();
+        for (FollowupResponse response : records) {
+            if (response.getId() != null) {
+                followupIds.add(response.getId());
+            }
+        }
+        if (followupIds.isEmpty()) {
+            return;
+        }
+        Map<Long, List<MediaTranscriptionResponse>> grouped =
+                mediaTranscriptionApplicationService.groupByFollowupIds(tenantId, followupIds);
+        for (FollowupResponse response : records) {
+            List<MediaTranscriptionResponse> mediaItems = grouped.get(response.getId());
+            if (mediaItems != null) {
+                response.setMediaTranscriptions(mediaItems);
             }
         }
     }

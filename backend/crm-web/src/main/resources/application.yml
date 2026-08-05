@@ -6,8 +6,8 @@ spring:
     name: crm
   servlet:
     multipart:
-      max-file-size: ${CRM_UPLOAD_MAX_FILE_SIZE:10MB}
-      max-request-size: ${CRM_UPLOAD_MAX_REQUEST_SIZE:12MB}
+      max-file-size: ${CRM_UPLOAD_MAX_FILE_SIZE:512MB}
+      max-request-size: ${CRM_UPLOAD_MAX_REQUEST_SIZE:600MB}
   datasource:
     url: ${CRM_DB_URL:jdbc:postgresql://localhost:5432/crm}
     username: ${CRM_DB_USERNAME:app_user}
@@ -87,6 +87,26 @@ crm:
       retry-delay-seconds: ${CRM_TASK_REMINDER_RETRY_DELAY_SECONDS:60}
   channel:
     upload-dir: ${CRM_CHANNEL_UPLOAD_DIR:./uploads/channel}
+  media:
+    transcription:
+      enabled: ${CRM_MEDIA_TRANSCRIPTION_ENABLED:false}
+      max-file-size-bytes: ${CRM_MEDIA_TRANSCRIPTION_MAX_FILE_SIZE_BYTES:536870912}
+      dispatch-delay-ms: ${CRM_MEDIA_TRANSCRIPTION_DISPATCH_DELAY_MS:30000}
+      initial-delay-ms: ${CRM_MEDIA_TRANSCRIPTION_INITIAL_DELAY_MS:10000}
+      batch-size: ${CRM_MEDIA_TRANSCRIPTION_BATCH_SIZE:10}
+      max-retry: ${CRM_MEDIA_TRANSCRIPTION_MAX_RETRY:3}
+      retry-delay-seconds: ${CRM_MEDIA_TRANSCRIPTION_RETRY_DELAY_SECONDS:60}
+      public-url: ${CRM_MEDIA_TRANSCRIPTION_PUBLIC_URL:}
+      ffmpeg-path: ${CRM_MEDIA_TRANSCRIPTION_FFMPEG_PATH:ffmpeg}
+      ffmpeg-timeout-ms: ${CRM_MEDIA_TRANSCRIPTION_FFMPEG_TIMEOUT_MS:600000}
+      volcengine:
+        enabled: ${CRM_VOLCENGINE_ASR_ENABLED:false}
+        base-url: ${CRM_VOLCENGINE_ASR_BASE_URL:https://openspeech.bytedance.com/api/v1/auc}
+        appid: ${CRM_VOLCENGINE_ASR_APPID:8286999944}
+        token: ${CRM_VOLCENGINE_ASR_TOKEN:Rz4tuArOiXPKuFS1k74NkqgYqPjETTOE}
+        cluster: ${CRM_VOLCENGINE_ASR_CLUSTER:volcano_tts}
+        language: ${CRM_VOLCENGINE_ASR_LANGUAGE:zh-CN}
+        timeout-ms: ${CRM_VOLCENGINE_ASR_TIMEOUT_MS:15000}
   wecom:
     base-url: ${CRM_WECOM_BASE_URL:https://qyapi.weixin.qq.com}
     connect-timeout-ms: ${CRM_WECOM_CONNECT_TIMEOUT_MS:5000}
@@ -100,6 +120,12 @@ crm:
     server-addr: ${CRM_NACOS_SERVER_ADDR:localhost:8848}
     namespace: ${CRM_NACOS_NAMESPACE:}
     group: ${CRM_NACOS_GROUP:DEFAULT_GROUP}
+    data-id: ${CRM_NACOS_DATA_ID:crm.yaml}
+    shared-data-ids: ${CRM_NACOS_SHARED_DATA_IDS:}
+    username: ${CRM_NACOS_USERNAME:}
+    password: ${CRM_NACOS_PASSWORD:}
+    timeout-ms: ${CRM_NACOS_TIMEOUT_MS:5000}
+    fail-fast: ${CRM_NACOS_FAIL_FAST:true}
   storage:
     upload-dir: ${CRM_STORAGE_UPLOAD_DIR:./uploads}
     public-path: ${CRM_STORAGE_PUBLIC_PATH:/uploads}

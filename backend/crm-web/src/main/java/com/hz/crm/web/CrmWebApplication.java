@@ -1,6 +1,7 @@
 package com.hz.crm.web;
 
 import com.baomidou.mybatisplus.core.mapper.BaseMapper;
+import com.hz.crm.common.nacos.NacosRemoteConfigLoader;
 import org.mybatis.spring.annotation.MapperScan;
 import org.springframework.boot.SpringApplication;
 import org.springframework.boot.autoconfigure.SpringBootApplication;
@@ -14,6 +15,8 @@ import org.springframework.data.jpa.repository.config.EnableJpaRepositories;
 public class CrmWebApplication {
 
     public static void main(String[] args) {
-        SpringApplication.run(CrmWebApplication.class, args);
+        SpringApplication application = new SpringApplication(CrmWebApplication.class);
+        application.addListeners(new NacosRemoteConfigLoader());
+        application.run(args);
     }
 }

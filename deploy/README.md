@@ -1,23 +1,54 @@
-# Docker 离线部署说明
+# 智能营销管理系统 Docker 部署说明
 
-## 一、目录说明
+## 一、当前部署原则
 
-```text
-deploy
-├── docker-compose.yml
-├── env.example
-├── docker
-│   ├── backend
-│   ├── mcp
-│   └── frontend
-└── scripts
-    ├── build-offline-package.sh
-    └── deploy-offline.sh
+当前部署只管这几个服务：
+
+- `crm-backend`：主后端。
+- `crm-mcp`：CRM MCP 工具服务。
+- `crm-frontend`：前端 Nginx。
+- `crm-postgres`：内置 PostgreSQL。
+- `crm-redis`：内置 Redis。
+- `crm-minio`：内置 MinIO。
+
+Python Runtime 不在当前部署链路内。
+
+后端业务配置全部走 Nacos。`.env` 只保留 Docker 启动和 Nacos 引导必需项。
+
+## 二、目录约定
+
+建议服务器固定部署目录：
+
+```bash
+/app/builds/products/crm/crm-app
 ```
 
-## 二、Jenkins 打离线包
+不要每次升级都换运行目录，否则容易把 `data`、`logs`、`uploads` 分散到多个目录。
 
-Jenkins 机器需要提前安装：
+运行目录核心结构：
+
+```text
+crm-app
+├── .env
+├── docker-compose.yml
+├── images
+│   └── crm-images.tar
+├── nacos
+│   ├── crm.yaml
+│   └── crm-mcp.yaml
+├── scripts
+│   ├── deploy-offline.sh
+│   └── import-nacos-config.sh
+├── data
+├── logs
+└── uploads
+```
+
+## 三、首次部署
+
+### 1. 构建离线包
+
+Jenkins 或构建机需要：
 
 - JDK 21
 - Maven
@@ -25,261 +56,252 @@ Jenkins 机器需要提前安装：
 - Docker
 - Git
 
-在 Jenkins 构建步骤中执行：
+执行：
 
 ```bash
 bash deploy/scripts/build-offline-package.sh
 ```
 
-也可以直接参考 `deploy/Jenkinsfile` 配置流水线，流水线会固定拉取当前项目仓库：
-
-```text
-http://192.168.50.96:8888/xieqy/crm.git
-```
-
-当前 Jenkins Pipeline 只保留一个参数：
-
-```text
-branch  Git 分支，默认 main
-```
-
-流水线固定使用：
-
-```text
-JAVA_HOME=/root/liusu/jdk-21.0.1
-JDK_VERSION=21
-NODE_VERSION=22.22.2
-NODE_ENV=production
-GIT_CREDENTIALS_ID=liusu
-```
-
-流水线产物会归档到 Jenkins，同时复制到：
-
-```text
-/app/builds/products/crm
-```
-
-脚本会自动完成：
-
-1. 构建后端 `crm-web` Jar。
-2. 构建 MCP 服务 `crm-mcp` Jar。
-3. 构建前端 Vite 静态文件。
-4. 构建 `crm-backend` Docker 镜像。
-5. 构建 `crm-mcp` Docker 镜像。
-6. 构建 `crm-frontend` Docker 镜像。
-7. 构建 `crm-ai-runtime` Python AI Runtime 镜像。
-8. 拉取并打包 PostgreSQL、Redis、MinIO 镜像。
-9. 生成可离线部署的压缩包。
-
-离线包输出位置：
+输出文件：
 
 ```text
 deploy/output/crm-分支-release.tar.gz
 ```
 
-Jenkins 默认会输出类似：
+离线包内包含：
 
-```text
-crm-main-release.tar.gz
-crm-dev-release.tar.gz
-crm-feature-ai-release.tar.gz
-```
+- `crm-backend` 镜像
+- `crm-mcp` 镜像
+- `crm-frontend` 镜像
+- PostgreSQL、Redis、MinIO 镜像
+- `docker-compose.yml`
+- `.env`
+- `nacos/crm.yaml`
+- `nacos/crm-mcp.yaml`
+- 部署脚本
 
-如果需要指定内部镜像版本号：
-
-```bash
-CRM_VERSION=1.0.0 bash deploy/scripts/build-offline-package.sh
-```
-
-如果只想指定最外层压缩包名称：
+### 2. 上传并解压到固定目录
 
 ```bash
-CRM_PACKAGE_FILE_NAME=crm-main-release.tar.gz bash deploy/scripts/build-offline-package.sh
+mkdir -p /app/builds/products/crm/crm-app
+tar -xzf crm-main-release.tar.gz -C /app/builds/products/crm/crm-app --strip-components=1
+cd /app/builds/products/crm/crm-app
 ```
 
-如果需要 Jenkins 注入生产密钥：
+### 3. 修改 `.env`
+
+重点确认：
+
+```env
+CRM_VERSION=当前镜像版本
+CRM_FRONTEND_PORT=8088
+CRM_DB_NAME=crm
+CRM_DB_USERNAME=app_user
+CRM_DB_PASSWORD=数据库容器密码
+CRM_REDIS_PASSWORD=Redis容器密码
+CRM_MINIO_ACCESS_KEY=minioadmin
+CRM_MINIO_SECRET_KEY=MinIO容器密码
+CRM_NACOS_ENABLED=true
+CRM_NACOS_SERVER_ADDR=192.168.50.105:8848
+CRM_NACOS_GROUP=DEFAULT_GROUP
+CRM_NACOS_DATA_ID=crm.yaml
+CRM_MCP_NACOS_DATA_ID=crm-mcp.yaml
+```
+
+### 4. 修改 Nacos 配置文件
 
 ```bash
-CRM_VERSION=1.0.0 \
-CRM_DB_PASSWORD='数据库密码' \
-CRM_REDIS_PASSWORD='Redis密码' \
-CRM_JWT_SECRET='至少32位JWT密钥' \
-bash deploy/scripts/build-offline-package.sh
+vi nacos/crm.yaml
+vi nacos/crm-mcp.yaml
 ```
 
-不传这些变量时，脚本会自动生成随机值并写入离线包内的 `.env`。
+注意：
 
-## 三、服务器离线部署
+- `nacos/crm.yaml` 里的 `spring.datasource.password` 要和 `.env` 里的 `CRM_DB_PASSWORD` 一致。
+- `nacos/crm.yaml` 里的 `spring.data.redis.password` 要和 `.env` 里的 `CRM_REDIS_PASSWORD` 一致。
+- `nacos/crm.yaml` 里的 MinIO 密钥要和 `.env` 里的 `CRM_MINIO_ACCESS_KEY`、`CRM_MINIO_SECRET_KEY` 一致。
+- 企微、火山、RAG、Agent、大模型等业务配置都写到 `nacos/crm.yaml`。
 
-目标服务器需要提前安装：
-
-- Docker
-- Docker Compose 插件，或 `docker-compose`
-
-上传离线包到服务器后执行：
+### 5. 启动
 
 ```bash
-tar -xzf crm-main-release.tar.gz
-cd intelligent-marketing-crm-内部版本号
-bash scripts/deploy-offline.sh
+sh scripts/deploy-offline.sh
 ```
 
-脚本会自动完成：
+脚本会按顺序执行：
 
-1. 加载离线 Docker 镜像。
-2. 创建数据目录。
-3. 启动 PostgreSQL。
-4. 启动 Redis。
-5. 启动后端服务。
-6. 启动 Python AI Runtime 服务。
-7. 启动前端 Nginx 服务。
-
-默认访问地址：
-
-```text
-http://服务器IP/
-```
-
-端口由 `.env` 中的 `CRM_FRONTEND_PORT` 控制，默认是 `80`。
-
-## 四、部署包内关键文件
-
-离线包解压后结构如下：
-
-```text
-intelligent-marketing-crm-内部版本号
-├── .env
-├── VERSION
-├── docker-compose.yml
-├── env.example
-├── images
-│   └── crm-images.tar
-├── scripts
-│   └── deploy-offline.sh
-└── README.md
-```
-
-### `.env`
-
-生产环境主要修改这些配置：
-
-```text
-CRM_FRONTEND_PORT=80
-CRM_DB_PASSWORD=数据库密码
-CRM_REDIS_PASSWORD=Redis密码
-CRM_JWT_SECRET=至少32位JWT密钥
-CRM_JAVA_OPTS=-Xms512m -Xmx1024m -Dfile.encoding=UTF-8
-CRM_LOG_LEVEL=INFO
-CRM_AI_INTERNAL_TOKEN=Java后端访问AI服务的内部令牌
-CRM_AI_RUNTIME_TIMEOUT_MS=90000
-CRM_AI_CHECKPOINT_ENABLED=false
-CRM_AI_CHECKPOINT_BACKEND=memory
-CRM_AI_CHECKPOINT_POSTGRES_URI=
-LANGSMITH_TRACING=false
-LANGSMITH_API_KEY=
-LANGSMITH_PROJECT=crm-ai-runtime
-```
-
-`crm-ai-runtime` 是内网服务，不直接暴露给前端和公网。当前 Java AgentScope 运行时仍然保留，Python AI Runtime 用于后续逐步迁移 AI 能力。
-Java 侧可以通过 `crm-agent-web` 代理到 FastAPI，当前预留接口为：
-
-```text
-POST /api/assistant/langgraph/run
-POST /api/assistant/langgraph/lead/analyze
-```
-
-如需打开 AI Runtime 持久化，生产建议使用 PostgreSQL checkpoint：
-
-```text
-CRM_AI_CHECKPOINT_ENABLED=true
-CRM_AI_CHECKPOINT_BACKEND=postgres
-CRM_AI_CHECKPOINT_POSTGRES_URI=postgresql://app_user:数据库密码@crm-postgres:5432/crm
-CRM_AI_CHECKPOINT_AUTO_SETUP=true
-LANGGRAPH_STRICT_MSGPACK=true
-```
-
-如需打开 LangSmith Trace：
-
-```text
-LANGSMITH_TRACING=true
-LANGSMITH_API_KEY=你的LangSmithKey
-LANGSMITH_PROJECT=crm-ai-runtime
-CRM_AI_TRACE_CAPTURE_PAYLOAD=false
-```
-
-默认只记录场景、业务编号、模型、token 和步骤信息；不记录模型密钥。只有设置 `CRM_AI_TRACE_CAPTURE_PAYLOAD=true` 时才会记录 prompt 和模型输出摘要。
-
-### 数据目录
-
-部署脚本会在当前目录创建：
-
-```text
-data/postgres
-data/redis
-data/backend
-logs/backend
-uploads
-```
-
-这些目录是运行数据和日志，升级时不要删除。
-
-## 五、升级部署
-
-上传新的离线包，解压后执行：
+1. `docker load -i images/crm-images.tar`
+2. 创建 `data`、`logs`、`uploads` 目录
+3. 导入 `nacos/crm.yaml` 和 `nacos/crm-mcp.yaml`
+4. 执行：
 
 ```bash
-cd intelligent-marketing-crm-新内部版本号
-bash scripts/deploy-offline.sh
+docker compose up -d --no-build --pull never
 ```
 
-因为 Compose 项目名固定为 `crm`，新版本会复用同一组容器名称和数据卷目录。正式生产环境建议将历史版本包保留一段时间，方便回滚。
+`--pull never` 表示离线环境禁止自动拉镜像。
 
-如果只想重新启动，不重新加载镜像：
-
-```bash
-bash scripts/deploy-offline.sh --no-load
-```
-
-## 六、常用运维命令
-
-在离线包目录内执行：
+### 6. 验证
 
 ```bash
 docker compose ps
 docker compose logs -f crm-backend
 docker compose logs -f crm-mcp
-docker compose logs -f crm-ai-runtime
+```
+
+后端日志看到下面内容说明 Nacos 已生效：
+
+```text
+Nacos配置读取完成
+Nacos配置加载完成
+Started CrmWebApplication
+```
+
+## 四、第二次及后续增量部署
+
+增量部署只更新应用镜像，不动数据库数据目录。
+
+### 方案 A：本地打三应用镜像并上传
+
+Windows 本地执行：
+
+```powershell
+.\deploy\scripts\build-app-images.ps1 crm-v2 -DeployRemote -RemotePath /app/builds/products/crm -RemoteDeployDir /app/builds/products/crm/crm-app
+```
+
+脚本会构建并上传：
+
+- `crm-backend-crm-v2.tar`
+- `crm-mcp-crm-v2.tar`
+- `crm-frontend-crm-v2.tar`
+- `load-app-images.sh`
+- `restart-crm-app.sh`
+- `deploy-crm-app.sh`
+
+然后在服务器执行：
+
+```bash
+cd /app/builds/products/crm
+sh deploy-crm-app.sh crm-v2 /app/builds/products/crm/crm-app
+```
+
+脚本会：
+
+1. 加载三个应用镜像。
+2. 修改运行目录 `.env` 里的 `CRM_VERSION`。
+3. 重启 `crm-backend`、`crm-mcp`、`crm-frontend`。
+
+内部重启命令：
+
+```bash
+docker compose up -d --no-deps --force-recreate --no-build --pull never crm-backend crm-mcp crm-frontend
+```
+
+### 方案 B：手动上传三个应用镜像
+
+把三个镜像 tar 上传到服务器后执行：
+
+```bash
+cd /app/builds/products/crm
+
+docker load -i crm-backend-crm-v2.tar
+docker load -i crm-mcp-crm-v2.tar
+docker load -i crm-frontend-crm-v2.tar
+
+cd /app/builds/products/crm/crm-app
+sed -i 's/^CRM_VERSION=.*/CRM_VERSION=crm-v2/' .env
+
+docker compose up -d --no-deps --force-recreate --no-build --pull never crm-backend crm-mcp crm-frontend
+docker compose ps
+```
+
+### 如果 Nacos 配置也变了
+
+修改：
+
+```bash
+vi nacos/crm.yaml
+vi nacos/crm-mcp.yaml
+```
+
+导入：
+
+```bash
+sh scripts/import-nacos-config.sh
+```
+
+然后重启对应服务：
+
+```bash
+docker compose up -d --no-deps --force-recreate --no-build --pull never crm-backend crm-mcp
+```
+
+说明：当前 Nacos 是启动加载，不是运行时热刷新。改 Nacos 后需要重启 Java 服务。
+
+## 五、常用命令
+
+```bash
+docker compose ps
+docker compose logs -f crm-backend
+docker compose logs -f crm-mcp
 docker compose logs -f crm-frontend
 docker compose restart crm-backend
 docker compose restart crm-mcp
-docker compose restart crm-ai-runtime
+docker compose restart crm-frontend
 docker compose down
 ```
 
-如果服务器使用旧版 `docker-compose`：
+## 六、故障处理
+
+### 1. 提示自动拉镜像
+
+所有启动命令必须带：
 
 ```bash
-docker-compose ps
-docker-compose logs -f crm-backend
-docker-compose logs -f crm-mcp
-docker-compose logs -f crm-ai-runtime
-docker-compose restart crm-backend
-docker-compose restart crm-mcp
-docker-compose restart crm-ai-runtime
-docker-compose down
+--pull never
 ```
 
-## 七、注意事项
+如果提示镜像不存在，先确认本地镜像：
 
-- 目标服务器不需要联网拉镜像，镜像已包含在 `images/crm-images.tar`。
-- 目标服务器必须保留 `data`、`logs`、`uploads` 目录。
-- PostgreSQL 和 Redis 默认只在 Docker 网络内访问，不暴露到公网。
-- `crm-mcp` 是独立服务，默认暴露 `CRM_MCP_PORT`，生产环境建议配置 `CRM_MCP_ACCESS_TOKEN` 并限制网络访问。
-- 富文本图片默认落本地 `uploads`，开启 MinIO 时设置 `CRM_MINIO_ENABLED=true`。
-- MinIO 默认通过前端 Nginx 的 `/minio` 路径提供图片访问。
-- 前端通过 Nginx 代理 `/api`、`/uploads`、`/minio` 到后端或 MinIO 服务。
-- 首次启动后，如果系统没有超级管理员，会进入初始化页面。
-- 生产环境必须修改 `.env` 里的密码和 `CRM_JWT_SECRET`。
+```bash
+docker images | grep crm
+docker images | grep docker.1ms.run
+```
 
-## 八、本地开发
-.\deploy\scripts\build-app-images.ps1 crm-v1 -DeployRemote -RemoteDeployDir /app/builds/products/crm/current
+### 2. Redis 或 MinIO 镜像 tag 不一致
+
+如果本地只有官方 tag，可以补 tag：
+
+```bash
+docker tag redis:7-alpine docker.1ms.run/redis:7-alpine
+docker tag postgres:16-alpine docker.1ms.run/postgres:16-alpine
+docker tag minio/minio:latest docker.1ms.run/minio/minio:latest
+```
+
+### 3. Nacos 没读到配置
+
+检查：
+
+```bash
+curl 'http://192.168.50.105:8848/nacos/v1/cs/configs?dataId=crm.yaml&group=DEFAULT_GROUP'
+curl 'http://192.168.50.105:8848/nacos/v1/cs/configs?dataId=crm-mcp.yaml&group=DEFAULT_GROUP'
+```
+
+### 4. 后端连接数据库失败
+
+检查 `.env` 和 Nacos 是否一致：
+
+- `.env` 的 `CRM_DB_PASSWORD`
+- `nacos/crm.yaml` 的 `spring.datasource.password`
+- `nacos/crm-mcp.yaml` 的 `spring.datasource.password`
+
+## 七、保留和删除的脚本
+
+当前保留：
+
+- `scripts/build-offline-package.sh`：构建全量离线包。
+- `scripts/deploy-offline.sh`：首次部署或全量离线启动。
+- `scripts/import-nacos-config.sh`：导入 Nacos 配置。
+- `scripts/build-app-images.ps1`：Windows 本地构建三应用镜像，用于增量部署。
+
+当前部署只保留 Nacos 模式。

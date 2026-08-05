@@ -1,0 +1,178 @@
+# -------------------- 服务基础配置 --------------------
+server:
+  port: 8080
+
+spring:
+  servlet:
+    multipart:
+      max-file-size: 512MB
+      max-request-size: 600MB
+  datasource:
+    url: jdbc:postgresql://crm-postgres:5432/crm
+    username: app_user
+    password: 请修改数据库密码
+    driver-class-name: org.postgresql.Driver
+    druid:
+      initial-size: 1
+      min-idle: 1
+      max-active: 20
+      max-wait: 60000
+      time-between-eviction-runs-millis: 60000
+      min-evictable-idle-time-millis: 300000
+      validation-query: select 1
+      max-open-prepared-statements: 20
+      pool-prepared-statements: false
+      max-pool-prepared-statement-per-connection-size: 0
+  jpa:
+    database-platform: org.hibernate.dialect.PostgreSQLDialect
+    hibernate:
+      ddl-auto: update
+    open-in-view: true
+    properties:
+      hibernate:
+        format_sql: true
+  data:
+    redis:
+      host: crm-redis
+      port: 6379
+      password: 请修改Redis密码
+      database: 1
+  kafka:
+    bootstrap-servers: localhost:9092
+
+logging:
+  level:
+    root: INFO
+
+crm:
+  logging:
+    path: /app/logs
+    max-history: 30
+    max-file-size: 100MB
+  jwt:
+    secret: 请修改为至少32字节随机密钥
+    ttl-seconds: 86400
+  auth:
+    password-reset:
+      ttl-seconds: 900
+      expose-token: false
+  redis:
+    enabled: true
+  task:
+    reminder:
+      enabled: true
+      dispatch-delay-ms: 30000
+      initial-delay-ms: 10000
+      batch-size: 50
+      max-retry: 3
+      retry-delay-seconds: 60
+  channel:
+    upload-dir: /app/uploads/channel
+  storage:
+    upload-dir: /app/uploads
+    public-path: /uploads
+    minio:
+      enabled: false
+      endpoint: http://crm-minio:9000
+      public-url:
+      access-key: minioadmin
+      secret-key: 请修改MinIO密钥
+      bucket: crm
+      public-read: true
+  media:
+    transcription:
+      enabled: false
+      max-file-size-bytes: 536870912
+      dispatch-delay-ms: 30000
+      initial-delay-ms: 10000
+      batch-size: 10
+      max-retry: 3
+      retry-delay-seconds: 60
+      public-url:
+      ffmpeg-path: ffmpeg
+      ffmpeg-timeout-ms: 600000
+      volcengine:
+        enabled: false
+        base-url: https://openspeech.bytedance.com/api/v1/auc
+        appid:
+        token:
+        cluster:
+        language: zh-CN
+        timeout-ms: 15000
+  wecom:
+    base-url: https://qyapi.weixin.qq.com
+    connect-timeout-ms: 5000
+    read-timeout-ms: 30000
+    schedule-delay-ms: 60000
+    schedule-initial-delay-ms: 30000
+    fetch-detail-enabled: true
+    fetch-tags-enabled: true
+  search:
+    elasticsearch:
+      enabled: true
+      uris: http://192.168.50.105:9200
+      username:
+      password:
+  knowledge:
+    change:
+      reconcile-delay-ms: 3000
+      reconcile-initial-delay-ms: 10000
+      kafka:
+        enabled: false
+        topic: crm-knowledge-change
+        group-id: crm-knowledge-indexer
+        publish-batch-size: 100
+        publish-delay-ms: 1000
+        publish-initial-delay-ms: 5000
+        send-timeout-ms: 10000
+    search:
+      hybrid:
+        vector-candidates: 20
+        keyword-candidates: 20
+        database-candidates: 20
+        vector-weight: 0.55
+        keyword-weight: 0.35
+        database-weight: 0.10
+        rrf-k: 60
+        min-score: 0
+        database-fallback-only: true
+    ingest:
+      stale-task-minutes: 120
+      executor:
+        core-size: 2
+        max-size: 4
+        queue-capacity: 100
+    chunk:
+      max-chars: 900
+      overlap-chars: 120
+    embedding:
+      enabled: true
+      base-url: http://host.docker.internal:11434/v1
+      api-key:
+      model: bge-m3:latest
+      dimensions: 0
+      timeout-ms: 30000
+    elasticsearch:
+      index-name: crm_knowledge_chunk
+      timeout-ms: 10000
+    milvus:
+      enabled: true
+      endpoint: http://192.168.50.105:19530
+      token:
+      database:
+      collection: crm_knowledge_chunk
+      timeout-ms: 10000
+  agent:
+    workspace: /app/data/agent-runtime
+    web-search:
+      enabled: true
+      provider: searxng
+      endpoint: http://180.76.225.232:8888
+      api-key:
+      timeout-ms: 8000
+      max-results: 5
+      fetch-detail: true
+      detail-limit: 3
+    token:
+      daily-limit: 100000
+      reserve-output-tokens: 2048

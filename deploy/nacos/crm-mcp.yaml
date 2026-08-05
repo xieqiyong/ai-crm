@@ -1,0 +1,50 @@
+# MCP服务独立配置示例
+# 使用前请复制到Nacos，Data ID建议使用crm-mcp.yaml，Group建议使用DEFAULT_GROUP。
+
+server:
+  port: 8091
+
+spring:
+  datasource:
+    url: jdbc:postgresql://crm-postgres:5432/crm
+    username: app_user
+    password: 请修改数据库密码
+    driver-class-name: org.postgresql.Driver
+    druid:
+      initial-size: 1
+      min-idle: 1
+      max-active: 10
+      max-wait: 60000
+      time-between-eviction-runs-millis: 60000
+      min-evictable-idle-time-millis: 300000
+      validation-query: select 1
+  jpa:
+    database-platform: org.hibernate.dialect.PostgreSQLDialect
+    hibernate:
+      ddl-auto: none
+    open-in-view: false
+  ai:
+    mcp:
+      server:
+        enabled: true
+        name: crm-business-mcp
+        version: 0.0.1
+        protocol: STATELESS
+        instructions: 智能营销管理系统业务MCP服务，只能返回真实CRM数据，禁止编造未返回的信息
+        streamable-http:
+          mcp-endpoint: /mcp
+        stateless:
+          mcp-endpoint: /mcp
+
+logging:
+  level:
+    root: INFO
+
+crm:
+  logging:
+    path: /app/logs
+    max-history: 30
+    max-file-size: 100MB
+  mcp:
+    access-token:
+    endpoint: /mcp
