@@ -25,6 +25,8 @@ import com.hz.crm.domain.followup.FollowupTargetType;
 import com.hz.crm.domain.followup.mapper.FollowupRecordMapper;
 import com.hz.crm.domain.lead.LeadEntity;
 import com.hz.crm.domain.lead.mapper.LeadMapper;
+import com.hz.crm.domain.media.MediaTranscriptionTaskEntity;
+import com.hz.crm.domain.media.mapper.MediaTranscriptionTaskMapper;
 import com.hz.crm.domain.opportunity.OpportunityEntity;
 import com.hz.crm.domain.opportunity.OpportunityProductEntity;
 import com.hz.crm.domain.opportunity.mapper.OpportunityMapper;
@@ -58,7 +60,11 @@ public class CustomerDeepSummaryService {
 
     private static final String BUSINESS_TYPE_CUSTOMER = "CUSTOMER";
 
+    private static final String BUSINESS_TYPE_FOLLOWUP = "FOLLOWUP";
+
     private static final String RUN_STATUS_RUNNING = "RUNNING";
+
+    private static final String TRANSCRIPTION_STATUS_SUCCESS = "SUCCESS";
 
     @Autowired
     private CustomerMapper customerMapper;
@@ -74,6 +80,9 @@ public class CustomerDeepSummaryService {
 
     @Autowired
     private LeadMapper leadMapper;
+
+    @Autowired
+    private MediaTranscriptionTaskMapper mediaTranscriptionTaskMapper;
 
     @Autowired
     private AgentDefinitionService agentDefinitionService;
@@ -104,6 +113,15 @@ public class CustomerDeepSummaryService {
         List<OpportunityEntity> opportunities = queryOpportunities(tenantId, userId, dataScope, customer.getId());
         List<OpportunityProductEntity> opportunityProducts = queryOpportunityProducts(tenantId, opportunities);
         List<FollowupRecordEntity> followups = queryFollowups(tenantId, userId, dataScope, customer.getId());
+        List<MediaTranscriptionTaskEntity> followupTranscriptions = queryFollowupTranscriptions(tenantId, followups);
+        log.info(
+                "客户深度总结上下文准备完成，tenantId={}，userId={}，customerId={}，opportunityCount={}，followupCount={}，transcriptionCount={}",
+                tenantId,
+                userId,
+                customer.getId(),
+                Integer.valueOf(opportunities == null ? 0 : opportunities.size()),
+                Integer.valueOf(followups == null ? 0 : followups.size()),
+                Integer.valueOf(countAvailableTranscriptions(followupTranscriptions)));
         CustomerDeepSummaryResponse response = baseResponse(customer, opportunities, followups);
         fillSavedSummary(response, customer);
         AgentEntity agent = agentDefinitionService.findEnabledByScene(tenantId, CUSTOMER_DEEP_SUMMARY_SCENE);
@@ -111,8 +129,9 @@ public class CustomerDeepSummaryService {
             response.setAvailable(false);
             response.setSuccess(true);
             response.setMessage("未配置客户深度总结智能体，已返回真实数据基础总结");
-            response.setSummary(buildBasicSummary(customer, opportunities, opportunityProducts, followups));
-            fillBasicLists(response, customer, opportunities, opportunityProducts, followups);
+            response.setSummary(buildBasicSummary(
+                    customer, opportunities, opportunityProducts, followups, followupTranscriptions));
+            fillBasicLists(response, customer, opportunities, opportunityProducts, followups, followupTranscriptions);
             saveSummary(customer, response.getSummary());
             return response;
         }
@@ -128,7 +147,15 @@ public class CustomerDeepSummaryService {
         AgentRuntimeRequest runtimeRequest = null;
         try {
             runtimeRequest = buildRuntimeRequest(
-                    tenantId, userId, customer, opportunities, opportunityProducts, followups, agent, request);
+                    tenantId,
+                    userId,
+                    customer,
+                    opportunities,
+                    opportunityProducts,
+                    followups,
+                    followupTranscriptions,
+                    agent,
+                    request);
             Flux<AgentRuntimeEvent> eventFlux = agentRuntimeFacade.run(runtimeRequest);
             startSummaryTask(runtimeRequest, eventFlux, customer.getId());
             response.setAvailable(true);
@@ -350,6 +377,7 @@ public class CustomerDeepSummaryService {
             List<OpportunityEntity> opportunities,
             List<OpportunityProductEntity> opportunityProducts,
             List<FollowupRecordEntity> followups,
+            List<MediaTranscriptionTaskEntity> followupTranscriptions,
             AgentEntity agent,
             CustomerDeepSummaryRequest request) {
         AgentRuntimeRequest runtimeRequest = new AgentRuntimeRequest();
@@ -362,10 +390,16 @@ public class CustomerDeepSummaryService {
         runtimeRequest.setBusinessId(String.valueOf(customer.getId()));
         runtimeRequest.setInjectedPrompt(buildInjectedPrompt());
         runtimeRequest.setMessage(buildMessage(
-                customer, opportunities, opportunityProducts, followups, request.getInstruction()));
+                customer,
+                opportunities,
+                opportunityProducts,
+                followups,
+                followupTranscriptions,
+                request.getInstruction()));
         Map<String, Object> context = new HashMap<String, Object>();
         context.put("businessType", "CUSTOMER");
         context.put("customerId", String.valueOf(customer.getId()));
+        context.put("followupTranscriptionCount", Integer.valueOf(countAvailableTranscriptions(followupTranscriptions)));
         runtimeRequest.setContext(context);
         return runtimeRequest;
     }
@@ -374,6 +408,8 @@ public class CustomerDeepSummaryService {
         StringBuilder builder = new StringBuilder();
         builder.append("只能基于本次传入的客户真实数据、商机真实数据、跟进记录真实数据总结。");
         builder.append("跟进记录中targetType为LEAD的数据表示客户转化前的原线索阶段跟进。");
+        builder.append("followupsWithTranscriptions中的mediaTranscriptions为该跟进下音视频文件转写后的中文沟通文本，必须作为跟进记录的一部分参与判断。");
+        builder.append("如果跟进内容和音视频转写文本不一致，以音视频转写文本作为更详细的沟通事实，但不要编造转写中没有的信息。");
         builder.append("商机产品明细表示客户可能购买的产品或服务，需要用于判断销售重点。");
         builder.append("判断产品定位、产品匹配、解决方案或销售话术时必须先调用knowledge_search，未命中时必须说明知识库暂无资料。");
         builder.append("存在公司名称时可调用customer_web_search补充公开企业信息，未确认字段不能猜测。");
@@ -389,15 +425,19 @@ public class CustomerDeepSummaryService {
             List<OpportunityEntity> opportunities,
             List<OpportunityProductEntity> opportunityProducts,
             List<FollowupRecordEntity> followups,
+            List<MediaTranscriptionTaskEntity> followupTranscriptions,
             String instruction) {
         Map<String, Object> data = new HashMap<String, Object>();
         data.put("customer", customer);
         data.put("opportunities", opportunities);
         data.put("opportunityProducts", opportunityProducts);
         data.put("followups", followups);
+        data.put("followupsWithTranscriptions", buildFollowupContext(followups, followupTranscriptions));
+        data.put("followupTranscriptionCount", Integer.valueOf(countAvailableTranscriptions(followupTranscriptions)));
         StringBuilder builder = new StringBuilder();
         builder.append("请对以下客户做深度总结，给销售负责人可执行的建议。");
-        builder.append("必须覆盖客户判断、关键事实、商机洞察、跟进洞察、风险提醒、下一步动作和缺失信息。");
+        builder.append("必须覆盖客户判断、关键事实、商机洞察、跟进洞察、音视频转写洞察、风险提醒、下一步动作和缺失信息。");
+        builder.append("如果followupsWithTranscriptions中存在mediaTranscriptions，必须阅读其中的transcriptText并纳入总结。");
         builder.append("最终直接调用customer_deep_summary_result并传入结构化参数，不要用文本模拟函数调用。");
         if (StringUtils.hasText(instruction)) {
             builder.append("\n补充要求：").append(instruction.trim());
@@ -629,7 +669,8 @@ public class CustomerDeepSummaryService {
             CustomerEntity customer,
             List<OpportunityEntity> opportunities,
             List<OpportunityProductEntity> opportunityProducts,
-            List<FollowupRecordEntity> followups) {
+            List<FollowupRecordEntity> followups,
+            List<MediaTranscriptionTaskEntity> followupTranscriptions) {
         StringBuilder builder = new StringBuilder();
         builder.append("### 客户基础总结\n\n");
         builder.append("- 客户名称：").append(text(customer.getName())).append("\n");
@@ -645,6 +686,7 @@ public class CustomerDeepSummaryService {
             builder.append("- 关联产品：").append(joinProductNames(opportunityProducts)).append("\n");
         }
         builder.append("- 跟进记录数：").append(followups == null ? 0 : followups.size()).append("\n");
+        builder.append("- 跟进音视频转写数：").append(countAvailableTranscriptions(followupTranscriptions)).append("\n");
         builder.append("\n#### 当前判断\n\n");
         if (opportunities != null && !opportunities.isEmpty()) {
             builder.append("- 当前客户已经关联商机，建议围绕商机阶段推进下一步销售动作。\n");
@@ -656,6 +698,9 @@ public class CustomerDeepSummaryService {
         } else {
             builder.append("- 暂无跟进记录，建议先补充一次电话、微信或会议跟进。\n");
         }
+        if (countAvailableTranscriptions(followupTranscriptions) > 0) {
+            builder.append("- 已存在音视频转写文本，建议优先结合真实沟通文本提炼客户需求、异议和风险。\n");
+        }
         return builder.toString();
     }
 
@@ -664,7 +709,8 @@ public class CustomerDeepSummaryService {
             CustomerEntity customer,
             List<OpportunityEntity> opportunities,
             List<OpportunityProductEntity> opportunityProducts,
-            List<FollowupRecordEntity> followups) {
+            List<FollowupRecordEntity> followups,
+            List<MediaTranscriptionTaskEntity> followupTranscriptions) {
         response.getKeyFindings().add("客户：" + text(customer.getName()));
         if (StringUtils.hasText(customer.getContactName())) {
             response.getKeyFindings().add("主联系人：" + customer.getContactName());
@@ -673,6 +719,7 @@ public class CustomerDeepSummaryService {
         response.getKeyFindings().add("商机产品明细数："
                 + (opportunityProducts == null ? 0 : opportunityProducts.size()));
         response.getKeyFindings().add("跟进记录数：" + (followups == null ? 0 : followups.size()));
+        response.getKeyFindings().add("跟进音视频转写数：" + countAvailableTranscriptions(followupTranscriptions));
         if (opportunityProducts != null && !opportunityProducts.isEmpty()) {
             response.getNextActions().add("围绕已关联产品推进报价、试用或方案确认");
         }
@@ -764,6 +811,123 @@ public class CustomerDeepSummaryService {
         }
         wrapper.orderByDesc("followup_at").last("limit 20");
         return followupRecordMapper.selectList(wrapper);
+    }
+
+    private List<MediaTranscriptionTaskEntity> queryFollowupTranscriptions(
+            Long tenantId, List<FollowupRecordEntity> followups) {
+        List<MediaTranscriptionTaskEntity> emptyList = new ArrayList<MediaTranscriptionTaskEntity>();
+        List<Long> followupIds = new ArrayList<Long>();
+        if (followups == null || followups.isEmpty()) {
+            return emptyList;
+        }
+        for (FollowupRecordEntity followup : followups) {
+            if (followup != null && followup.getId() != null) {
+                followupIds.add(followup.getId());
+            }
+        }
+        if (followupIds.isEmpty()) {
+            return emptyList;
+        }
+        QueryWrapper<MediaTranscriptionTaskEntity> wrapper = new QueryWrapper<MediaTranscriptionTaskEntity>();
+        wrapper.eq("tenant_id", tenantId);
+        wrapper.eq("deleted", false);
+        wrapper.eq("business_type", BUSINESS_TYPE_FOLLOWUP);
+        wrapper.in("business_id", followupIds);
+        wrapper.eq("status", TRANSCRIPTION_STATUS_SUCCESS);
+        wrapper.isNotNull("transcript_text");
+        wrapper.orderByDesc("finished_at").orderByDesc("created_at");
+        List<MediaTranscriptionTaskEntity> records = mediaTranscriptionTaskMapper.selectList(wrapper);
+        List<MediaTranscriptionTaskEntity> result = new ArrayList<MediaTranscriptionTaskEntity>();
+        for (MediaTranscriptionTaskEntity record : records) {
+            if (record != null && StringUtils.hasText(record.getTranscriptText())) {
+                result.add(record);
+            }
+        }
+        return result;
+    }
+
+    private List<Map<String, Object>> buildFollowupContext(
+            List<FollowupRecordEntity> followups,
+            List<MediaTranscriptionTaskEntity> followupTranscriptions) {
+        List<Map<String, Object>> result = new ArrayList<Map<String, Object>>();
+        if (followups == null || followups.isEmpty()) {
+            return result;
+        }
+        Map<Long, List<MediaTranscriptionTaskEntity>> grouped = groupTranscriptions(followupTranscriptions);
+        for (FollowupRecordEntity followup : followups) {
+            if (followup == null) {
+                continue;
+            }
+            Map<String, Object> item = new HashMap<String, Object>();
+            item.put("followupId", followup.getId());
+            item.put("targetType", followup.getTargetType() == null ? null : followup.getTargetType().name());
+            item.put("targetId", followup.getTargetId());
+            item.put("targetName", followup.getTargetName());
+            item.put("followupType", followup.getFollowupType() == null ? null : followup.getFollowupType().name());
+            item.put("followupAt", followup.getFollowupAt());
+            item.put("content", followup.getContent());
+            item.put("result", followup.getResult());
+            item.put("nextPlan", followup.getNextPlan());
+            item.put("nextFollowTime", followup.getNextFollowTime());
+            item.put("ownerId", followup.getOwnerId());
+            item.put("mediaTranscriptions", buildTranscriptionContext(grouped.get(followup.getId())));
+            result.add(item);
+        }
+        return result;
+    }
+
+    private Map<Long, List<MediaTranscriptionTaskEntity>> groupTranscriptions(
+            List<MediaTranscriptionTaskEntity> followupTranscriptions) {
+        Map<Long, List<MediaTranscriptionTaskEntity>> grouped =
+                new HashMap<Long, List<MediaTranscriptionTaskEntity>>();
+        if (followupTranscriptions == null || followupTranscriptions.isEmpty()) {
+            return grouped;
+        }
+        for (MediaTranscriptionTaskEntity transcription : followupTranscriptions) {
+            if (transcription == null || transcription.getBusinessId() == null) {
+                continue;
+            }
+            Long followupId = transcription.getBusinessId();
+            if (!grouped.containsKey(followupId)) {
+                grouped.put(followupId, new ArrayList<MediaTranscriptionTaskEntity>());
+            }
+            grouped.get(followupId).add(transcription);
+        }
+        return grouped;
+    }
+
+    private List<Map<String, Object>> buildTranscriptionContext(List<MediaTranscriptionTaskEntity> transcriptions) {
+        List<Map<String, Object>> result = new ArrayList<Map<String, Object>>();
+        if (transcriptions == null || transcriptions.isEmpty()) {
+            return result;
+        }
+        for (MediaTranscriptionTaskEntity transcription : transcriptions) {
+            if (transcription == null || !StringUtils.hasText(transcription.getTranscriptText())) {
+                continue;
+            }
+            Map<String, Object> item = new HashMap<String, Object>();
+            item.put("transcriptionId", transcription.getId());
+            item.put("fileName", transcription.getFileName());
+            item.put("audioFileName", transcription.getAudioFileName());
+            item.put("contentType", transcription.getContentType());
+            item.put("finishedAt", transcription.getFinishedAt());
+            item.put("transcriptText", shrink(transcription.getTranscriptText(), 6000));
+            result.add(item);
+        }
+        return result;
+    }
+
+    private int countAvailableTranscriptions(List<MediaTranscriptionTaskEntity> followupTranscriptions) {
+        if (followupTranscriptions == null || followupTranscriptions.isEmpty()) {
+            return 0;
+        }
+        int count = 0;
+        for (MediaTranscriptionTaskEntity transcription : followupTranscriptions) {
+            if (transcription != null && StringUtils.hasText(transcription.getTranscriptText())) {
+                count++;
+            }
+        }
+        return count;
     }
 
     private List<Long> queryConvertedLeadIds(Long tenantId, Long customerId) {

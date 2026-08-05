@@ -13,11 +13,16 @@ import {
   X,
 } from 'lucide-react'
 import { api } from '../../api'
-import { Badge, Button, Card, ConfirmDialog, Field, Modal, PageHeader, useConfirmDialog } from '../../components'
+import { Badge, Button, Card, ConfirmDialog, DatePicker, Field, Modal, PageHeader, useConfirmDialog } from '../../components'
 import { customerOptionLabel, useCustomerOptions } from '../../hooks/useCustomerOptions'
 import { FollowupPanel } from '../followup/FollowupPanel'
 import { ownerName, ownerOptionLabel, useOwnerOptions } from '../../hooks/useOwnerOptions'
 import { useProductOptions } from '../../hooks/useProductOptions'
+import {
+  buildOpportunityStagePatch,
+  getRecommendedOpportunityProbability,
+  toOpportunityProbabilityPayload,
+} from '../../models/opportunity'
 import {
   OpportunityProductEditor,
   OpportunityProductList,
@@ -55,7 +60,7 @@ const emptyForm = {
   customerId: '',
   amount: '',
   stage: 'DISCOVERY',
-  probability: '',
+  probability: getRecommendedOpportunityProbability('DISCOVERY'),
   expectedCloseDate: '',
   ownerId: '',
   products: [],
@@ -91,7 +96,7 @@ function toForm(row) {
     customerId: row.customerId || '',
     amount: row.amount || '',
     stage: row.stage || 'DISCOVERY',
-    probability: row.probability || '',
+    probability: row.probability ?? '',
     expectedCloseDate: row.expectedCloseDate || '',
     ownerId: row.ownerId || '',
     products: normalizeOpportunityProducts(row.products || []),
@@ -106,7 +111,7 @@ function toPayload(form) {
     customerId: form.customerId || null,
     amount: form.amount === '' ? null : form.amount,
     stage: form.stage || 'DISCOVERY',
-    probability: form.probability === '' ? null : Number(form.probability),
+    probability: toOpportunityProbabilityPayload(form.probability),
     expectedCloseDate: form.expectedCloseDate || null,
     ownerId: form.ownerId || null,
     products: toOpportunityProductPayload(form.products || []),
@@ -170,6 +175,11 @@ export function OpportunityPage({ can, notify, navigate }) {
     } catch (err) {
       notify(err.message || '商机详情加载失败', 'info')
     }
+  }
+
+  const openCustomerDetail = (customerId) => {
+    if (!customerId || !canViewCustomer) return
+    navigate(`customers/detail/${encodeURIComponent(customerId)}`)
   }
 
   const saveOpportunity = async (form) => {
@@ -278,10 +288,22 @@ export function OpportunityPage({ can, notify, navigate }) {
                     key={row.id}
                     onClick={() => openDetail(row)}
                   >
-                    <td><strong>{row.name}</strong><small>ID：{row.id}</small></td>
+                    <td><strong>{row.name}</strong></td>
                     <td>
-                      <span>{row.customerName || '-'}</span>
-                      <small>{row.customerId || '-'}</small>
+                      {row.customerId && canViewCustomer ? (
+                        <button
+                          type="button"
+                          className="table-inline-link"
+                          onClick={(event) => {
+                            event.stopPropagation()
+                            openCustomerDetail(row.customerId)
+                          }}
+                        >
+                          {row.customerName || '查看客户'}
+                        </button>
+                      ) : (
+                        <span>{row.customerName || '-'}</span>
+                      )}
                     </td>
                     <td><Badge dot tone={stageTone[row.stage] || 'neutral'}>{stageText[row.stage] || row.stage || '-'}</Badge></td>
                     <td>{formatAmount(row.amount)}</td>
@@ -330,7 +352,7 @@ export function OpportunityPage({ can, notify, navigate }) {
           canFollowup={canFollowup}
           canViewFollowup={canViewFollowup}
           notify={notify}
-          onOpenCustomer={() => selected?.customerId && navigate(`customers/detail/${encodeURIComponent(selected.customerId)}`)}
+          onOpenCustomer={canViewCustomer ? () => openCustomerDetail(selected?.customerId) : null}
           onEdit={() => setEditing(toForm(selected))}
           onDelete={() => deleteOpportunity(selected)}
           onClose={() => setSelected(null)}
@@ -385,7 +407,7 @@ function OpportunityDetailCard({
         <button className="icon-button" onClick={onClose}><X size={18} /></button>
       </div>
       <div className="customer-detail-actions">
-        {data.customerId && <Button variant="secondary" icon={Building2} onClick={onOpenCustomer}>查看客户</Button>}
+        {data.customerId && onOpenCustomer && <Button variant="secondary" icon={Building2} onClick={onOpenCustomer}>查看客户</Button>}
         {canWrite && <Button variant="secondary" icon={Edit2} onClick={onEdit}>编辑商机</Button>}
         {canDelete && <Button variant="ghost" icon={Trash2} onClick={onDelete}>删除</Button>}
       </div>
@@ -473,7 +495,7 @@ function OpportunityFormModal({
           <input value={form.name || ''} onChange={(event) => update({ name: event.target.value })} />
         </Field>
         <Field label="阶段">
-          <select value={form.stage || 'DISCOVERY'} onChange={(event) => update({ stage: event.target.value })}>
+          <select value={form.stage || 'DISCOVERY'} onChange={(event) => update(buildOpportunityStagePatch(form, event.target.value))}>
             {Object.entries(stageText).map(([value, label]) => <option value={value} key={value}>{label}</option>)}
           </select>
         </Field>
@@ -505,12 +527,15 @@ function OpportunityFormModal({
             type="number"
             min="0"
             max="100"
-            value={form.probability || ''}
+            value={form.probability ?? ''}
             onChange={(event) => update({ probability: event.target.value })}
           />
         </Field>
         <Field label="预计成交日期">
-          <input type="date" value={form.expectedCloseDate || ''} onChange={(event) => update({ expectedCloseDate: event.target.value })} />
+          <DatePicker
+            value={form.expectedCloseDate || ''}
+            onChange={(expectedCloseDate) => update({ expectedCloseDate })}
+          />
         </Field>
         <Field label="产品明细" className="wide-field" as="div">
           <OpportunityProductEditor

@@ -22,9 +22,10 @@ import {
   Badge,
   Button,
   Card,
+  CollapsibleMarkdown,
   ConfirmDialog,
+  DatePicker,
   Field,
-  MarkdownText,
   Modal,
   OwnerAssignModal,
   PageHeader,
@@ -36,6 +37,11 @@ import { ownerName, ownerOptionLabel, useOwnerOptions } from '../../hooks/useOwn
 import { useProductOptions } from '../../hooks/useProductOptions'
 import { useCustomerIndustryOptions } from '../../hooks/useCustomerIndustryOptions'
 import { validateCustomerForm } from '../../models/customerForm'
+import {
+  buildOpportunityStagePatch,
+  getRecommendedOpportunityProbability,
+  toOpportunityProbabilityPayload,
+} from '../../models/opportunity'
 import {
   OpportunityProductEditor,
   normalizeOpportunityProducts,
@@ -66,7 +72,7 @@ const emptyOpportunityForm = {
   name: '',
   amount: '',
   stage: 'DISCOVERY',
-  probability: '',
+  probability: getRecommendedOpportunityProbability('DISCOVERY'),
   expectedCloseDate: '',
   products: [],
   remark: '',
@@ -309,7 +315,7 @@ export function CustomerDetailPage({ routeParams, can, notify, navigate }) {
         name: form.name.trim(),
         customerId: data.id,
         amount: form.amount === '' ? null : form.amount,
-        probability: form.probability === '' ? null : Number(form.probability),
+        probability: toOpportunityProbabilityPayload(form.probability),
         expectedCloseDate: form.expectedCloseDate || null,
         remark: form.remark || null,
         products: toOpportunityProductPayload(form.products || []),
@@ -588,7 +594,11 @@ function CustomerOverview({
           </div>
           <span className="section-caption">客户总结</span>
           {summary?.summary ? (
-            <MarkdownText value={summary.summary} />
+            <CollapsibleMarkdown
+              value={summary.summary}
+              maxHeight={260}
+              className="customer-ai-summary-compact"
+            />
           ) : (
             <blockquote>
               当前客户名称为 <b>{data.name}</b>，行业为 <b>{data.industry || '未填写'}</b>，主联系人为 <b>{data.contactName || '未填写'}</b>。
@@ -780,7 +790,11 @@ function CustomerAiSummaryPanel({ data, summary, canUseAi, summarizing, onSummar
         </div>
       </div>
       {summary?.summary || data.aiSummary ? (
-        <MarkdownText value={summary?.summary || data.aiSummary} />
+        <CollapsibleMarkdown
+          value={summary?.summary || data.aiSummary}
+          maxHeight={520}
+          className="customer-ai-summary-detail"
+        />
       ) : (
         <div className="customer-empty-feature">
           <span><Sparkles size={22} /></span>
@@ -866,7 +880,7 @@ function OpportunityFormModal({ open, form, productOptions, onChange, onClose, o
           <input value={form.name || ''} onChange={(event) => update({ name: event.target.value })} />
         </Field>
         <Field label="阶段">
-          <select value={form.stage || 'DISCOVERY'} onChange={(event) => update({ stage: event.target.value })}>
+          <select value={form.stage || 'DISCOVERY'} onChange={(event) => update(buildOpportunityStagePatch(form, event.target.value))}>
             {Object.entries(opportunityStageText).map(([value, label]) => <option value={value} key={value}>{label}</option>)}
           </select>
         </Field>
@@ -878,15 +892,14 @@ function OpportunityFormModal({ open, form, productOptions, onChange, onClose, o
             type="number"
             min="0"
             max="100"
-            value={form.probability || ''}
+            value={form.probability ?? ''}
             onChange={(event) => update({ probability: event.target.value })}
           />
         </Field>
         <Field label="预计成交日期">
-          <input
-            type="date"
+          <DatePicker
             value={form.expectedCloseDate || ''}
-            onChange={(event) => update({ expectedCloseDate: event.target.value })}
+            onChange={(expectedCloseDate) => update({ expectedCloseDate })}
           />
         </Field>
         <Field label="产品明细" className="wide-field" as="div">

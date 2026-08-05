@@ -2,6 +2,7 @@ export { BrandLogo } from './brand'
 export { EChart } from './EChart'
 export { CollapsibleMarkdown, MarkdownText } from './markdown'
 export { CollapsibleRichText, RichTextEditor, RichTextViewer } from './richText'
+export { DatePicker } from './DatePicker'
 export {
   Badge,
   Button,
