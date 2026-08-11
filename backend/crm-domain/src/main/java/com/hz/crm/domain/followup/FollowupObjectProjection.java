@@ -1,17 +1,12 @@
-package com.hz.crm.application.followup.dto;
+package com.hz.crm.domain.followup;
 
-import com.hz.crm.domain.followup.FollowupTargetType;
-import com.hz.crm.domain.followup.FollowupType;
-import com.hz.crm.application.media.dto.MediaTranscriptionResponse;
 import java.time.LocalDateTime;
-import java.util.ArrayList;
-import java.util.List;
 import lombok.Getter;
 import lombok.Setter;
 
 @Getter
 @Setter
-public class FollowupResponse {
+public class FollowupObjectProjection {
 
     private Long id;
 
@@ -37,13 +32,9 @@ public class FollowupResponse {
 
     private Long ownerId;
 
-    private String ownerName;
-
-    private Long followupCount;
-
     private LocalDateTime createdAt;
 
     private LocalDateTime updatedAt;
 
-    private List<MediaTranscriptionResponse> mediaTranscriptions = new ArrayList<MediaTranscriptionResponse>();
+    private Long followupCount;
 }

@@ -3,6 +3,7 @@ package com.hz.crm.application.channel.dto;
 import com.hz.crm.common.api.PageQuery;
 import com.hz.crm.domain.channel.ChannelStatus;
 import com.hz.crm.domain.channel.ChannelType;
+import java.time.LocalDateTime;
 import lombok.Getter;
 import lombok.Setter;
 
@@ -15,4 +16,8 @@ public class ChannelQuery extends PageQuery {
     private ChannelStatus status;
 
     private ChannelType channelType;
+
+    private LocalDateTime createdFrom;
+
+    private LocalDateTime createdTo;
 }

@@ -170,44 +170,16 @@ public class LeadAnalysisResultTool implements AgentTool {
 
     private Map<String, Object> customerProfileField() {
         Map<String, Object> properties = new LinkedHashMap<String, Object>();
-        properties.put("available", booleanField("是否检索到可用于客户档案的公开信息"));
-        properties.put("companyName", stringField("公司名称，必须来自线索或搜索结果"));
-        properties.put("creditCode", stringField("统一社会信用代码，无法确认则为空字符串"));
-        properties.put("legalRepresentative", stringField("法定代表人或公开负责人，无法确认则为空字符串"));
-        properties.put("keyPerson", stringField("关键联系人或公开高管，无法确认则为空字符串"));
         properties.put("companyScale", stringField("公司规模，无法确认则为空字符串"));
         properties.put("industry", stringField("公司行业，无法确认则为空字符串"));
-        properties.put("phone", stringField("公开电话，无法确认则为空字符串"));
-        properties.put("email", stringField("公开邮箱，无法确认则为空字符串"));
-        properties.put("website", stringField("官网，无法确认则为空字符串"));
-        properties.put("address", stringField("公开地址，无法确认则为空字符串"));
-        properties.put("registeredCapital", stringField("注册资本，无法确认则为空字符串"));
-        properties.put("establishDate", stringField("成立或注册时间，无法确认则为空字符串"));
-        properties.put("description", stringField("企业简介，无法确认则为空字符串"));
-        properties.put("sourceSummary", stringField("客户档案来源摘要，只能基于搜索结果"));
-        properties.put("searchedAt", stringField("搜索时间，无法确认则为空字符串"));
-        properties.put("sourceUrls", stringArrayField("公开来源链接，最多6项", 6));
+        properties.put("sourceUrls", stringArrayField("公开来源链接，最多3项", 3));
 
         Map<String, Object> field = new LinkedHashMap<String, Object>();
         field.put("type", "object");
         field.put("properties", properties);
         field.put("required", values(
-                "available",
-                "companyName",
-                "creditCode",
-                "legalRepresentative",
-                "keyPerson",
                 "companyScale",
                 "industry",
-                "phone",
-                "email",
-                "website",
-                "address",
-                "registeredCapital",
-                "establishDate",
-                "description",
-                "sourceSummary",
-                "searchedAt",
                 "sourceUrls"));
         return field;
     }

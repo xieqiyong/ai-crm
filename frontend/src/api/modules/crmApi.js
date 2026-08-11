@@ -66,6 +66,8 @@ export const opportunityApi = {
 
 export const followupApi = {
   page: (payload) => page('/api/followup', payload),
+  objectPage: (payload) => request('/api/followup/object-page', { method: 'POST', body: JSON.stringify(payload || {}) }),
+  targetOptions: (payload) => request('/api/followup/target-options', { method: 'POST', body: JSON.stringify(payload || {}) }),
   detail: (id) => detail('/api/followup', id),
   save: (payload) => save('/api/followup', payload),
   uploadMedia: (followupId, file) => {

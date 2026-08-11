@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import { CalendarDays, Edit2, FileAudio2, FileVideo2, MessageCircleMore, Paperclip, Plus, RefreshCw, X } from 'lucide-react'
 import { api } from '../../api'
 import {
@@ -9,6 +9,7 @@ import {
   Modal,
   RichTextEditor,
   RichTextViewer,
+  Select,
 } from '../../components'
 import { ownerName } from '../../hooks/useOwnerOptions'
 
@@ -54,6 +55,7 @@ const emptyPage = {
 export const emptyFollowupForm = {
   targetType: 'CUSTOMER',
   targetId: '',
+  targetName: '',
   followupType: 'PHONE',
   followupAt: '',
   content: '',
@@ -164,6 +166,7 @@ export function toFollowupForm(row) {
     id: row.id,
     targetType: row.targetType || 'CUSTOMER',
     targetId: row.targetId || '',
+    targetName: row.targetName || '',
     followupType: row.followupType || 'PHONE',
     followupAt: toDateTimeInput(row.followupAt),
     content: row.content || '',
@@ -218,6 +221,7 @@ export function FollowupPanel({
   notify,
   pageSize = 8,
   compact = false,
+  onSaved,
 }) {
   const [page, setPage] = useState(emptyPage)
   const [loading, setLoading] = useState(false)
@@ -344,6 +348,7 @@ export function FollowupPanel({
       notify(mediaStarted ? '跟进记录已保存，音视频正在后台上传' : '跟进记录已保存', 'success')
       setEditing(null)
       load(visibleSize, { silent: mediaStarted })
+      onSaved?.(saved, form)
     } catch (error) {
       notify(error.message || '跟进记录保存失败', 'info')
     }
@@ -544,9 +549,73 @@ export function FollowupFormModal({
   onSave,
   notify,
 }) {
+  const [targetOptions, setTargetOptions] = useState([])
+  const [targetLoading, setTargetLoading] = useState(false)
+
+  useEffect(() => {
+    if (!open || !form || fixedTarget) {
+      setTargetOptions([])
+      setTargetLoading(false)
+      return undefined
+    }
+    setTargetOptions([])
+    setTargetLoading(false)
+    return undefined
+  }, [open, fixedTarget, form?.targetType])
+
+  const loadTargetOptions = useCallback(async (keyword = '') => {
+    if (!open || !form || fixedTarget) return
+    setTargetLoading(true)
+    try {
+      const data = await api.followup.targetOptions({
+        targetType: form.targetType || 'CUSTOMER',
+        keyword: keyword || undefined,
+        limit: 20,
+      })
+      setTargetOptions((data || []).map((item) => ({
+        value: item.id,
+        label: item.name || '-',
+        description: [item.description, item.ownerName ? `负责人：${item.ownerName}` : '']
+          .filter(Boolean)
+          .join(' ｜ '),
+        raw: item,
+      })))
+    } catch {
+      setTargetOptions([])
+    } finally {
+      setTargetLoading(false)
+    }
+  }, [open, fixedTarget, form?.targetType])
+
   if (!open || !form) return null
   const update = (patch) => onChange({ ...form, ...patch })
+  const chooseTarget = (value, option) => {
+    update({
+      targetId: value || '',
+      targetName: option?.raw?.name || option?.label || '',
+    })
+  }
+  const changeTargetType = (value) => {
+    update({
+      targetType: value,
+      targetId: '',
+      targetName: '',
+    })
+    setTargetOptions([])
+  }
   const mediaFiles = Array.from(form.mediaFiles || [])
+  const hasSelectedTarget = Boolean(form.targetId)
+    && !targetOptions.some((item) => String(item.value) === String(form.targetId))
+  const normalizedTargetOptions = hasSelectedTarget
+    ? [
+      {
+        value: form.targetId,
+        label: form.targetName || '当前已选对象',
+        description: '当前已选对象',
+      },
+      ...targetOptions,
+    ]
+    : targetOptions
   const chooseMediaFiles = (event) => {
     const files = Array.from(event.target.files || [])
     event.target.value = ''
@@ -572,12 +641,23 @@ export function FollowupFormModal({
         {!fixedTarget && (
           <>
             <Field label="关联对象类型" required>
-              <select value={form.targetType || 'CUSTOMER'} onChange={(event) => update({ targetType: event.target.value })}>
+              <select value={form.targetType || 'CUSTOMER'} onChange={(event) => changeTargetType(event.target.value)}>
                 {Object.entries(targetTypeText).map(([value, label]) => <option value={value} key={value}>{label}</option>)}
               </select>
             </Field>
-            <Field label="关联对象ID" required>
-              <input value={form.targetId || ''} onChange={(event) => update({ targetId: event.target.value })} />
+            <Field label="关联对象" required>
+              <Select
+                value={form.targetId}
+                options={normalizedTargetOptions}
+                searchable
+                placeholder={targetLoading ? '正在搜索对象' : '请选择关联对象'}
+                searchPlaceholder={`搜索${targetTypeText[form.targetType] || '对象'}名称、联系人或电话`}
+                emptyText="没有匹配对象"
+                loading={targetLoading}
+                loadingText="正在搜索对象"
+                onSearch={loadTargetOptions}
+                onChange={chooseTarget}
+              />
             </Field>
           </>
         )}
@@ -596,6 +676,8 @@ export function FollowupFormModal({
               onChange={(content) => update({ content })}
               placeholder="记录本次沟通内容，可插入图片、链接、列表和特殊符号"
               notify={notify}
+              showHeading={false}
+              stableTypography
             />
             <div className="followup-media-picker embedded">
               <label className="followup-media-upload">

@@ -103,12 +103,19 @@ public class LeadApplicationService {
     @Transactional
     public LeadResponse save(Long tenantId, Long operatorId, String dataScope, LeadSaveRequest request) {
         if (request == null) {
-            throw new BusinessException("LEAD_003", "名称和公司名称至少填写一个");
+            throw new BusinessException("LEAD_003", "线索信息不能为空");
         }
         String leadName = trimToNull(request.getName());
         String companyName = trimToNull(request.getCompanyName());
-        if (leadName == null && companyName == null) {
-            throw new BusinessException("LEAD_003", "名称和公司名称至少填写一个");
+        String phone = trimToNull(request.getPhone());
+        if (companyName == null) {
+            throw new BusinessException("LEAD_003", "公司名称不能为空");
+        }
+        if (leadName == null) {
+            throw new BusinessException("LEAD_003", "联系人不能为空");
+        }
+        if (phone == null) {
+            throw new BusinessException("LEAD_003", "联系电话不能为空");
         }
         LeadEntity entity;
         if (request.getId() == null) {
@@ -119,9 +126,9 @@ public class LeadApplicationService {
             entity = findOne(tenantId, request.getId());
             checkDataScope(operatorId, dataScope, entity.getOwnerId());
         }
-        entity.setName(leadName == null ? companyName : leadName);
+        entity.setName(leadName);
         entity.setCompanyName(companyName);
-        entity.setPhone(trimToNull(request.getPhone()));
+        entity.setPhone(phone);
         entity.setEmail(trimToNull(request.getEmail()));
         entity.setSource(trimToNull(request.getSource()));
         entity.setStatus(request.getStatus() == null ? LeadStatus.recommended() : request.getStatus());

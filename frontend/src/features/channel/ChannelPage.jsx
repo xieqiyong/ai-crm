@@ -23,6 +23,7 @@ import {
   Button,
   Card,
   ConfirmDialog,
+  DatePicker,
   Field,
   MarkdownText,
   Modal,
@@ -244,6 +245,8 @@ function compactPayload(query) {
     keyword: query.keyword || undefined,
     status: query.status || undefined,
     channelType: query.channelType || undefined,
+    createdFrom: query.createdFrom ? `${query.createdFrom}T00:00:00` : undefined,
+    createdTo: query.createdTo ? `${query.createdTo}T23:59:59.999` : undefined,
   }
 }
 
@@ -293,6 +296,8 @@ export function ChannelPage({ can, notify }) {
     keyword: '',
     status: '',
     channelType: '',
+    createdFrom: '',
+    createdTo: '',
     pageNo: 1,
     pageSize: 20,
   })
@@ -308,9 +313,15 @@ export function ChannelPage({ can, notify }) {
   const [selected, setSelected] = useState(null)
   const [marketingForms, setMarketingForms] = useState([])
   const [marketingFormsLoading, setMarketingFormsLoading] = useState(true)
+  const [marketingFormOpen, setMarketingFormOpen] = useState(false)
   const [marketingFormEditing, setMarketingFormEditing] = useState(null)
   const [analyzingId, setAnalyzingId] = useState(null)
   const [wecomOpen, setWecomOpen] = useState(false)
+  const [statistics, setStatistics] = useState({
+    totalUserCount: 0,
+    todayNewUserCount: 0,
+    convertedLeadUserCount: 0,
+  })
 
   const load = async (nextQuery = query) => {
     setLoading(true)
@@ -337,12 +348,29 @@ export function ChannelPage({ can, notify }) {
     }
   }
 
+  const loadStatistics = async () => {
+    try {
+      const data = await api.channel.statistics()
+      setStatistics({
+        totalUserCount: data?.totalUserCount || 0,
+        todayNewUserCount: data?.todayNewUserCount || 0,
+        convertedLeadUserCount: data?.convertedLeadUserCount || 0,
+      })
+    } catch (err) {
+      notify(err.message || '加载渠道统计失败', 'info')
+    }
+  }
+
   useEffect(() => {
     load()
     loadMarketingForms()
+    loadStatistics()
   }, [])
 
-  const refreshFirstPage = () => load({ ...query, pageNo: 1 })
+  const refreshFirstPage = () => {
+    load({ ...query, pageNo: 1 })
+    loadStatistics()
+  }
 
   const refreshAll = () => {
     refreshFirstPage()
@@ -373,6 +401,7 @@ export function ChannelPage({ can, notify }) {
         setSelected(null)
       }
       load({ ...query, pageNo: 1 })
+      loadStatistics()
     } catch (err) {
       notify(err.message || '渠道删除失败', 'info')
     }
@@ -411,6 +440,7 @@ export function ChannelPage({ can, notify }) {
       notify('渠道已晋升为线索', 'success')
       setSelected(null)
       load()
+      loadStatistics()
     } catch (err) {
       notify(err.message || '渠道晋升线索失败', 'info')
     }
@@ -465,11 +495,9 @@ export function ChannelPage({ can, notify }) {
           企业微信同步
         </Button>
       )}
-      {canManage && (
-        <Button variant="secondary" icon={Link2} onClick={() => setMarketingFormEditing(emptyMarketingForm)}>
-          新建获客表单
-        </Button>
-      )}
+      <Button variant="secondary" icon={Link2} onClick={() => setMarketingFormOpen(true)}>
+        获客表单
+      </Button>
       {canManage && (
         <Button icon={Plus} onClick={() => setEditing(emptyForm)}>
           新增渠道
@@ -482,10 +510,6 @@ export function ChannelPage({ can, notify }) {
   const currentPage = page.pageNo || query.pageNo || 1
   const pageSize = page.pageSize || query.pageSize || 20
   const totalPages = Math.max(1, Math.ceil((page.total || 0) / pageSize))
-  const importedCount = records.filter((row) => (
-    row.channelType === 'AUDIO' || row.channelType === 'VIDEO' || row.channelType === 'DOCUMENT'
-  )).length
-  const promotedCount = records.filter((row) => row.leadId).length
 
   return (
     <div className="page channel-page">
@@ -497,21 +521,10 @@ export function ChannelPage({ can, notify }) {
       />
 
       <div className="channel-overview">
-        <ChannelStat icon={FileText} label="当前页渠道" value={records.length} />
-        <ChannelStat icon={CloudUpload} label="当前页导入材料" value={importedCount} />
-        <ChannelStat icon={CheckCircle2} label="当前页已晋升" value={promotedCount} />
+        <ChannelStat icon={FileText} label="渠道总用户数" value={statistics.totalUserCount} />
+        <ChannelStat icon={CloudUpload} label="今日新增用户数" value={statistics.todayNewUserCount} />
+        <ChannelStat icon={CheckCircle2} label="转化为线索用户数" value={statistics.convertedLeadUserCount} />
       </div>
-
-      <MarketingFormPanel
-        forms={marketingForms}
-        loading={marketingFormsLoading}
-        canManage={canManage}
-        onCreate={() => setMarketingFormEditing(emptyMarketingForm)}
-        onEdit={openMarketingForm}
-        onDelete={deleteMarketingForm}
-        onCopyLink={(row) => copyMarketingText(marketingFormUrl(row), '表单链接已复制')}
-        onCopySms={(row) => copyMarketingText(marketingSmsText(row), '短信文案已复制')}
-      />
 
       <ChannelFilter
         query={query}
@@ -561,6 +574,18 @@ export function ChannelPage({ can, notify }) {
         onClose={() => setMarketingFormEditing(null)}
         notify={notify}
         reload={refreshAll}
+      />
+      <MarketingFormManagerModal
+        open={marketingFormOpen}
+        forms={marketingForms}
+        loading={marketingFormsLoading}
+        canManage={canManage}
+        onClose={() => setMarketingFormOpen(false)}
+        onCreate={() => setMarketingFormEditing(emptyMarketingForm)}
+        onEdit={openMarketingForm}
+        onDelete={deleteMarketingForm}
+        onCopyLink={(row) => copyMarketingText(marketingFormUrl(row), '表单链接已复制')}
+        onCopySms={(row) => copyMarketingText(marketingSmsText(row), '短信文案已复制')}
       />
       <ChannelDetailModal
         open={Boolean(selected)}
@@ -631,6 +656,24 @@ function ChannelFilter({ query, setQuery, onSearch }) {
             <option value={item.value} key={item.value}>{item.label}</option>
           ))}
         </select>
+      </label>
+
+      <label>
+        <span>开始时间</span>
+        <DatePicker
+          value={query.createdFrom || ''}
+          placeholder="开始日期"
+          onChange={(value) => setQuery({ ...query, createdFrom: value })}
+        />
+      </label>
+
+      <label>
+        <span>结束时间</span>
+        <DatePicker
+          value={query.createdTo || ''}
+          placeholder="结束日期"
+          onChange={(value) => setQuery({ ...query, createdTo: value })}
+        />
       </label>
 
       <Button variant="secondary" icon={Search} onClick={onSearch}>
@@ -836,6 +879,40 @@ function ChannelTableRow({
         </div>
       </td>
     </tr>
+  )
+}
+
+function MarketingFormManagerModal({
+  open,
+  forms,
+  loading,
+  canManage,
+  onClose,
+  onCreate,
+  onEdit,
+  onDelete,
+  onCopyLink,
+  onCopySms,
+}) {
+  return (
+    <Modal
+      open={open}
+      title="获客表单"
+      size="xl"
+      onClose={onClose}
+      footer={<Button variant="secondary" onClick={onClose}>关闭</Button>}
+    >
+      <MarketingFormPanel
+        forms={forms}
+        loading={loading}
+        canManage={canManage}
+        onCreate={onCreate}
+        onEdit={onEdit}
+        onDelete={onDelete}
+        onCopyLink={onCopyLink}
+        onCopySms={onCopySms}
+      />
+    </Modal>
   )
 }
 

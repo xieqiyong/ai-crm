@@ -2,6 +2,7 @@ import { request } from '../httpClient'
 
 export const channelApi = {
   page: (payload) => request('/api/channel/page', { method: 'POST', body: JSON.stringify(payload || {}) }),
+  statistics: () => request('/api/channel/statistics', { method: 'POST' }),
   detail: (id) => request('/api/channel/detail', { method: 'POST', body: JSON.stringify({ id }) }),
   save: (payload) => request('/api/channel/save', { method: 'POST', body: JSON.stringify(payload) }),
   delete: (id) => request('/api/channel/delete', { method: 'POST', body: JSON.stringify({ id }) }),

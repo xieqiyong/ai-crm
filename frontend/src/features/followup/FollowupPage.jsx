@@ -44,6 +44,20 @@ function compactQuery(query) {
   }
 }
 
+function resolveTargetRoute(row) {
+  if (!row?.targetId) return ''
+  if (row.targetType === 'LEAD') {
+    return `leads/detail/${encodeURIComponent(row.targetId)}`
+  }
+  if (row.targetType === 'CUSTOMER') {
+    return `customers/detail/${encodeURIComponent(row.targetId)}`
+  }
+  if (row.targetType === 'OPPORTUNITY') {
+    return 'opportunities'
+  }
+  return ''
+}
+
 export function FollowupPage({ can, notify, navigate }) {
   const canWrite = can('crm:followup:manage') || can('crm:followup:create')
   const canView = can('crm:followup:view')
@@ -59,7 +73,7 @@ export function FollowupPage({ can, notify, navigate }) {
     if (!canView) return
     setLoading(true)
     try {
-      const data = await api.followup.page(compactQuery(nextQuery))
+      const data = await api.followup.objectPage(compactQuery(nextQuery))
       setPage(data || emptyPage)
       setQuery(nextQuery)
     } catch (error) {
@@ -130,7 +144,7 @@ export function FollowupPage({ can, notify, navigate }) {
 
   const save = async (form) => {
     if (!form.targetId) {
-      notify('关联对象ID不能为空', 'info')
+      notify('请选择关联对象', 'info')
       return
     }
     if (!hasRichContent(form.content)) {
@@ -159,6 +173,15 @@ export function FollowupPage({ can, notify, navigate }) {
     } catch (error) {
       notify(error.message || '音视频上传失败', 'info')
     }
+  }
+
+  const openDetail = (row) => {
+    const targetRoute = resolveTargetRoute(row)
+    if (!targetRoute) {
+      notify('当前跟进对象没有可跳转的详情页', 'info')
+      return
+    }
+    navigate(targetRoute)
   }
 
   const remove = async (row) => {
@@ -191,7 +214,7 @@ export function FollowupPage({ can, notify, navigate }) {
     <div className="page followup-page compact-list-page">
       <PageHeader
         title="跟进记录"
-        description={`记录客户、线索、商机的真实销售动作，当前 ${page.total || 0} 条`}
+        description={`按客户、线索、商机对象汇总真实销售动作，当前 ${page.total || 0} 个跟进对象`}
         actions={(
           <>
             <Button variant="secondary" icon={RefreshCw} onClick={() => load(query)}>刷新</Button>
@@ -231,12 +254,14 @@ export function FollowupPage({ can, notify, navigate }) {
 
       <Card className="table-card">
         <div className="data-table-wrap">
-          <table className="data-table customer-list-table">
+          <table className="data-table customer-list-table followup-list-table">
             <thead>
               <tr>
                 <th>跟进对象</th>
+                <th>对象类型</th>
+                <th>跟进次数</th>
                 <th>方式</th>
-                <th>跟进内容</th>
+                <th>最近跟进内容</th>
                 <th>结果</th>
                 <th>下次计划</th>
                 <th>负责人</th>
@@ -246,14 +271,15 @@ export function FollowupPage({ can, notify, navigate }) {
             </thead>
             <tbody>
               {records.map((row) => (
-                <tr key={row.id}>
+                <tr className="followup-record-row" key={row.id} onClick={() => openDetail(row)}>
                   <td>
-                    <strong>{row.targetName || row.targetId}</strong>
-                    <small>{targetTypeText[row.targetType] || row.targetType} · {row.targetId}</small>
+                    <strong>{row.targetName || '-'}</strong>
                   </td>
+                  <td><Badge>{targetTypeText[row.targetType] || row.targetType || '-'}</Badge></td>
+                  <td><Badge tone="success">{row.followupCount || 0}</Badge></td>
                   <td><Badge tone="info">{followupTypeText[row.followupType] || row.followupType}</Badge></td>
                   <td>
-                    <div className="followup-table-content">
+                    <div className="followup-table-content followup-table-content-compact">
                       <RichTextViewer value={row.content} empty="-" />
                       <FollowupMediaTranscriptions items={row.mediaTranscriptions} compact />
                     </div>
@@ -266,7 +292,7 @@ export function FollowupPage({ can, notify, navigate }) {
                   <td>{ownerName(row)}</td>
                   <td>{formatDateTime(row.followupAt)}</td>
                   <td>
-                    <div className="table-action-row">
+                    <div className="table-action-row" onClick={(event) => event.stopPropagation()}>
                       {canWrite && (
                         <button className="icon-button" onClick={() => setEditing(toFollowupForm(row))}>
                           <Edit2 size={17} />
@@ -314,7 +340,7 @@ export function FollowupPage({ can, notify, navigate }) {
           )}
         </div>
         <div className="table-footer">
-          <span>共 {page.total || 0} 条，当前第 {currentPage} / {totalPages} 页</span>
+          <span>共 {page.total || 0} 个跟进对象，当前第 {currentPage} / {totalPages} 页</span>
           <div className="pagination">
             <button disabled={currentPage <= 1} onClick={() => load({ ...query, pageNo: currentPage - 1 })}>‹</button>
             <button className="active">{currentPage}</button>

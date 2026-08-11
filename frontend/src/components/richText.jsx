@@ -42,7 +42,14 @@ function resolveAssetUrl(url) {
   return backendBase ? `${backendBase}${url}` : url
 }
 
-export function RichTextEditor({ value, onChange, placeholder, notify }) {
+export function RichTextEditor({
+  value,
+  onChange,
+  placeholder,
+  notify,
+  showHeading = true,
+  stableTypography = false,
+}) {
   const editorRef = useRef(null)
   const fileRef = useRef(null)
   const [focused, setFocused] = useState(false)
@@ -113,11 +120,13 @@ export function RichTextEditor({ value, onChange, placeholder, notify }) {
   }
 
   return (
-    <div className="rich-editor">
+    <div className={`rich-editor ${stableTypography ? 'rich-editor-stable' : ''}`}>
       <div className="rich-editor-toolbar">
-        <button type="button" onClick={() => runCommand('formatBlock', 'h3')} title="标题">
-          <Heading2 size={15} />
-        </button>
+        {showHeading && (
+          <button type="button" onClick={() => runCommand('formatBlock', 'h3')} title="标题">
+            <Heading2 size={15} />
+          </button>
+        )}
         <button type="button" onClick={() => runCommand('bold')} title="加粗">
           <Bold size={15} />
         </button>

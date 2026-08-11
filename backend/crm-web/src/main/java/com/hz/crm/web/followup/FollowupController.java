@@ -4,12 +4,15 @@ import com.hz.crm.application.followup.FollowupApplicationService;
 import com.hz.crm.application.followup.dto.FollowupQuery;
 import com.hz.crm.application.followup.dto.FollowupResponse;
 import com.hz.crm.application.followup.dto.FollowupSaveRequest;
+import com.hz.crm.application.followup.dto.FollowupTargetOptionQuery;
+import com.hz.crm.application.followup.dto.FollowupTargetOptionResponse;
 import com.hz.crm.auth.security.JwtPrincipal;
 import com.hz.crm.common.api.ApiResult;
 import com.hz.crm.common.api.PageData;
 import com.hz.crm.common.audit.AuditOperation;
 import com.hz.crm.web.support.IdRequest;
 import jakarta.validation.Valid;
+import java.util.List;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.PostMapping;
@@ -37,6 +40,23 @@ public class FollowupController {
     public ApiResult<FollowupResponse> detail(@RequestBody IdRequest request, JwtPrincipal principal) {
         return ApiResult.ok(followupApplicationService.detail(
                 principal.getTenantId(), principal.getUserId(), principal.getDataScope(), request.getId()));
+    }
+
+    @PostMapping("/object-page")
+    @PreAuthorize("hasAuthority('*') or hasAuthority('crm:followup:view')")
+    public ApiResult<PageData<FollowupResponse>> objectPage(
+            @RequestBody(required = false) FollowupQuery query, JwtPrincipal principal) {
+        return ApiResult.ok(followupApplicationService.objectPage(
+                principal.getTenantId(), principal.getUserId(), principal.getDataScope(), query));
+    }
+
+    @PostMapping("/target-options")
+    @PreAuthorize("hasAuthority('*') or hasAuthority('crm:followup:view') or hasAuthority('crm:followup:create') "
+            + "or hasAuthority('crm:followup:manage')")
+    public ApiResult<List<FollowupTargetOptionResponse>> targetOptions(
+            @RequestBody(required = false) FollowupTargetOptionQuery query, JwtPrincipal principal) {
+        return ApiResult.ok(followupApplicationService.targetOptions(
+                principal.getTenantId(), principal.getUserId(), principal.getDataScope(), query));
     }
 
     @PostMapping("/save")

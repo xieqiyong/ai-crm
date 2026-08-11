@@ -191,6 +191,19 @@ export function toPayload(form) {
   }
 }
 
+export function validateLeadForm(form) {
+  if (!String(form?.companyName || '').trim()) {
+    return '公司名称不能为空'
+  }
+  if (!String(form?.name || '').trim()) {
+    return '联系人不能为空'
+  }
+  if (!String(form?.phone || '').trim()) {
+    return '联系电话不能为空'
+  }
+  return ''
+}
+
 export function toConvertForm(row) {
   return {
     leadId: row.id,
@@ -429,6 +442,11 @@ export function LeadPage({ can, notify, navigate, currentUser }) {
   }
 
   const saveLead = async (form) => {
+    const validationMessage = validateLeadForm(form)
+    if (validationMessage) {
+      notify(validationMessage, 'info')
+      return
+    }
     try {
       await api.lead.save(toPayload(form))
       notify('线索已保存', 'success')
@@ -1139,23 +1157,10 @@ function AiListCard({ title, items = [], empty, active = false, warning = false 
 }
 
 function CustomerProfileCard({ profile }) {
-  const sourceUrls = (profile?.sourceUrls || []).filter(Boolean)
+  const sourceUrls = (profile?.sourceUrls || []).filter(Boolean).slice(0, 3)
   const hasProfile = profile && (
-    profile.available !== undefined
-    || profile.companyName
-    || profile.creditCode
-    || profile.legalRepresentative
-    || profile.keyPerson
-    || profile.companyScale
+    profile.companyScale
     || profile.industry
-    || profile.phone
-    || profile.email
-    || profile.website
-    || profile.address
-    || profile.registeredCapital
-    || profile.establishDate
-    || profile.description
-    || profile.sourceSummary
     || sourceUrls.length
   )
   if (!hasProfile) return null
@@ -1163,30 +1168,12 @@ function CustomerProfileCard({ profile }) {
     <div className="lead-ai-profile">
       <div className="lead-ai-profile-head">
         <span>AI搜索客户档案</span>
-        <Badge tone={profile.available ? 'success' : 'warning'}>
-          {profile.available ? '已检索公开信息' : '未检索到可靠公开信息'}
-        </Badge>
+        <Badge tone="info">公开信息</Badge>
       </div>
       <div>
-        <DetailItem label="公司名称" value={profile.companyName} />
-        <DetailItem label="统一社会信用代码" value={profile.creditCode} />
-        <DetailItem label="公司负责人" value={profile.legalRepresentative || profile.keyPerson} />
         <DetailItem label="公司规模" value={profile.companyScale} />
         <DetailItem label="公司行业" value={profile.industry} />
-        <DetailItem label="电话" value={profile.phone} />
-        <DetailItem label="邮箱" value={profile.email} />
-        <DetailItem label="官网" value={profile.website} />
-        <DetailItem label="地址" value={profile.address} />
-        <DetailItem label="注册资本" value={profile.registeredCapital} />
-        <DetailItem label="注册时间" value={profile.establishDate} />
-        <DetailItem label="简介" value={profile.description} />
       </div>
-      {profile.sourceSummary && (
-        <div className="lead-ai-profile-summary">
-          <span>来源摘要</span>
-          <p>{profile.sourceSummary}</p>
-        </div>
-      )}
       {sourceUrls.length > 0 && (
         <div className="lead-ai-profile-sources">
           <span>来源链接</span>
@@ -1328,16 +1315,19 @@ export function LeadFormModal({ open, form, ownerOptions, onChange, onClose, onS
       )}
     >
       <div className="customer-form-grid">
-        <Field label="名称">
+        <Field label="公司名称" required>
+          <input value={form.companyName || ''} onChange={(event) => update({ companyName: event.target.value })} />
+        </Field>
+        <Field label="联系人" required>
           <input value={form.name || ''} onChange={(event) => update({ name: event.target.value })} />
+        </Field>
+        <Field label="联系电话" required>
+          <input value={form.phone || ''} onChange={(event) => update({ phone: event.target.value })} />
         </Field>
         <Field label="状态">
           <select value={form.status || recommendedLeadStatus} onChange={(event) => update({ status: event.target.value })}>
             {leadStatusOptions.map((item) => <option value={item.value} key={item.value}>{item.label}</option>)}
           </select>
-        </Field>
-        <Field label="公司名称">
-          <input value={form.companyName || ''} onChange={(event) => update({ companyName: event.target.value })} />
         </Field>
         <Field label="负责人" hint="不选则由后台设置为当前登录用户">
           <select value={form.ownerId || ''} onChange={(event) => update({ ownerId: event.target.value })}>
@@ -1345,9 +1335,6 @@ export function LeadFormModal({ open, form, ownerOptions, onChange, onClose, onS
             {form.ownerId && !hasSelectedOwner && <option value={form.ownerId}>当前负责人</option>}
             {ownerOptions.map((item) => <option value={item.id} key={item.id}>{ownerOptionLabel(item)}</option>)}
           </select>
-        </Field>
-        <Field label="联系电话">
-          <input value={form.phone || ''} onChange={(event) => update({ phone: event.target.value })} />
         </Field>
         <Field label="联系邮箱">
           <input value={form.email || ''} onChange={(event) => update({ email: event.target.value })} />

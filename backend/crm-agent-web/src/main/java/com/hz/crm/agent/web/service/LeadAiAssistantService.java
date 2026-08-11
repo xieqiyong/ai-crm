@@ -155,7 +155,7 @@ public class LeadAiAssistantService {
         StringBuilder builder = new StringBuilder();
         builder.append("请分析以下线索，按销售能直接行动的格式给出判断。");
         builder.append("\n如果线索中存在公司名称，可先调用customer_web_search搜索公开客户信息。");
-        builder.append("\n搜索结果只能作为公开资料补充，不能编造搜索结果中不存在的负责人、规模、行业、电话等信息。");
+        builder.append("\n搜索结果只能作为公开资料补充，不能编造搜索结果中不存在的公司规模和行业。");
         builder.append("\n如果需要判断产品匹配、解决方案、客户案例或销售话术，必须先调用knowledge_search检索公司知识库。");
         builder.append("\nknowledge_search无命中时，不能编造公司产品能力、案例或话术。");
         builder.append("\n必须调用函数lead_analysis_result，参数必须是合法JSON。");
@@ -174,11 +174,11 @@ public class LeadAiAssistantService {
         builder.append("禁止输出函数调用以外的任何解释、Markdown、代码块或自然语言前后缀。");
         builder.append("JSON必须合法，字符串中的引号必须正确转义。");
         builder.append("JSON字段值如需引用公司、人名、产品名，优先使用中文引号，避免破坏JSON格式。");
-        builder.append("如调用customer_web_search，必须把可确认的公开信息整理到customerProfile。");
+        builder.append("如调用customer_web_search，必须把可确认的公司规模、公司行业和来源链接整理到customerProfile。");
         builder.append("优先使用customer_web_search返回的profileDraft填充customerProfile。");
         builder.append("涉及公司产品、方案、案例、FAQ、销售话术时，必须先调用knowledge_search。");
         builder.append("knowledge_search返回的hits只能作为内部知识引用，未命中就说明知识库暂无资料。");
-        builder.append("customerProfile无法确认的字段使用空字符串，sourceUrls只填写搜索结果中的真实链接。");
+        builder.append("customerProfile只需要companyScale、industry、sourceUrls；无法确认的字段使用空字符串，sourceUrls只填写搜索结果中的真实链接，最多3条。");
         builder.append("字段必须包含conclusionTitle、salesConclusion、stage、priority、recommendConvert、score、confidence、");
         builder.append("keyFindings、riskWarnings、nextActions、reason、nextAction、convertDraft、customerProfile。");
         if (!blank(instruction)) {
@@ -484,44 +484,16 @@ public class LeadAiAssistantService {
         if (jsonObject == null) {
             return profile;
         }
-        profile.setAvailable(jsonObject.getBoolean("available"));
-        profile.setCompanyName(resolveText(jsonObject.getString("companyName"), profile.getCompanyName()));
-        profile.setCreditCode(trimToEmpty(jsonObject.getString("creditCode")));
-        profile.setLegalRepresentative(trimToEmpty(jsonObject.getString("legalRepresentative")));
-        profile.setKeyPerson(trimToEmpty(jsonObject.getString("keyPerson")));
         profile.setCompanyScale(trimToEmpty(jsonObject.getString("companyScale")));
         profile.setIndustry(trimToEmpty(jsonObject.getString("industry")));
-        profile.setPhone(trimToEmpty(jsonObject.getString("phone")));
-        profile.setEmail(trimToEmpty(jsonObject.getString("email")));
-        profile.setWebsite(trimToEmpty(jsonObject.getString("website")));
-        profile.setAddress(trimToEmpty(jsonObject.getString("address")));
-        profile.setRegisteredCapital(trimToEmpty(jsonObject.getString("registeredCapital")));
-        profile.setEstablishDate(trimToEmpty(jsonObject.getString("establishDate")));
-        profile.setDescription(trimToEmpty(jsonObject.getString("description")));
-        profile.setSourceSummary(trimToEmpty(jsonObject.getString("sourceSummary")));
-        profile.setSearchedAt(trimToEmpty(jsonObject.getString("searchedAt")));
-        profile.setSourceUrls(resolveStringList(jsonObject.getJSONArray("sourceUrls"), 6, 300));
+        profile.setSourceUrls(resolveStringList(jsonObject.getJSONArray("sourceUrls"), 3, 300));
         return profile;
     }
 
     private LeadAiCustomerProfile defaultCustomerProfile(LeadResponse lead) {
         LeadAiCustomerProfile profile = new LeadAiCustomerProfile();
-        profile.setAvailable(false);
-        profile.setCompanyName(resolveText(lead.getCompanyName(), lead.getName()));
-        profile.setCreditCode("");
-        profile.setLegalRepresentative("");
-        profile.setKeyPerson("");
         profile.setCompanyScale("");
         profile.setIndustry("");
-        profile.setPhone("");
-        profile.setEmail("");
-        profile.setWebsite("");
-        profile.setAddress("");
-        profile.setRegisteredCapital("");
-        profile.setEstablishDate("");
-        profile.setDescription("");
-        profile.setSourceSummary("");
-        profile.setSearchedAt("");
         profile.setSourceUrls(new ArrayList<String>());
         return profile;
     }
@@ -564,29 +536,34 @@ public class LeadAiAssistantService {
         if (profile == null) {
             return;
         }
+        List<String> sourceUrls = firstItems(profile.getSourceUrls(), 3);
+        if (blank(profile.getCompanyScale()) && blank(profile.getIndustry()) && sourceUrls.isEmpty()) {
+            return;
+        }
         appendLine(builder, "");
         appendLine(builder, "#### AI搜索客户档案");
-        appendLine(builder, "- 公司名称：" + resolveText(profile.getCompanyName(), "未确认"));
-        appendLine(builder, "- 统一社会信用代码：" + resolveText(profile.getCreditCode(), "未确认"));
-        appendLine(builder, "- 公司负责人：" + resolveText(
-                profile.getLegalRepresentative(),
-                resolveText(profile.getKeyPerson(), "未确认")));
         appendLine(builder, "- 公司规模：" + resolveText(profile.getCompanyScale(), "未确认"));
         appendLine(builder, "- 公司行业：" + resolveText(profile.getIndustry(), "未确认"));
-        appendLine(builder, "- 电话：" + resolveText(profile.getPhone(), "未确认"));
-        appendLine(builder, "- 邮箱：" + resolveText(profile.getEmail(), "未确认"));
-        appendLine(builder, "- 官网：" + resolveText(profile.getWebsite(), "未确认"));
-        appendLine(builder, "- 地址：" + resolveText(profile.getAddress(), "未确认"));
-        appendLine(builder, "- 注册资本：" + resolveText(profile.getRegisteredCapital(), "未确认"));
-        appendLine(builder, "- 注册时间：" + resolveText(profile.getEstablishDate(), "未确认"));
-        appendLine(builder, "- 简介：" + resolveText(profile.getDescription(), "未确认"));
-        if (!blank(profile.getSourceSummary())) {
-            appendLine(builder, "- 来源摘要：" + profile.getSourceSummary());
-        }
-        if (profile.getSourceUrls() != null && !profile.getSourceUrls().isEmpty()) {
+        if (!sourceUrls.isEmpty()) {
             appendLine(builder, "- 来源链接：");
-            appendList(builder, profile.getSourceUrls(), "");
+            appendList(builder, sourceUrls, "");
         }
+    }
+
+    private List<String> firstItems(List<String> values, int limit) {
+        List<String> result = new ArrayList<String>();
+        if (values == null || limit <= 0) {
+            return result;
+        }
+        for (String value : values) {
+            if (!blank(value)) {
+                result.add(value);
+            }
+            if (result.size() >= limit) {
+                break;
+            }
+        }
+        return result;
     }
 
     private void appendList(StringBuilder builder, List<String> values, String emptyText) {

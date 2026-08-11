@@ -7,6 +7,7 @@ import com.hz.crm.application.channel.dto.ChannelPromoteRequest;
 import com.hz.crm.application.channel.dto.ChannelQuery;
 import com.hz.crm.application.channel.dto.ChannelResponse;
 import com.hz.crm.application.channel.dto.ChannelSaveRequest;
+import com.hz.crm.application.channel.dto.ChannelStatisticsResponse;
 import com.hz.crm.agent.web.service.ChannelAiAnalysisService;
 import com.hz.crm.auth.security.JwtPrincipal;
 import com.hz.crm.common.api.ApiResult;
@@ -60,6 +61,13 @@ public class ChannelController {
             @RequestBody(required = false) ChannelQuery query, JwtPrincipal principal) {
         return ApiResult.ok(channelApplicationService.page(
                 principal.getTenantId(), principal.getUserId(), principal.getDataScope(), query));
+    }
+
+    @PostMapping("/statistics")
+    @PreAuthorize("hasAuthority('*') or hasAuthority('crm:channel:view')")
+    public ApiResult<ChannelStatisticsResponse> statistics(JwtPrincipal principal) {
+        return ApiResult.ok(channelApplicationService.statistics(
+                principal.getTenantId(), principal.getUserId(), principal.getDataScope()));
     }
 
     @PostMapping("/detail")

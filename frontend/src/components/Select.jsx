@@ -10,6 +10,10 @@ export function Select({
   searchable = false,
   disabled = false,
   className = '',
+  loading = false,
+  loadingText = '正在加载',
+  searchDelay = 260,
+  onSearch,
   onChange,
 }) {
   const rootRef = useRef(null)
@@ -23,12 +27,13 @@ export function Select({
   )
   const selected = normalizedOptions.find((item) => item.value === safeValue)
   const visibleOptions = useMemo(() => {
+    if (onSearch) return normalizedOptions
     const searchValue = keyword.trim().toLowerCase()
     if (!searchValue) return normalizedOptions
     return normalizedOptions.filter((item) => (
       `${item.label || ''} ${item.description || ''}`.toLowerCase().includes(searchValue)
     ))
-  }, [keyword, normalizedOptions])
+  }, [keyword, normalizedOptions, onSearch])
 
   useEffect(() => {
     if (!open) return undefined
@@ -59,6 +64,14 @@ export function Select({
       window.setTimeout(() => searchRef.current?.focus(), 0)
     }
   }, [open, searchable])
+
+  useEffect(() => {
+    if (!open || !onSearch) return undefined
+    const timer = window.setTimeout(() => {
+      onSearch(keyword)
+    }, searchDelay)
+    return () => window.clearTimeout(timer)
+  }, [open, keyword, onSearch, searchDelay])
 
   const choose = (option) => {
     if (option.disabled) return
@@ -98,7 +111,8 @@ export function Select({
             </div>
           )}
           <div className="app-select-options" role="listbox">
-            {visibleOptions.map((option) => (
+            {loading && <div className="app-select-empty">{loadingText}</div>}
+            {!loading && visibleOptions.map((option) => (
               <button
                 type="button"
                 role="option"
@@ -115,7 +129,7 @@ export function Select({
                 {option.value === safeValue && <Check size={17} />}
               </button>
             ))}
-            {!visibleOptions.length && <div className="app-select-empty">{emptyText}</div>}
+            {!loading && !visibleOptions.length && <div className="app-select-empty">{emptyText}</div>}
           </div>
         </div>
       )}

@@ -1,9 +1,12 @@
 package com.hz.crm.application.followup;
 
 import com.baomidou.mybatisplus.core.conditions.query.QueryWrapper;
+import com.baomidou.mybatisplus.core.toolkit.Wrappers;
 import com.hz.crm.application.followup.dto.FollowupQuery;
 import com.hz.crm.application.followup.dto.FollowupResponse;
 import com.hz.crm.application.followup.dto.FollowupSaveRequest;
+import com.hz.crm.application.followup.dto.FollowupTargetOptionQuery;
+import com.hz.crm.application.followup.dto.FollowupTargetOptionResponse;
 import com.hz.crm.application.media.MediaTranscriptionApplicationService;
 import com.hz.crm.application.media.dto.MediaTranscriptionResponse;
 import com.hz.crm.application.task.SalesTaskApplicationService;
@@ -11,14 +14,17 @@ import com.hz.crm.common.api.PageData;
 import com.hz.crm.common.exception.BusinessException;
 import com.hz.crm.common.id.SnowflakeIdGenerator;
 import com.hz.crm.common.time.DateTimes;
+import com.hz.crm.common.user.UserDataScopeValidator;
 import com.hz.crm.common.user.UserNameResolver;
 import com.hz.crm.domain.customer.CustomerEntity;
 import com.hz.crm.domain.customer.mapper.CustomerMapper;
 import com.hz.crm.domain.followup.FollowupRecordEntity;
+import com.hz.crm.domain.followup.FollowupObjectProjection;
 import com.hz.crm.domain.followup.FollowupTargetType;
 import com.hz.crm.domain.followup.FollowupType;
 import com.hz.crm.domain.followup.mapper.FollowupRecordMapper;
 import com.hz.crm.domain.lead.LeadEntity;
+import com.hz.crm.domain.lead.LeadStatus;
 import com.hz.crm.domain.lead.mapper.LeadMapper;
 import com.hz.crm.domain.opportunity.OpportunityEntity;
 import com.hz.crm.domain.opportunity.mapper.OpportunityMapper;
@@ -53,6 +59,9 @@ public class FollowupApplicationService {
 
     @Autowired(required = false)
     private UserNameResolver userNameResolver;
+
+    @Autowired(required = false)
+    private UserDataScopeValidator userDataScopeValidator;
 
     @Autowired
     private SalesTaskApplicationService salesTaskApplicationService;
@@ -91,6 +100,62 @@ public class FollowupApplicationService {
         fillOwnerName(tenantId, response);
         fillMediaTranscriptions(tenantId, response);
         return response;
+    }
+
+    @Transactional(readOnly = true)
+    public PageData<FollowupResponse> objectPage(Long tenantId, Long userId, String dataScope, FollowupQuery query) {
+        FollowupQuery safeQuery = query == null ? new FollowupQuery() : query;
+        int pageNo = safeQuery.safePageNo();
+        int pageSize = safeQuery.safePageSize();
+        long offset = (long) (pageNo - 1) * pageSize;
+        String keyword = buildLikeKeyword(safeQuery.getKeyword());
+        String targetType = safeQuery.getTargetType() == null ? null : safeQuery.getTargetType().name();
+        String followupType = safeQuery.getFollowupType() == null ? null : safeQuery.getFollowupType().name();
+        boolean selfScope = "SELF".equals(dataScope);
+        Long total = followupRecordMapper.countFollowupObjects(
+                tenantId,
+                userId,
+                selfScope,
+                targetType,
+                safeQuery.getTargetId(),
+                followupType,
+                keyword);
+        List<FollowupObjectProjection> projections = followupRecordMapper.selectFollowupObjectPage(
+                tenantId,
+                userId,
+                selfScope,
+                targetType,
+                safeQuery.getTargetId(),
+                followupType,
+                keyword,
+                pageSize,
+                offset);
+        List<FollowupResponse> records = new ArrayList<FollowupResponse>();
+        for (FollowupObjectProjection projection : projections) {
+            records.add(toObjectResponse(projection));
+        }
+        fillOwnerNames(tenantId, records);
+        fillMediaTranscriptions(tenantId, records);
+        return PageData.of(total == null ? 0L : total.longValue(), pageNo, pageSize, records);
+    }
+
+    @Transactional(readOnly = true)
+    public List<FollowupTargetOptionResponse> targetOptions(
+            Long tenantId, Long userId, String dataScope, FollowupTargetOptionQuery query) {
+        FollowupTargetOptionQuery safeQuery = query == null ? new FollowupTargetOptionQuery() : query;
+        if (safeQuery.getTargetType() == null) {
+            return new ArrayList<FollowupTargetOptionResponse>();
+        }
+        if (FollowupTargetType.LEAD == safeQuery.getTargetType()) {
+            return queryLeadTargetOptions(tenantId, userId, dataScope, safeQuery);
+        }
+        if (FollowupTargetType.CUSTOMER == safeQuery.getTargetType()) {
+            return queryCustomerTargetOptions(tenantId, userId, dataScope, safeQuery);
+        }
+        if (FollowupTargetType.OPPORTUNITY == safeQuery.getTargetType()) {
+            return queryOpportunityTargetOptions(tenantId, userId, dataScope, safeQuery);
+        }
+        return new ArrayList<FollowupTargetOptionResponse>();
     }
 
     @Transactional
@@ -134,6 +199,7 @@ public class FollowupApplicationService {
         entity.setOwnerId(targetOwnerId);
         if (newRecord) {
             followupRecordMapper.insert(entity);
+            updateLeadStatusAfterFollowup(tenantId, entity.getTargetType(), entity.getTargetId(), now);
         } else {
             followupRecordMapper.updateById(entity);
         }
@@ -142,6 +208,19 @@ public class FollowupApplicationService {
         fillOwnerName(tenantId, response);
         fillMediaTranscriptions(tenantId, response);
         return response;
+    }
+
+    private void updateLeadStatusAfterFollowup(Long tenantId, FollowupTargetType targetType, Long targetId, LocalDateTime now) {
+        if (FollowupTargetType.LEAD != targetType || targetId == null) {
+            return;
+        }
+        leadMapper.update(null, Wrappers.<LeadEntity>lambdaUpdate()
+                .eq(LeadEntity::getTenantId, tenantId)
+                .eq(LeadEntity::getId, targetId)
+                .eq(LeadEntity::isDeleted, false)
+                .eq(LeadEntity::getStatus, LeadStatus.NEW)
+                .set(LeadEntity::getStatus, LeadStatus.FOLLOWING)
+                .set(LeadEntity::getUpdatedAt, now));
     }
 
     @Transactional
@@ -226,6 +305,123 @@ public class FollowupApplicationService {
                 && !relatedLeadIds.isEmpty();
     }
 
+    private List<FollowupTargetOptionResponse> queryLeadTargetOptions(
+            Long tenantId, Long userId, String dataScope, FollowupTargetOptionQuery query) {
+        QueryWrapper<LeadEntity> wrapper = new QueryWrapper<LeadEntity>();
+        wrapper.eq("tenant_id", tenantId);
+        wrapper.eq("deleted", false);
+        appendOwnerScopeToTargetWrapper(wrapper, tenantId, userId, dataScope);
+        String keyword = trimToNull(query.getKeyword());
+        if (keyword != null) {
+            wrapper.and(value -> value
+                    .like("name", keyword)
+                    .or()
+                    .like("company_name", keyword)
+                    .or()
+                    .like("phone", keyword));
+        }
+        wrapper.orderByDesc("created_at").last("limit " + safeOptionLimit(query.getLimit()));
+        List<LeadEntity> entities = leadMapper.selectList(wrapper);
+        List<FollowupTargetOptionResponse> options = new ArrayList<FollowupTargetOptionResponse>();
+        for (LeadEntity entity : entities) {
+            FollowupTargetOptionResponse option = new FollowupTargetOptionResponse();
+            option.setId(entity.getId());
+            option.setTargetType(FollowupTargetType.LEAD);
+            option.setName(resolveText(entity.getCompanyName(), entity.getName()));
+            option.setDescription(resolveDescription("线索", entity.getName(), entity.getPhone()));
+            option.setOwnerId(entity.getOwnerId());
+            options.add(option);
+        }
+        fillTargetOwnerNames(tenantId, options);
+        return options;
+    }
+
+    private List<FollowupTargetOptionResponse> queryCustomerTargetOptions(
+            Long tenantId, Long userId, String dataScope, FollowupTargetOptionQuery query) {
+        QueryWrapper<CustomerEntity> wrapper = new QueryWrapper<CustomerEntity>();
+        wrapper.eq("tenant_id", tenantId);
+        wrapper.eq("deleted", false);
+        appendOwnerScopeToTargetWrapper(wrapper, tenantId, userId, dataScope);
+        String keyword = trimToNull(query.getKeyword());
+        if (keyword != null) {
+            wrapper.and(value -> value
+                    .like("name", keyword)
+                    .or()
+                    .like("contact_name", keyword)
+                    .or()
+                    .like("contact_phone", keyword));
+        }
+        wrapper.orderByDesc("created_at").last("limit " + safeOptionLimit(query.getLimit()));
+        List<CustomerEntity> entities = customerMapper.selectList(wrapper);
+        List<FollowupTargetOptionResponse> options = new ArrayList<FollowupTargetOptionResponse>();
+        for (CustomerEntity entity : entities) {
+            FollowupTargetOptionResponse option = new FollowupTargetOptionResponse();
+            option.setId(entity.getId());
+            option.setTargetType(FollowupTargetType.CUSTOMER);
+            option.setName(entity.getName());
+            option.setDescription(resolveDescription("客户", entity.getContactName(), entity.getContactPhone()));
+            option.setOwnerId(entity.getOwnerId());
+            options.add(option);
+        }
+        fillTargetOwnerNames(tenantId, options);
+        return options;
+    }
+
+    private List<FollowupTargetOptionResponse> queryOpportunityTargetOptions(
+            Long tenantId, Long userId, String dataScope, FollowupTargetOptionQuery query) {
+        QueryWrapper<OpportunityEntity> wrapper = new QueryWrapper<OpportunityEntity>();
+        wrapper.eq("tenant_id", tenantId);
+        wrapper.eq("deleted", false);
+        appendOwnerScopeToTargetWrapper(wrapper, tenantId, userId, dataScope);
+        String keyword = trimToNull(query.getKeyword());
+        if (keyword != null) {
+            wrapper.and(value -> value
+                    .like("name", keyword)
+                    .or()
+                    .like("remark", keyword));
+        }
+        wrapper.orderByDesc("created_at").last("limit " + safeOptionLimit(query.getLimit()));
+        List<OpportunityEntity> entities = opportunityMapper.selectList(wrapper);
+        List<FollowupTargetOptionResponse> options = new ArrayList<FollowupTargetOptionResponse>();
+        for (OpportunityEntity entity : entities) {
+            FollowupTargetOptionResponse option = new FollowupTargetOptionResponse();
+            option.setId(entity.getId());
+            option.setTargetType(FollowupTargetType.OPPORTUNITY);
+            option.setName(entity.getName());
+            option.setDescription(resolveDescription("商机", entity.getStage() == null ? null : entity.getStage().name(), null));
+            option.setOwnerId(entity.getOwnerId());
+            options.add(option);
+        }
+        fillTargetOwnerNames(tenantId, options);
+        return options;
+    }
+
+    private <T> void appendOwnerScopeToTargetWrapper(
+            QueryWrapper<T> wrapper, Long tenantId, Long userId, String dataScope) {
+        if (userDataScopeValidator == null) {
+            if ("SELF".equals(dataScope)) {
+                wrapper.eq("owner_id", userId);
+            }
+            return;
+        }
+        if ("ALL".equals(dataScope)) {
+            return;
+        }
+        List<Long> userIds = userDataScopeValidator.listAccessibleUserIds(tenantId, userId, dataScope);
+        if (userIds == null || userIds.isEmpty()) {
+            wrapper.eq("owner_id", -1L);
+            return;
+        }
+        wrapper.in("owner_id", userIds);
+    }
+
+    private int safeOptionLimit(Integer limit) {
+        if (limit == null || limit.intValue() < 1) {
+            return 20;
+        }
+        return Math.min(limit.intValue(), 50);
+    }
+
     private FollowupRecordEntity findOne(Long tenantId, Long id) {
         if (id == null) {
             throw new BusinessException("FOLLOWUP_004", "跟进记录编号不能为空");
@@ -287,11 +483,33 @@ public class FollowupApplicationService {
         return trimToNull(second);
     }
 
+    private String resolveDescription(String type, String first, String second) {
+        List<String> parts = new ArrayList<String>();
+        if (StringUtils.hasText(type)) {
+            parts.add(type.trim());
+        }
+        if (StringUtils.hasText(first)) {
+            parts.add(first.trim());
+        }
+        if (StringUtils.hasText(second)) {
+            parts.add(second.trim());
+        }
+        return String.join(" ｜ ", parts);
+    }
+
     private String trimToNull(String value) {
         if (!StringUtils.hasText(value)) {
             return null;
         }
         return value.trim();
+    }
+
+    private String buildLikeKeyword(String value) {
+        String text = trimToNull(value);
+        if (text == null) {
+            return null;
+        }
+        return "%" + text.toLowerCase() + "%";
     }
 
     private String sanitizeRichText(String value) {
@@ -340,6 +558,26 @@ public class FollowupApplicationService {
         return response;
     }
 
+    private FollowupResponse toObjectResponse(FollowupObjectProjection projection) {
+        FollowupResponse response = new FollowupResponse();
+        response.setId(projection.getId());
+        response.setTenantId(projection.getTenantId());
+        response.setTargetType(projection.getTargetType());
+        response.setTargetId(projection.getTargetId());
+        response.setTargetName(projection.getTargetName());
+        response.setFollowupType(projection.getFollowupType());
+        response.setFollowupAt(projection.getFollowupAt());
+        response.setContent(projection.getContent());
+        response.setResult(projection.getResult());
+        response.setNextPlan(projection.getNextPlan());
+        response.setNextFollowTime(projection.getNextFollowTime());
+        response.setOwnerId(projection.getOwnerId());
+        response.setFollowupCount(projection.getFollowupCount());
+        response.setCreatedAt(projection.getCreatedAt());
+        response.setUpdatedAt(projection.getUpdatedAt());
+        return response;
+    }
+
     private void fillOwnerName(Long tenantId, FollowupResponse response) {
         List<FollowupResponse> records = new ArrayList<FollowupResponse>();
         records.add(response);
@@ -369,6 +607,27 @@ public class FollowupApplicationService {
         for (FollowupResponse response : records) {
             if (response.getOwnerId() != null) {
                 response.setOwnerName(names.get(response.getOwnerId()));
+            }
+        }
+    }
+
+    private void fillTargetOwnerNames(Long tenantId, List<FollowupTargetOptionResponse> options) {
+        if (userNameResolver == null || options == null || options.isEmpty()) {
+            return;
+        }
+        Set<Long> ownerIds = new HashSet<Long>();
+        for (FollowupTargetOptionResponse option : options) {
+            if (option.getOwnerId() != null) {
+                ownerIds.add(option.getOwnerId());
+            }
+        }
+        if (ownerIds.isEmpty()) {
+            return;
+        }
+        Map<Long, String> names = userNameResolver.resolve(tenantId, ownerIds);
+        for (FollowupTargetOptionResponse option : options) {
+            if (option.getOwnerId() != null) {
+                option.setOwnerName(names.get(option.getOwnerId()));
             }
         }
     }

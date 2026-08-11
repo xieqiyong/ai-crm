@@ -45,6 +45,7 @@ import {
   toConvertPayload,
   toForm,
   toPayload,
+  validateLeadForm,
 } from './LeadPage'
 
 export function LeadDetailPage({ routeParams, can, notify, navigate }) {
@@ -71,19 +72,24 @@ export function LeadDetailPage({ routeParams, can, notify, navigate }) {
   const [analyzing, setAnalyzing] = useState(false)
   const [aiElapsed, setAiElapsed] = useState(0)
 
-  const load = async () => {
+  const load = async (options = {}) => {
     if (!leadId) {
       setLoading(false)
       return
     }
-    setLoading(true)
+    const silent = Boolean(options?.silent)
+    if (!silent) {
+      setLoading(true)
+    }
     try {
       setData(await api.lead.detail(leadId))
     } catch (err) {
       setData(null)
       notify(err.message || '线索详情加载失败', 'info')
     } finally {
-      setLoading(false)
+      if (!silent) {
+        setLoading(false)
+      }
     }
   }
 
@@ -101,6 +107,11 @@ export function LeadDetailPage({ routeParams, can, notify, navigate }) {
   }, [analyzing])
 
   const saveLead = async (form) => {
+    const validationMessage = validateLeadForm(form)
+    if (validationMessage) {
+      notify(validationMessage, 'info')
+      return
+    }
     try {
       const saved = await api.lead.save(toPayload(form))
       setData(saved)
@@ -390,6 +401,7 @@ export function LeadDetailPage({ routeParams, can, notify, navigate }) {
         canView={canViewFollowup}
         notify={notify}
         pageSize={8}
+        onSaved={() => load({ silent: true })}
       />
 
       <LeadFormModal

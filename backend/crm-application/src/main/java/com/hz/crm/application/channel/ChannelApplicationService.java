@@ -7,6 +7,7 @@ import com.hz.crm.application.channel.dto.ChannelPromoteRequest;
 import com.hz.crm.application.channel.dto.ChannelQuery;
 import com.hz.crm.application.channel.dto.ChannelResponse;
 import com.hz.crm.application.channel.dto.ChannelSaveRequest;
+import com.hz.crm.application.channel.dto.ChannelStatisticsResponse;
 import com.hz.crm.application.channel.dto.ExternalChannelSyncRequest;
 import com.hz.crm.application.channel.dto.ExternalChannelSyncResult;
 import com.hz.crm.application.lead.LeadApplicationService;
@@ -67,6 +68,22 @@ public class ChannelApplicationService {
         }
         fillOwnerNames(tenantId, records);
         return PageData.of(total, pageNo, pageSize, records);
+    }
+
+    @Transactional(readOnly = true)
+    public ChannelStatisticsResponse statistics(Long tenantId, Long userId, String dataScope) {
+        LocalDateTime dayStart = DateTimes.now().toLocalDate().atStartOfDay();
+        LocalDateTime dayEnd = dayStart.plusDays(1);
+        ChannelStatisticsResponse response = new ChannelStatisticsResponse();
+        response.setTotalUserCount(channelRecordMapper.selectCount(buildStatisticsWrapper(tenantId, userId, dataScope)));
+        QueryWrapper<ChannelRecordEntity> todayWrapper = buildStatisticsWrapper(tenantId, userId, dataScope);
+        todayWrapper.ge("created_at", dayStart);
+        todayWrapper.lt("created_at", dayEnd);
+        response.setTodayNewUserCount(channelRecordMapper.selectCount(todayWrapper));
+        QueryWrapper<ChannelRecordEntity> convertedWrapper = buildStatisticsWrapper(tenantId, userId, dataScope);
+        convertedWrapper.isNotNull("lead_id");
+        response.setConvertedLeadUserCount(channelRecordMapper.selectCount(convertedWrapper));
+        return response;
     }
 
     @Transactional(readOnly = true)
@@ -354,6 +371,12 @@ public class ChannelApplicationService {
         if (query.getChannelType() != null) {
             wrapper.eq("channel_type", query.getChannelType().name());
         }
+        if (query.getCreatedFrom() != null) {
+            wrapper.ge("created_at", query.getCreatedFrom());
+        }
+        if (query.getCreatedTo() != null) {
+            wrapper.le("created_at", query.getCreatedTo());
+        }
         String keyword = likeKeyword(query.getKeyword());
         if (keyword != null) {
             wrapper.and(value -> value
@@ -372,6 +395,16 @@ public class ChannelApplicationService {
                     .apply("lower(coalesce(ai_summary, '')) like {0}", keyword)
                     .or()
                     .apply("lower(coalesce(useful_info, '')) like {0}", keyword));
+        }
+        return wrapper;
+    }
+
+    private QueryWrapper<ChannelRecordEntity> buildStatisticsWrapper(Long tenantId, Long userId, String dataScope) {
+        QueryWrapper<ChannelRecordEntity> wrapper = new QueryWrapper<ChannelRecordEntity>();
+        wrapper.eq("tenant_id", tenantId);
+        wrapper.eq("deleted", false);
+        if ("SELF".equals(dataScope)) {
+            wrapper.eq("owner_id", userId);
         }
         return wrapper;
     }
