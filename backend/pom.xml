@@ -21,7 +21,6 @@
         <module>crm-common</module>
         <module>crm-domain</module>
         <module>crm-auth</module>
-        <module>crm-activity</module>
         <module>crm-knowledge</module>
         <module>crm-observability</module>
         <module>crm-agent-runtime</module>

@@ -24,8 +24,6 @@ public final class PermissionCodes {
 
     public static final String KNOWLEDGE_MANAGE = "crm:knowledge:manage";
 
-    public static final String WORKFLOW_MANAGE = "crm:workflow:manage";
-
     public static final String OBSERVABILITY_VIEW = "crm:observability:view";
 
     private PermissionCodes() {

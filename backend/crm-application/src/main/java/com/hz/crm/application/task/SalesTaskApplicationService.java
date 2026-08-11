@@ -53,6 +53,12 @@ public class SalesTaskApplicationService {
 
     private static final String SALES_TASK_BUSINESS_TYPE = "SALES_TASK";
 
+    private static final String FOLLOWUP_INACTIVITY_TITLE_PREFIX = "跟进提醒：";
+
+    private static final int FOLLOWUP_FIRST_REMINDER_HOURS = 12;
+
+    private static final int FOLLOWUP_SECOND_REMINDER_HOURS = 24;
+
     private static final String MESSAGE_STATUS_PENDING = "PENDING";
 
     private static final String MESSAGE_STATUS_CANCELLED = "CANCELLED";
@@ -334,6 +340,121 @@ public class SalesTaskApplicationService {
             salesTaskMapper.updateById(entity);
         }
         syncReminderMessage(entity);
+    }
+
+    @Transactional
+    public void syncFollowupInactivityReminderTasks(
+            Long tenantId, Long operatorId, String dataScope, FollowupRecordEntity followup) {
+        if (!canCreateFollowupInactivityReminder(followup)) {
+            return;
+        }
+        SalesTaskTargetType targetType = convertTargetType(followup.getTargetType());
+        cancelOpenFollowupInactivityTasks(tenantId, targetType, followup.getTargetId(), "已产生新的跟进记录");
+        createFollowupInactivityReminderTask(
+                tenantId, operatorId, dataScope, followup, targetType, FOLLOWUP_FIRST_REMINDER_HOURS);
+        createFollowupInactivityReminderTask(
+                tenantId, operatorId, dataScope, followup, targetType, FOLLOWUP_SECOND_REMINDER_HOURS);
+    }
+
+    @Transactional
+    public void cancelFollowupInactivityReminderTasks(
+            Long tenantId, FollowupTargetType followupTargetType, Long targetId) {
+        SalesTaskTargetType targetType = convertTargetType(followupTargetType);
+        if (!isLeadOrCustomerTarget(targetType) || tenantId == null || targetId == null) {
+            return;
+        }
+        cancelOpenFollowupInactivityTasks(tenantId, targetType, targetId, "跟进对象暂无有效跟进记录");
+    }
+
+    private boolean canCreateFollowupInactivityReminder(FollowupRecordEntity followup) {
+        if (followup == null || followup.getId() == null || followup.getTargetId() == null) {
+            return false;
+        }
+        return isLeadOrCustomerTarget(convertTargetType(followup.getTargetType()));
+    }
+
+    private boolean isLeadOrCustomerTarget(SalesTaskTargetType targetType) {
+        return SalesTaskTargetType.LEAD == targetType || SalesTaskTargetType.CUSTOMER == targetType;
+    }
+
+    private void createFollowupInactivityReminderTask(
+            Long tenantId,
+            Long operatorId,
+            String dataScope,
+            FollowupRecordEntity followup,
+            SalesTaskTargetType targetType,
+            int hours) {
+        LocalDateTime now = DateTimes.now();
+        LocalDateTime baseTime = followup.getFollowupAt() == null ? now : followup.getFollowupAt();
+        LocalDateTime dueAt = baseTime.plusHours(hours);
+        Long ownerId = followup.getOwnerId() == null ? operatorId : followup.getOwnerId();
+        checkOwnerAccess(tenantId, operatorId, dataScope, ownerId);
+        SalesTaskEntity entity = new SalesTaskEntity();
+        entity.setId(snowflakeIdGenerator.nextId());
+        entity.setTenantId(tenantId);
+        entity.setDeleted(false);
+        entity.setCreatedAt(now);
+        entity.setUpdatedAt(now);
+        entity.setCreatorId(operatorId);
+        entity.setOwnerId(ownerId);
+        entity.setTitle(buildFollowupInactivityTitle(followup, hours));
+        entity.setContent(buildFollowupInactivityContent(followup, hours, baseTime));
+        entity.setTargetType(targetType);
+        entity.setTargetId(followup.getTargetId());
+        entity.setTargetName(trimToNull(followup.getTargetName()));
+        entity.setDueAt(dueAt);
+        entity.setReminderAt(dueAt.isAfter(now) ? dueAt : now);
+        entity.setPriority(hours >= FOLLOWUP_SECOND_REMINDER_HOURS ? SalesTaskPriority.HIGH : SalesTaskPriority.MEDIUM);
+        entity.setStatus(SalesTaskStatus.PENDING);
+        entity.setSource(SalesTaskSource.SYSTEM);
+        entity.setSourceId(followup.getId());
+        salesTaskMapper.insert(entity);
+        syncReminderMessage(entity);
+    }
+
+    private void cancelOpenFollowupInactivityTasks(
+            Long tenantId, SalesTaskTargetType targetType, Long targetId, String cancelReason) {
+        QueryWrapper<SalesTaskEntity> wrapper = new QueryWrapper<SalesTaskEntity>();
+        wrapper.eq("tenant_id", tenantId);
+        wrapper.eq("deleted", false);
+        wrapper.eq("source", SalesTaskSource.SYSTEM.name());
+        wrapper.eq("target_type", targetType.name());
+        wrapper.eq("target_id", targetId);
+        wrapper.likeRight("title", FOLLOWUP_INACTIVITY_TITLE_PREFIX);
+        wrapper.in("status",
+                SalesTaskStatus.PENDING.name(),
+                SalesTaskStatus.IN_PROGRESS.name(),
+                SalesTaskStatus.OVERDUE.name());
+        List<SalesTaskEntity> tasks = salesTaskMapper.selectList(wrapper);
+        for (SalesTaskEntity task : tasks) {
+            task.setStatus(SalesTaskStatus.CANCELLED);
+            task.setCancelReason(cancelReason);
+            task.setUpdatedAt(DateTimes.now());
+            salesTaskMapper.updateById(task);
+            syncReminderMessage(task);
+        }
+    }
+
+    private String buildFollowupInactivityTitle(FollowupRecordEntity followup, int hours) {
+        String targetName = trimToNull(followup.getTargetName());
+        if (targetName == null) {
+            targetName = String.valueOf(followup.getTargetId());
+        }
+        return shrink(FOLLOWUP_INACTIVITY_TITLE_PREFIX + hours + "小时未跟进 - " + targetName, 128);
+    }
+
+    private String buildFollowupInactivityContent(
+            FollowupRecordEntity followup, int hours, LocalDateTime baseTime) {
+        StringBuilder builder = new StringBuilder();
+        builder.append("距离上次跟进已超过").append(hours).append("小时，请及时跟进。");
+        builder.append("\n关联对象：").append(trimToNull(followup.getTargetName()) == null
+                ? String.valueOf(followup.getTargetId())
+                : followup.getTargetName().trim());
+        builder.append("\n上次跟进时间：").append(formatLocalDateTime(baseTime));
+        if (trimToNull(followup.getNextPlan()) != null) {
+            builder.append("\n下一步计划：").append(followup.getNextPlan().trim());
+        }
+        return builder.toString();
     }
 
     private void cancelPendingFollowupTask(SalesTaskEntity entity) {

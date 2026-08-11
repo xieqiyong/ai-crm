@@ -18,12 +18,16 @@ import java.time.Duration;
 import java.time.LocalDateTime;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicBoolean;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 import reactor.core.publisher.Flux;
 
 @Service
 public class AgentRuntimeFacade {
+
+    private static final Logger log = LoggerFactory.getLogger(AgentRuntimeFacade.class);
 
     @Autowired
     private AgentRuntimeEngine agentRuntimeEngine;
@@ -47,36 +51,95 @@ public class AgentRuntimeFacade {
     private AgentTokenQuotaService agentTokenQuotaService;
 
     public Flux<AgentRuntimeEvent> run(AgentRuntimeRequest request) {
+        long prepareStart = System.currentTimeMillis();
         validateBase(request);
+        long sceneStart = System.currentTimeMillis();
         agentRuntimeSceneService.prepare(request);
+        long sceneMs = System.currentTimeMillis() - sceneStart;
         validatePrepared(request);
+        long quotaStart = System.currentTimeMillis();
         AgentTokenQuotaService.TokenReservation tokenReservation = agentTokenQuotaService.reserve(request);
+        long quotaMs = System.currentTimeMillis() - quotaStart;
+        long conversationStart = System.currentTimeMillis();
         ConversationEntity conversation = resolveConversation(request);
+        long conversationMs = System.currentTimeMillis() - conversationStart;
+        long runStart = System.currentTimeMillis();
         AgentRunEntity run = createRun(request, conversation, tokenReservation);
+        long runMs = System.currentTimeMillis() - runStart;
         request.setConversationId(conversation.getId());
         request.setRunId(run.getId());
         AtomicInteger sequence = new AtomicInteger(0);
         AtomicBoolean finished = new AtomicBoolean(false);
         StringBuffer output = new StringBuffer();
         AgentTokenQuotaService.TokenUsageCounter tokenCounter = agentTokenQuotaService.newCounter();
+        long runtimeStart = System.currentTimeMillis();
+        log.info(
+                "Agent运行准备完成，tenantId={}，userId={}，sceneCode={}，runId={}，conversationId={}，场景准备={}ms，额度预占={}ms，会话处理={}ms，运行记录={}ms，准备总耗时={}ms",
+                request.getTenantId(),
+                request.getUserId(),
+                request.getSceneCode(),
+                run.getId(),
+                conversation.getId(),
+                Long.valueOf(sceneMs),
+                Long.valueOf(quotaMs),
+                Long.valueOf(conversationMs),
+                Long.valueOf(runMs),
+                Long.valueOf(System.currentTimeMillis() - prepareStart));
         return agentRuntimeEngine
                 .run(request)
-                .doOnNext(event -> saveEvent(request, run, event, sequence.incrementAndGet(), output, tokenCounter))
+                .doOnNext(event -> {
+                    int sequenceNo = sequence.incrementAndGet();
+                    if (sequenceNo == 1) {
+                        log.info(
+                                "Agent首个事件返回，tenantId={}，userId={}，sceneCode={}，runId={}，耗时={}ms",
+                                request.getTenantId(),
+                                request.getUserId(),
+                                request.getSceneCode(),
+                                run.getId(),
+                                Long.valueOf(System.currentTimeMillis() - runtimeStart));
+                    }
+                    saveEvent(request, run, event, sequenceNo, output, tokenCounter);
+                })
                 .doOnComplete(() -> {
                     if (finished.compareAndSet(false, true)) {
                         finishRunSuccess(
                                 request, run, output.toString(), conversation, tokenReservation, tokenCounter);
+                        log.info(
+                                "Agent运行完成，tenantId={}，userId={}，sceneCode={}，runId={}，事件数={}，总耗时={}ms",
+                                request.getTenantId(),
+                                request.getUserId(),
+                                request.getSceneCode(),
+                                run.getId(),
+                                Integer.valueOf(sequence.get()),
+                                Long.valueOf(System.currentTimeMillis() - prepareStart));
                     }
                 })
                 .doOnError(error -> {
                     if (finished.compareAndSet(false, true)) {
                         finishRunFailed(request, run, error, conversation, tokenReservation);
+                        log.warn(
+                                "Agent运行失败，tenantId={}，userId={}，sceneCode={}，runId={}，事件数={}，总耗时={}ms",
+                                request.getTenantId(),
+                                request.getUserId(),
+                                request.getSceneCode(),
+                                run.getId(),
+                                Integer.valueOf(sequence.get()),
+                                Long.valueOf(System.currentTimeMillis() - prepareStart),
+                                error);
                     }
                 })
                 .doOnCancel(() -> {
                     if (finished.compareAndSet(false, true)) {
                         finishRunStopped(
                                 request, run, output.toString(), conversation, tokenReservation);
+                        log.info(
+                                "Agent运行终止，tenantId={}，userId={}，sceneCode={}，runId={}，事件数={}，总耗时={}ms",
+                                request.getTenantId(),
+                                request.getUserId(),
+                                request.getSceneCode(),
+                                run.getId(),
+                                Integer.valueOf(sequence.get()),
+                                Long.valueOf(System.currentTimeMillis() - prepareStart));
                     }
                 });
     }

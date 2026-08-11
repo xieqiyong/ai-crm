@@ -56,7 +56,7 @@ const MODULE_DEFINITIONS = [
     key: 'settings',
     label: '系统与运维',
     menuCodes: ['menu.settings', 'menu.audit_logs'],
-    actionPrefixes: ['crm:settings:', 'crm:workflow:', 'crm:observability:', 'crm:audit:'],
+    actionPrefixes: ['crm:settings:', 'crm:observability:', 'crm:audit:'],
   },
 ]
 

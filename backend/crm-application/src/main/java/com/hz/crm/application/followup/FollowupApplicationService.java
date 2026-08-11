@@ -204,6 +204,7 @@ public class FollowupApplicationService {
             followupRecordMapper.updateById(entity);
         }
         salesTaskApplicationService.syncFollowupTask(tenantId, operatorId, dataScope, entity);
+        syncLatestFollowupReminderTasks(tenantId, operatorId, dataScope, entity.getTargetType(), entity.getTargetId());
         FollowupResponse response = toResponse(entity);
         fillOwnerName(tenantId, response);
         fillMediaTranscriptions(tenantId, response);
@@ -230,6 +231,35 @@ public class FollowupApplicationService {
         entity.setDeleted(true);
         entity.setUpdatedAt(DateTimes.now());
         followupRecordMapper.updateById(entity);
+        syncLatestFollowupReminderTasks(tenantId, userId, dataScope, entity.getTargetType(), entity.getTargetId());
+    }
+
+    private void syncLatestFollowupReminderTasks(
+            Long tenantId, Long operatorId, String dataScope, FollowupTargetType targetType, Long targetId) {
+        if (!isLeadOrCustomer(targetType) || targetId == null) {
+            return;
+        }
+        FollowupRecordEntity latest = findLatestTargetFollowup(tenantId, targetType, targetId);
+        if (latest == null) {
+            salesTaskApplicationService.cancelFollowupInactivityReminderTasks(tenantId, targetType, targetId);
+            return;
+        }
+        salesTaskApplicationService.syncFollowupInactivityReminderTasks(tenantId, operatorId, dataScope, latest);
+    }
+
+    private FollowupRecordEntity findLatestTargetFollowup(
+            Long tenantId, FollowupTargetType targetType, Long targetId) {
+        QueryWrapper<FollowupRecordEntity> wrapper = new QueryWrapper<FollowupRecordEntity>();
+        wrapper.eq("tenant_id", tenantId);
+        wrapper.eq("deleted", false);
+        wrapper.eq("target_type", targetType.name());
+        wrapper.eq("target_id", targetId);
+        wrapper.orderByDesc("followup_at").orderByDesc("created_at").last("limit 1");
+        return followupRecordMapper.selectOne(wrapper);
+    }
+
+    private boolean isLeadOrCustomer(FollowupTargetType targetType) {
+        return FollowupTargetType.LEAD == targetType || FollowupTargetType.CUSTOMER == targetType;
     }
 
     private QueryWrapper<FollowupRecordEntity> buildQueryWrapper(

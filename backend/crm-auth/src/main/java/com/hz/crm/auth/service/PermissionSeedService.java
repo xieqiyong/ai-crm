@@ -136,7 +136,6 @@ public class PermissionSeedService {
             {"crm:mail:send", "客户邮件发送", "ACTION", ""},
             {"crm:mail:config", "客户邮件配置", "ACTION", ""},
             {"crm:mail:delete", "客户邮件记录删除", "ACTION", ""},
-            {"crm:workflow:manage", "流程管理", "ACTION", ""},
             {"crm:observability:view", "可观测查看", "ACTION", ""},
             {"data:all", "全部数据", "DATA", ""},
             {"data:department_child", "本部门及下级数据", "DATA", ""},

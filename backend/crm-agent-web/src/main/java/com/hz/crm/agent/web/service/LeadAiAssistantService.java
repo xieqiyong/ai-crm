@@ -23,11 +23,15 @@ import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 
 @Service
 public class LeadAiAssistantService {
+
+    private static final Logger log = LoggerFactory.getLogger(LeadAiAssistantService.class);
 
     private static final String LEAD_ANALYZE_SCENE = "LEAD_ANALYZE";
 
@@ -43,12 +47,28 @@ public class LeadAiAssistantService {
     private AgentRuntimeFacade agentRuntimeFacade;
 
     public LeadAiAnalyzeResponse analyze(Long tenantId, Long userId, String dataScope, LeadAiAnalyzeRequest request) {
+        long start = System.currentTimeMillis();
         if (request == null || request.getLeadId() == null) {
             throw new BusinessException("AI_LEAD_001", "线索编号不能为空");
         }
+        long contextStart = System.currentTimeMillis();
         LeadResponse lead = leadApplicationService.detail(tenantId, userId, dataScope, request.getLeadId());
+        log.info(
+                "线索AI分析上下文加载完成，tenantId={}，userId={}，leadId={}，耗时={}ms",
+                tenantId,
+                userId,
+                request.getLeadId(),
+                Long.valueOf(System.currentTimeMillis() - contextStart));
         LeadAiAnalyzeResponse response = baseResponse(lead);
+        long agentStart = System.currentTimeMillis();
         AgentEntity agent = resolveAgent(tenantId);
+        log.info(
+                "线索AI分析智能体配置读取完成，tenantId={}，userId={}，leadId={}，agentId={}，耗时={}ms",
+                tenantId,
+                userId,
+                lead.getId(),
+                agent == null ? null : agent.getId(),
+                Long.valueOf(System.currentTimeMillis() - agentStart));
         if (agent == null) {
             response.setMessage("请先在智能体配置中启用线索分析场景智能体");
             return response;
@@ -59,8 +79,25 @@ public class LeadAiAssistantService {
         }
         AgentRuntimeRequest runtimeRequest = null;
         try {
+            long requestStart = System.currentTimeMillis();
             runtimeRequest = buildRuntimeRequest(tenantId, userId, lead, agent, request);
+            log.info(
+                    "线索AI分析运行请求构建完成，tenantId={}，userId={}，leadId={}，耗时={}ms",
+                    tenantId,
+                    userId,
+                    lead.getId(),
+                    Long.valueOf(System.currentTimeMillis() - requestStart));
+            long runStart = System.currentTimeMillis();
             List<AgentRuntimeEvent> events = runAgent(runtimeRequest);
+            log.info(
+                    "线索AI分析智能体运行完成，tenantId={}，userId={}，leadId={}，runId={}，事件数={}，耗时={}ms",
+                    tenantId,
+                    userId,
+                    lead.getId(),
+                    runtimeRequest.getRunId(),
+                    Integer.valueOf(events == null ? 0 : events.size()),
+                    Long.valueOf(System.currentTimeMillis() - runStart));
+            long parseStart = System.currentTimeMillis();
             String output = resolveOutput(events);
             JSONObject result = resolveCapturedResult(runtimeRequest);
             if (result == null && !hasToolCall(events, LEAD_RESULT_FUNCTION)) {
@@ -80,6 +117,14 @@ public class LeadAiAssistantService {
             parsed.setSuccess(true);
             parsed.setMessage("线索 AI 分析完成");
             parsed.setRawOutput(shrink(JSON.toJSONString(result), 2000));
+            log.info(
+                    "线索AI分析结果解析完成，tenantId={}，userId={}，leadId={}，runId={}，耗时={}ms",
+                    tenantId,
+                    userId,
+                    lead.getId(),
+                    runtimeRequest.getRunId(),
+                    Long.valueOf(System.currentTimeMillis() - parseStart));
+            long saveStart = System.currentTimeMillis();
             LeadResponse savedLead = leadApplicationService.saveAiAnalysis(
                     tenantId,
                     userId,
@@ -89,15 +134,39 @@ public class LeadAiAssistantService {
                     parsed.getConvertDraft() == null ? null : parsed.getConvertDraft().getCustomerName(),
                     parsed.getConvertDraft() == null ? null : parsed.getConvertDraft().getContactName(),
                     parsed.getConfidence());
+            log.info(
+                    "线索AI分析结果保存完成，tenantId={}，userId={}，leadId={}，runId={}，保存耗时={}ms，总耗时={}ms",
+                    tenantId,
+                    userId,
+                    lead.getId(),
+                    runtimeRequest.getRunId(),
+                    Long.valueOf(System.currentTimeMillis() - saveStart),
+                    Long.valueOf(System.currentTimeMillis() - start));
             parsed.setLead(savedLead);
             return parsed;
         } catch (BusinessException ex) {
             fillRuntimeIds(response, runtimeRequest);
             response.setMessage(ex.getMessage());
+            log.warn(
+                    "线索AI分析业务失败，tenantId={}，userId={}，leadId={}，runId={}，总耗时={}ms，原因={}",
+                    tenantId,
+                    userId,
+                    request.getLeadId(),
+                    runtimeRequest == null ? null : runtimeRequest.getRunId(),
+                    Long.valueOf(System.currentTimeMillis() - start),
+                    ex.getMessage());
             return response;
         } catch (RuntimeException ex) {
             fillRuntimeIds(response, runtimeRequest);
             response.setMessage("线索 AI 分析失败：" + ex.getMessage());
+            log.warn(
+                    "线索AI分析异常，tenantId={}，userId={}，leadId={}，runId={}，总耗时={}ms",
+                    tenantId,
+                    userId,
+                    request.getLeadId(),
+                    runtimeRequest == null ? null : runtimeRequest.getRunId(),
+                    Long.valueOf(System.currentTimeMillis() - start),
+                    ex);
             return response;
         }
     }
