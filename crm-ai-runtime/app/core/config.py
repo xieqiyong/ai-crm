@@ -37,6 +37,24 @@ class Settings(BaseSettings):
     checkpoint_auto_setup: bool = True
     trace_capture_payload: bool = False
 
+    database_enabled: bool = False
+    database_uri: str = ""
+    agent_config_source: str = "request"
+    agent_config_fail_fast: bool = False
+
+    nacos_enabled: bool = False
+    nacos_server_addr: str = "localhost:8848"
+    nacos_namespace: str = ""
+    nacos_group: str = "DEFAULT_GROUP"
+    nacos_username: str = ""
+    nacos_password: str = ""
+    nacos_service_name: str = "crm-ai-runtime"
+    nacos_ip: str = ""
+    nacos_port: int = 8001
+    nacos_cluster_name: str = "DEFAULT"
+    nacos_ephemeral: bool = True
+    nacos_heartbeat_seconds: int = 5
+
 
 @lru_cache
 def get_settings() -> Settings:

@@ -121,12 +121,91 @@ services:
     networks:
       - crm-net
 
+  crm-ai-runtime:
+    image: crm-ai-runtime:${CRM_VERSION}
+    container_name: crm-ai-runtime
+    restart: unless-stopped
+    depends_on:
+      crm-postgres:
+        condition: service_healthy
+    environment:
+      TZ: ${CRM_TIMEZONE}
+      CRM_AI_HOST: 0.0.0.0
+      CRM_AI_PORT: 8001
+      CRM_AI_INTERNAL_TOKEN: ${CRM_AI_INTERNAL_TOKEN:-}
+      CRM_AI_DATABASE_ENABLED: ${CRM_AI_DATABASE_ENABLED:-false}
+      CRM_AI_DATABASE_URI: ${CRM_AI_DATABASE_URI:-}
+      CRM_AI_AGENT_CONFIG_SOURCE: ${CRM_AI_AGENT_CONFIG_SOURCE:-request}
+      CRM_AI_AGENT_CONFIG_FAIL_FAST: ${CRM_AI_AGENT_CONFIG_FAIL_FAST:-false}
+      CRM_AI_NACOS_ENABLED: ${CRM_NACOS_DISCOVERY_ENABLED:-false}
+      CRM_AI_NACOS_SERVER_ADDR: ${CRM_NACOS_SERVER_ADDR:-localhost:8848}
+      CRM_AI_NACOS_NAMESPACE: ${CRM_NACOS_NAMESPACE:-}
+      CRM_AI_NACOS_GROUP: ${CRM_NACOS_GROUP:-DEFAULT_GROUP}
+      CRM_AI_NACOS_USERNAME: ${CRM_NACOS_USERNAME:-}
+      CRM_AI_NACOS_PASSWORD: ${CRM_NACOS_PASSWORD:-}
+      CRM_AI_NACOS_SERVICE_NAME: crm-ai-runtime
+      CRM_AI_NACOS_PORT: 8001
+      CRM_AI_NACOS_CLUSTER_NAME: ${CRM_NACOS_DISCOVERY_CLUSTER_NAME:-DEFAULT}
+      CRM_AI_WEB_SEARCH_ENABLED: ${CRM_AI_WEB_SEARCH_ENABLED:-true}
+      CRM_AI_WEB_SEARCH_PROVIDER: ${CRM_AI_WEB_SEARCH_PROVIDER:-searxng}
+      CRM_AI_WEB_SEARCH_ENDPOINT: ${CRM_AI_WEB_SEARCH_ENDPOINT:-}
+      CRM_AI_WEB_SEARCH_API_KEY: ${CRM_AI_WEB_SEARCH_API_KEY:-}
+      CRM_AI_CHECKPOINT_ENABLED: ${CRM_AI_CHECKPOINT_ENABLED:-false}
+      CRM_AI_CHECKPOINT_BACKEND: ${CRM_AI_CHECKPOINT_BACKEND:-memory}
+      CRM_AI_CHECKPOINT_POSTGRES_URI: ${CRM_AI_CHECKPOINT_POSTGRES_URI:-}
+      LANGSMITH_TRACING: ${LANGSMITH_TRACING:-false}
+      LANGSMITH_API_KEY: ${LANGSMITH_API_KEY:-}
+      LANGSMITH_PROJECT: ${LANGSMITH_PROJECT:-crm-ai-runtime}
+    ports:
+      - "${CRM_AI_RUNTIME_PORT:-8001}:8001"
+    networks:
+      - crm-net
+
+  crm-gateway:
+    image: crm-gateway:${CRM_VERSION}
+    container_name: crm-gateway
+    restart: unless-stopped
+    depends_on:
+      crm-backend:
+        condition: service_started
+      crm-mcp:
+        condition: service_started
+      crm-ai-runtime:
+        condition: service_started
+    environment:
+      TZ: ${CRM_TIMEZONE}
+      JAVA_OPTS: ${CRM_GATEWAY_JAVA_OPTS:-}
+      CRM_GATEWAY_PORT: ${CRM_GATEWAY_PORT:-8090}
+      CRM_NACOS_ENABLED: ${CRM_NACOS_ENABLED:-false}
+      CRM_NACOS_SERVER_ADDR: ${CRM_NACOS_SERVER_ADDR:-localhost:8848}
+      CRM_NACOS_NAMESPACE: ${CRM_NACOS_NAMESPACE:-}
+      CRM_NACOS_GROUP: ${CRM_NACOS_GROUP:-DEFAULT_GROUP}
+      CRM_GATEWAY_NACOS_DATA_ID: ${CRM_GATEWAY_NACOS_DATA_ID:-crm-gateway.yaml}
+      CRM_NACOS_SHARED_DATA_IDS: ${CRM_NACOS_SHARED_DATA_IDS:-}
+      CRM_NACOS_USERNAME: ${CRM_NACOS_USERNAME:-}
+      CRM_NACOS_PASSWORD: ${CRM_NACOS_PASSWORD:-}
+      CRM_NACOS_TIMEOUT_MS: ${CRM_NACOS_TIMEOUT_MS:-5000}
+      CRM_NACOS_FAIL_FAST: ${CRM_NACOS_FAIL_FAST:-true}
+      CRM_NACOS_DISCOVERY_ENABLED: ${CRM_NACOS_DISCOVERY_ENABLED:-false}
+      CRM_NACOS_DISCOVERY_CLUSTER_NAME: ${CRM_NACOS_DISCOVERY_CLUSTER_NAME:-DEFAULT}
+      CRM_GATEWAY_CONNECT_TIMEOUT_MS: ${CRM_GATEWAY_CONNECT_TIMEOUT_MS:-5000}
+      CRM_GATEWAY_RESPONSE_TIMEOUT_MS: ${CRM_GATEWAY_RESPONSE_TIMEOUT_MS:-300s}
+      CRM_GATEWAY_CRM_FALLBACK_URL: http://crm-backend:8080
+      CRM_GATEWAY_MCP_FALLBACK_URL: http://crm-mcp:8091
+      CRM_GATEWAY_AI_RUNTIME_FALLBACK_URL: http://crm-ai-runtime:8001
+    volumes:
+      - ./logs/gateway:/app/logs
+    ports:
+      - "${CRM_GATEWAY_PORT:-8090}:8090"
+    networks:
+      - crm-net
+
   crm-frontend:
     image: crm-frontend:${CRM_VERSION}
     container_name: crm-frontend
     restart: unless-stopped
     depends_on:
-      - crm-backend
+      - crm-gateway
     environment:
       TZ: ${CRM_TIMEZONE}
       CRM_FRONTEND_API_BASE_URL: ${CRM_FRONTEND_API_BASE_URL:-}

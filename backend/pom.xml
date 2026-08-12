@@ -27,6 +27,7 @@
         <module>crm-application</module>
         <module>crm-wecom</module>
         <module>crm-mcp</module>
+        <module>crm-gateway</module>
         <module>crm-agent-web</module>
         <module>crm-web</module>
     </modules>

@@ -49,6 +49,12 @@ crm:
     path: /app/logs
     max-history: 30
     max-file-size: 100MB
+  nacos:
+    discovery:
+      enabled: true
+      service-name: crm-web
+      port: 8080
+      cluster-name: DEFAULT
   jwt:
     secret: 请修改为至少32字节随机密钥
     ttl-seconds: 86400

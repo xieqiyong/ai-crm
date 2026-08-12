@@ -1,0 +1,84 @@
+server:
+  port: ${CRM_GATEWAY_PORT:8090}
+
+spring:
+  application:
+    name: crm-gateway
+  main:
+    web-application-type: reactive
+  cloud:
+    gateway:
+      server:
+        webflux:
+          httpclient:
+            connect-timeout: ${CRM_GATEWAY_CONNECT_TIMEOUT_MS:5000}
+            response-timeout: ${CRM_GATEWAY_RESPONSE_TIMEOUT_MS:300s}
+          routes:
+            - id: crm-ai-runtime
+              order: -100
+              uri: ${CRM_GATEWAY_AI_RUNTIME_FALLBACK_URL:http://localhost:8001}
+              predicates:
+                - Path=/api/ai,/api/ai/**,/internal/ai,/internal/ai/**
+              filters:
+                - 'RewritePath=/api/ai(?<segment>/?.*), /internal/ai$\{segment}'
+            - id: crm-mcp
+              order: -50
+              uri: ${CRM_GATEWAY_MCP_FALLBACK_URL:http://localhost:8091}
+              predicates:
+                - Path=/mcp,/mcp/**
+            - id: crm-uploads
+              order: -10
+              uri: ${CRM_GATEWAY_CRM_FALLBACK_URL:http://localhost:8080}
+              predicates:
+                - Path=/uploads,/uploads/**
+            - id: crm-api
+              order: 0
+              uri: ${CRM_GATEWAY_CRM_FALLBACK_URL:http://localhost:8080}
+              predicates:
+                - Path=/api,/api/**
+
+logging:
+  config: classpath:logback-spring.xml
+  level:
+    root: ${CRM_LOG_LEVEL:INFO}
+
+crm:
+  logging:
+    path: ${CRM_LOG_PATH:./logs}
+    max-history: ${CRM_LOG_MAX_HISTORY:30}
+    max-file-size: ${CRM_LOG_MAX_FILE_SIZE:100MB}
+  nacos:
+    enabled: ${CRM_NACOS_ENABLED:false}
+    server-addr: ${CRM_NACOS_SERVER_ADDR:localhost:8848}
+    namespace: ${CRM_NACOS_NAMESPACE:}
+    group: ${CRM_NACOS_GROUP:DEFAULT_GROUP}
+    data-id: ${CRM_GATEWAY_NACOS_DATA_ID:${CRM_NACOS_DATA_ID:crm-gateway.yaml}}
+    shared-data-ids: ${CRM_NACOS_SHARED_DATA_IDS:}
+    username: ${CRM_NACOS_USERNAME:}
+    password: ${CRM_NACOS_PASSWORD:}
+    timeout-ms: ${CRM_NACOS_TIMEOUT_MS:5000}
+    fail-fast: ${CRM_NACOS_FAIL_FAST:true}
+    discovery:
+      enabled: ${CRM_NACOS_DISCOVERY_ENABLED:false}
+      service-name: ${CRM_NACOS_DISCOVERY_SERVICE_NAME:crm-gateway}
+      ip: ${CRM_NACOS_DISCOVERY_IP:}
+      port: ${CRM_GATEWAY_PORT:8090}
+      cluster-name: ${CRM_NACOS_DISCOVERY_CLUSTER_NAME:DEFAULT}
+  gateway:
+    connect-timeout-ms: ${CRM_GATEWAY_CONNECT_TIMEOUT_MS:5000}
+    response-timeout-ms: ${CRM_GATEWAY_RESPONSE_TIMEOUT_MS:300s}
+    crm:
+      service-name: ${CRM_GATEWAY_CRM_SERVICE_NAME:crm-web}
+      fallback-url: ${CRM_GATEWAY_CRM_FALLBACK_URL:http://localhost:8080}
+    ai-runtime:
+      service-name: ${CRM_GATEWAY_AI_RUNTIME_SERVICE_NAME:crm-ai-runtime}
+      fallback-url: ${CRM_GATEWAY_AI_RUNTIME_FALLBACK_URL:http://localhost:8001}
+    mcp:
+      service-name: ${CRM_GATEWAY_MCP_SERVICE_NAME:crm-mcp}
+      fallback-url: ${CRM_GATEWAY_MCP_FALLBACK_URL:http://localhost:8091}
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info

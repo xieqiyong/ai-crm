@@ -70,6 +70,12 @@ crm:
     password: ${CRM_NACOS_PASSWORD:}
     timeout-ms: ${CRM_NACOS_TIMEOUT_MS:5000}
     fail-fast: ${CRM_NACOS_FAIL_FAST:true}
+    discovery:
+      enabled: ${CRM_NACOS_DISCOVERY_ENABLED:false}
+      service-name: ${CRM_NACOS_DISCOVERY_SERVICE_NAME:crm-mcp}
+      ip: ${CRM_NACOS_DISCOVERY_IP:}
+      port: ${CRM_MCP_PORT:8091}
+      cluster-name: ${CRM_NACOS_DISCOVERY_CLUSTER_NAME:DEFAULT}
   mcp:
     access-token: ${CRM_MCP_ACCESS_TOKEN:}
     endpoint: ${CRM_MCP_SERVER_ENDPOINT:/mcp}

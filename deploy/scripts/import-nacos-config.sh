@@ -36,6 +36,7 @@ NACOS_USERNAME="${CRM_NACOS_USERNAME:-${NACOS_USERNAME:-$(read_env_value CRM_NAC
 NACOS_PASSWORD="${CRM_NACOS_PASSWORD:-${NACOS_PASSWORD:-$(read_env_value CRM_NACOS_PASSWORD "")}}"
 CRM_DATA_ID="${CRM_NACOS_DATA_ID:-$(read_env_value CRM_NACOS_DATA_ID "crm.yaml")}"
 CRM_MCP_DATA_ID="${CRM_MCP_NACOS_DATA_ID:-$(read_env_value CRM_MCP_NACOS_DATA_ID "crm-mcp.yaml")}"
+CRM_GATEWAY_DATA_ID="${CRM_GATEWAY_NACOS_DATA_ID:-$(read_env_value CRM_GATEWAY_NACOS_DATA_ID "crm-gateway.yaml")}"
 
 if ! command -v curl >/dev/null 2>&1; then
   echo "未找到curl，请先安装curl"
@@ -99,5 +100,6 @@ publish_config() {
 
 publish_config "$CRM_DATA_ID" "$NACOS_DIR/crm.yaml"
 publish_config "$CRM_MCP_DATA_ID" "$NACOS_DIR/crm-mcp.yaml"
+publish_config "$CRM_GATEWAY_DATA_ID" "$NACOS_DIR/crm-gateway.yaml"
 
 echo "Nacos配置导入完成"

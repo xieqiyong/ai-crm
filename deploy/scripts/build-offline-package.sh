@@ -58,7 +58,7 @@ echo "开始构建智能营销管理系统离线包：$CRM_VERSION"
 
 rm -rf "$BUILD_DIR" "$PACKAGE_DIR"
 rm -f "$PACKAGE_ARCHIVE" "$PACKAGE_ARCHIVE.sha256"
-mkdir -p "$BUILD_DIR/backend" "$BUILD_DIR/mcp" "$BUILD_DIR/frontend" "$PACKAGE_DIR/images" "$PACKAGE_DIR/scripts" "$PACKAGE_DIR/sql" "$PACKAGE_DIR/docs" "$PACKAGE_DIR/nacos" "$OUTPUT_DIR"
+mkdir -p "$BUILD_DIR/backend" "$BUILD_DIR/mcp" "$BUILD_DIR/gateway" "$BUILD_DIR/ai-runtime" "$BUILD_DIR/frontend" "$PACKAGE_DIR/images" "$PACKAGE_DIR/scripts" "$PACKAGE_DIR/sql" "$PACKAGE_DIR/docs" "$PACKAGE_DIR/nacos" "$OUTPUT_DIR"
 
 echo "构建后端 Jar"
 cd "$ROOT_DIR/backend"
@@ -76,10 +76,21 @@ if [ -z "$MCP_JAR" ]; then
   exit 1
 fi
 
+GATEWAY_JAR="$(find "$ROOT_DIR/backend/crm-gateway/target" -maxdepth 1 -name 'crm-gateway-*.jar' ! -name '*.original' | head -n 1)"
+if [ -z "$GATEWAY_JAR" ]; then
+  echo "未找到Gateway服务 Jar：backend/crm-gateway/target/crm-gateway-*.jar"
+  exit 1
+fi
+
 cp "$BACKEND_JAR" "$BUILD_DIR/backend/app.jar"
 cp "$DEPLOY_DIR/docker/backend/Dockerfile" "$BUILD_DIR/backend/Dockerfile"
 cp "$MCP_JAR" "$BUILD_DIR/mcp/app.jar"
 cp "$DEPLOY_DIR/docker/mcp/Dockerfile" "$BUILD_DIR/mcp/Dockerfile"
+cp "$GATEWAY_JAR" "$BUILD_DIR/gateway/app.jar"
+cp "$DEPLOY_DIR/docker/gateway/Dockerfile" "$BUILD_DIR/gateway/Dockerfile"
+cp "$ROOT_DIR/crm-ai-runtime/requirements.txt" "$BUILD_DIR/ai-runtime/requirements.txt"
+cp -R "$ROOT_DIR/crm-ai-runtime/app" "$BUILD_DIR/ai-runtime/app"
+cp "$DEPLOY_DIR/docker/ai-runtime/Dockerfile" "$BUILD_DIR/ai-runtime/Dockerfile"
 
 echo "构建前端 Dist"
 run_frontend_install
@@ -93,6 +104,8 @@ cp "$DEPLOY_DIR/docker/frontend/write-runtime-config.sh" "$BUILD_DIR/frontend/wr
 echo "构建 Docker 镜像"
 docker build -t "crm-backend:$CRM_VERSION" "$BUILD_DIR/backend"
 docker build -t "crm-mcp:$CRM_VERSION" "$BUILD_DIR/mcp"
+docker build -t "crm-gateway:$CRM_VERSION" "$BUILD_DIR/gateway"
+docker build -t "crm-ai-runtime:$CRM_VERSION" "$BUILD_DIR/ai-runtime"
 docker build -t "crm-frontend:$CRM_VERSION" "$BUILD_DIR/frontend"
 
 echo "准备中间件镜像"
@@ -104,6 +117,8 @@ echo "保存离线镜像"
 docker save -o "$IMAGE_ARCHIVE" \
   "crm-backend:$CRM_VERSION" \
   "crm-mcp:$CRM_VERSION" \
+  "crm-gateway:$CRM_VERSION" \
+  "crm-ai-runtime:$CRM_VERSION" \
   "crm-frontend:$CRM_VERSION" \
   docker.1ms.run/postgres:16-alpine \
   docker.1ms.run/redis:7-alpine \
@@ -141,6 +156,25 @@ CRM_FRONTEND_API_TIMEOUT=${CRM_FRONTEND_API_TIMEOUT:-30000}
 CRM_ASSISTANT_TYPEWRITER_INTERVAL=${CRM_ASSISTANT_TYPEWRITER_INTERVAL:-12}
 CRM_ASSISTANT_TYPEWRITER_STEP=${CRM_ASSISTANT_TYPEWRITER_STEP:-4}
 
+CRM_GATEWAY_PORT=${CRM_GATEWAY_PORT:-8090}
+CRM_GATEWAY_JAVA_OPTS=${CRM_GATEWAY_JAVA_OPTS:-"-Xms256m -Xmx512m -Dfile.encoding=UTF-8"}
+CRM_AI_RUNTIME_PORT=${CRM_AI_RUNTIME_PORT:-8001}
+CRM_AI_INTERNAL_TOKEN=${CRM_AI_INTERNAL_TOKEN:-}
+CRM_AI_DATABASE_ENABLED=${CRM_AI_DATABASE_ENABLED:-false}
+CRM_AI_DATABASE_URI=${CRM_AI_DATABASE_URI:-}
+CRM_AI_AGENT_CONFIG_SOURCE=${CRM_AI_AGENT_CONFIG_SOURCE:-request}
+CRM_AI_AGENT_CONFIG_FAIL_FAST=${CRM_AI_AGENT_CONFIG_FAIL_FAST:-false}
+CRM_AI_WEB_SEARCH_ENABLED=${CRM_AI_WEB_SEARCH_ENABLED:-true}
+CRM_AI_WEB_SEARCH_PROVIDER=${CRM_AI_WEB_SEARCH_PROVIDER:-searxng}
+CRM_AI_WEB_SEARCH_ENDPOINT=${CRM_AI_WEB_SEARCH_ENDPOINT:-}
+CRM_AI_WEB_SEARCH_API_KEY=${CRM_AI_WEB_SEARCH_API_KEY:-}
+CRM_AI_CHECKPOINT_ENABLED=${CRM_AI_CHECKPOINT_ENABLED:-false}
+CRM_AI_CHECKPOINT_BACKEND=${CRM_AI_CHECKPOINT_BACKEND:-memory}
+CRM_AI_CHECKPOINT_POSTGRES_URI=${CRM_AI_CHECKPOINT_POSTGRES_URI:-}
+LANGSMITH_TRACING=${LANGSMITH_TRACING:-false}
+LANGSMITH_API_KEY=${LANGSMITH_API_KEY:-}
+LANGSMITH_PROJECT=${LANGSMITH_PROJECT:-crm-ai-runtime}
+
 CRM_DB_NAME=${CRM_DB_NAME:-crm}
 CRM_DB_USERNAME=${CRM_DB_USERNAME:-app_user}
 CRM_DB_PASSWORD=$CRM_DB_PASSWORD_VALUE
@@ -157,11 +191,14 @@ CRM_NACOS_NAMESPACE=${CRM_NACOS_NAMESPACE:-}
 CRM_NACOS_GROUP=${CRM_NACOS_GROUP:-DEFAULT_GROUP}
 CRM_NACOS_DATA_ID=${CRM_NACOS_DATA_ID:-crm.yaml}
 CRM_MCP_NACOS_DATA_ID=${CRM_MCP_NACOS_DATA_ID:-crm-mcp.yaml}
+CRM_GATEWAY_NACOS_DATA_ID=${CRM_GATEWAY_NACOS_DATA_ID:-crm-gateway.yaml}
 CRM_NACOS_SHARED_DATA_IDS=${CRM_NACOS_SHARED_DATA_IDS:-}
 CRM_NACOS_USERNAME=${CRM_NACOS_USERNAME:-}
 CRM_NACOS_PASSWORD=${CRM_NACOS_PASSWORD:-}
 CRM_NACOS_TIMEOUT_MS=${CRM_NACOS_TIMEOUT_MS:-5000}
 CRM_NACOS_FAIL_FAST=${CRM_NACOS_FAIL_FAST:-true}
+CRM_NACOS_DISCOVERY_ENABLED=${CRM_NACOS_DISCOVERY_ENABLED:-true}
+CRM_NACOS_DISCOVERY_CLUSTER_NAME=${CRM_NACOS_DISCOVERY_CLUSTER_NAME:-DEFAULT}
 EOF
 
 cat > "$PACKAGE_DIR/VERSION" <<EOF

@@ -1,0 +1,63 @@
+# Gateway独立服务配置
+server:
+  port: 8090
+
+logging:
+  level:
+    root: INFO
+
+crm:
+  logging:
+    path: /app/logs
+    max-history: 30
+    max-file-size: 100MB
+  nacos:
+    discovery:
+      enabled: true
+      service-name: crm-gateway
+      port: 8090
+      cluster-name: DEFAULT
+  gateway:
+    connect-timeout-ms: 5000
+    response-timeout-ms: 300s
+    crm:
+      service-name: crm-web
+      fallback-url: http://crm-backend:8080
+    ai-runtime:
+      service-name: crm-ai-runtime
+      fallback-url: http://crm-ai-runtime:8001
+    mcp:
+      service-name: crm-mcp
+      fallback-url: http://crm-mcp:8091
+
+spring:
+  cloud:
+    gateway:
+      server:
+        webflux:
+          httpclient:
+            connect-timeout: 5000
+            response-timeout: 300s
+          routes:
+            - id: crm-ai-runtime
+              order: -100
+              uri: http://crm-ai-runtime:8001
+              predicates:
+                - Path=/api/ai,/api/ai/**,/internal/ai,/internal/ai/**
+              filters:
+                - 'RewritePath=/api/ai(?<segment>/?.*), /internal/ai$\{segment}'
+            - id: crm-mcp
+              order: -50
+              uri: http://crm-mcp:8091
+              predicates:
+                - Path=/mcp,/mcp/**
+            - id: crm-uploads
+              order: -10
+              uri: http://crm-backend:8080
+              predicates:
+                - Path=/uploads,/uploads/**
+            - id: crm-api
+              order: 0
+              uri: http://crm-backend:8080
+              predicates:
+                - Path=/api,/api/**

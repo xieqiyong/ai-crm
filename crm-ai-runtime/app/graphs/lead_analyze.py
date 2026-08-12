@@ -13,6 +13,7 @@ from app.tools.customer_web_search import customer_web_search
 
 class LeadAnalyzeState(TypedDict, total=False):
     request: dict[str, Any]
+    runtime: dict[str, Any]
     lead: dict[str, Any]
     customer_profile: dict[str, Any]
     raw_output: str
@@ -138,12 +139,24 @@ def build_system_prompt(request: RuntimeRunRequest) -> str:
         prompts.append(text(request.rendered_system_prompt))
     elif request.agent and text(request.agent.system_prompt):
         prompts.append(text(request.agent.system_prompt))
+    skill_prompt = build_skill_prompt(request)
+    if skill_prompt:
+        prompts.append(skill_prompt)
     prompts.append(
         "你是线索分析智能体。只能基于输入的真实线索数据和工具返回结果分析，不能编造公司、联系人、电话、预算、沟通记录。"
     )
     prompts.append("最终只输出合法 JSON 对象，不输出 Markdown、代码块或自然语言前后缀。")
     prompts.append("customerProfile 只能填写工具结果或线索中能够确认的信息，不能猜测。")
     return "\n".join(prompts)
+
+
+def build_skill_prompt(request: RuntimeRunRequest) -> str:
+    values = []
+    for item in request.skills:
+        content = text(item.content)
+        if content:
+            values.append(content)
+    return "\n\n".join(values)
 
 
 def build_user_prompt(request: RuntimeRunRequest, lead: dict[str, Any], profile: dict[str, Any]) -> str:

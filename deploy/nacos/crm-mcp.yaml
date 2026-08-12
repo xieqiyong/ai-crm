@@ -45,6 +45,12 @@ crm:
     path: /app/logs
     max-history: 30
     max-file-size: 100MB
+  nacos:
+    discovery:
+      enabled: true
+      service-name: crm-mcp
+      port: 8091
+      cluster-name: DEFAULT
   mcp:
     access-token:
     endpoint: /mcp

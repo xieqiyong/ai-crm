@@ -31,7 +31,7 @@ if [ ! -f .env ]; then
   exit 1
 fi
 
-mkdir -p data/postgres data/redis data/minio data/backend logs/backend uploads
+mkdir -p data/postgres data/redis data/minio data/backend logs/backend logs/mcp logs/gateway uploads
 
 if [ "$LOAD_IMAGES" = true ]; then
   if [ ! -f "$IMAGE_ARCHIVE" ]; then

@@ -68,6 +68,8 @@ function New-ServerScripts {
 
     $LoadScript = Join-Path $OutputDir "load-app-images.sh"
     $RestartScript = Join-Path $OutputDir "restart-crm-app.sh"
+    $SyncNacosScript = Join-Path $OutputDir "sync-nacos-config.sh"
+    $ImportGatewayNacosScript = Join-Path $OutputDir "import-gateway-nacos-config.sh"
     $DeployScript = Join-Path $OutputDir "deploy-crm-app.sh"
     $VersionFile = Join-Path $OutputDir "VERSION"
 
@@ -79,6 +81,8 @@ SCRIPT_DIR="`$(cd "`$(dirname "`$0")" && pwd)"
 CRM_VERSION="`${1:-$Version}"
 BACKEND_ARCHIVE="`$SCRIPT_DIR/crm-backend-`$CRM_VERSION.tar"
 MCP_ARCHIVE="`$SCRIPT_DIR/crm-mcp-`$CRM_VERSION.tar"
+GATEWAY_ARCHIVE="`$SCRIPT_DIR/crm-gateway-`$CRM_VERSION.tar"
+AI_RUNTIME_ARCHIVE="`$SCRIPT_DIR/crm-ai-runtime-`$CRM_VERSION.tar"
 FRONTEND_ARCHIVE="`$SCRIPT_DIR/crm-frontend-`$CRM_VERSION.tar"
 
 if [ ! -f "`$BACKEND_ARCHIVE" ]; then
@@ -96,17 +100,35 @@ if [ ! -f "`$MCP_ARCHIVE" ]; then
   exit 1
 fi
 
+if [ ! -f "`$GATEWAY_ARCHIVE" ]; then
+  echo "未找到Gateway服务镜像：`$GATEWAY_ARCHIVE"
+  exit 1
+fi
+
+if [ ! -f "`$AI_RUNTIME_ARCHIVE" ]; then
+  echo "未找到AI运行时镜像：`$AI_RUNTIME_ARCHIVE"
+  exit 1
+fi
+
 echo "加载后端镜像：`$BACKEND_ARCHIVE"
 docker load -i "`$BACKEND_ARCHIVE"
 
 echo "加载MCP服务镜像：`$MCP_ARCHIVE"
 docker load -i "`$MCP_ARCHIVE"
 
+echo "加载Gateway服务镜像：`$GATEWAY_ARCHIVE"
+docker load -i "`$GATEWAY_ARCHIVE"
+
+echo "加载AI运行时镜像：`$AI_RUNTIME_ARCHIVE"
+docker load -i "`$AI_RUNTIME_ARCHIVE"
+
 echo "加载前端镜像：`$FRONTEND_ARCHIVE"
 docker load -i "`$FRONTEND_ARCHIVE"
 
 docker image inspect "crm-backend:`$CRM_VERSION" >/dev/null
 docker image inspect "crm-mcp:`$CRM_VERSION" >/dev/null
+docker image inspect "crm-gateway:`$CRM_VERSION" >/dev/null
+docker image inspect "crm-ai-runtime:`$CRM_VERSION" >/dev/null
 docker image inspect "crm-frontend:`$CRM_VERSION" >/dev/null
 
 echo "应用镜像加载完成：`$CRM_VERSION"
@@ -190,11 +212,168 @@ mv "`$TMP_ENV" .env
 
 echo "部署目录：`$DEPLOY_DIR"
 echo "应用版本：`$CRM_VERSION"
-echo "重启后端、MCP服务和前端"
-compose up -d --no-deps --force-recreate --no-build --pull never crm-backend crm-mcp crm-frontend
+echo "重启后端、MCP服务、Gateway、AI运行时和前端"
+compose up -d --no-deps --force-recreate --no-build --pull never crm-backend crm-mcp crm-ai-runtime crm-gateway crm-frontend
 
 echo "当前应用容器状态"
-compose ps crm-backend crm-mcp crm-frontend
+compose ps crm-backend crm-mcp crm-ai-runtime crm-gateway crm-frontend
+"@
+
+    $SyncNacosContent = @"
+#!/usr/bin/env bash
+set -euo pipefail
+
+SCRIPT_DIR="`$(cd "`$(dirname "`$0")" && pwd)"
+DEPLOY_DIR="`${1:-`${CRM_DEPLOY_DIR:-}}"
+IMPORT_AFTER_SYNC="`${2:-false}"
+
+resolve_deploy_dir() {
+  if [ -n "`$DEPLOY_DIR" ]; then
+    echo "`$DEPLOY_DIR"
+    return
+  fi
+
+  if [ -f "`$SCRIPT_DIR/docker-compose.yml" ] && [ -f "`$SCRIPT_DIR/.env" ]; then
+    echo "`$SCRIPT_DIR"
+    return
+  fi
+
+  if [ -f "/app/builds/products/crm/crm-app/docker-compose.yml" ]; then
+    echo "/app/builds/products/crm/crm-app"
+    return
+  fi
+
+  if [ -f "/app/builds/products/crm/current/docker-compose.yml" ]; then
+    echo "/app/builds/products/crm/current"
+    return
+  fi
+
+  local latest_dir
+  latest_dir="`$(find /app/builds/products/crm -maxdepth 2 -name docker-compose.yml -printf '%T@ %h\n' 2>/dev/null | sort -nr | head -n 1 | cut -d' ' -f2-)"
+  if [ -n "`$latest_dir" ]; then
+    echo "`$latest_dir"
+    return
+  fi
+
+  echo ""
+}
+
+DEPLOY_DIR="`$(resolve_deploy_dir)"
+if [ -z "`$DEPLOY_DIR" ]; then
+  echo "未找到部署目录，请通过第一个参数或CRM_DEPLOY_DIR指定"
+  exit 1
+fi
+
+for item in crm-gateway.yaml import-gateway-nacos-config.sh; do
+  if [ ! -f "`$SCRIPT_DIR/`$item" ]; then
+    echo "缺少增量配置文件：`$SCRIPT_DIR/`$item"
+    exit 1
+  fi
+done
+
+mkdir -p "`$DEPLOY_DIR/nacos" "`$DEPLOY_DIR/scripts"
+if [ -f "`$DEPLOY_DIR/nacos/crm-gateway.yaml" ]; then
+  cp "`$DEPLOY_DIR/nacos/crm-gateway.yaml" "`$DEPLOY_DIR/nacos/crm-gateway.yaml.bak.`$(date +%Y%m%d%H%M%S)"
+fi
+cp "`$SCRIPT_DIR/crm-gateway.yaml" "`$DEPLOY_DIR/nacos/crm-gateway.yaml"
+cp "`$SCRIPT_DIR/import-gateway-nacos-config.sh" "`$DEPLOY_DIR/scripts/import-gateway-nacos-config.sh"
+chmod +x "`$DEPLOY_DIR/scripts/import-gateway-nacos-config.sh"
+
+echo "已同步Gateway Nacos配置到：`$DEPLOY_DIR"
+
+if [ "`$IMPORT_AFTER_SYNC" = "--import" ] || [ "`$IMPORT_AFTER_SYNC" = "true" ]; then
+  cd "`$DEPLOY_DIR"
+  sh scripts/import-gateway-nacos-config.sh
+fi
+"@
+
+    $ImportGatewayNacosContent = @"
+#!/usr/bin/env bash
+set -euo pipefail
+
+SCRIPT_DIR="`$(cd "`$(dirname "`${BASH_SOURCE[0]}")" && pwd)"
+DEPLOY_DIR="`$(cd "`$SCRIPT_DIR/.." && pwd)"
+NACOS_DIR="`$DEPLOY_DIR/nacos"
+ENV_FILE="`$DEPLOY_DIR/.env"
+
+read_env_value() {
+  local key="`$1"
+  local default_value="`$2"
+  if [ -f "`$ENV_FILE" ]; then
+    local value
+    value="`$(grep -E "^`${key}=" "`$ENV_FILE" | tail -n 1 | cut -d '=' -f 2- || true)"
+    if [ -n "`$value" ]; then
+      printf '%s' "`$value"
+      return
+    fi
+  fi
+  printf '%s' "`$default_value"
+}
+
+normalize_addr() {
+  local value="`$1"
+  if [[ "`$value" == http://* || "`$value" == https://* ]]; then
+    printf '%s' "`$value"
+    return
+  fi
+  printf 'http://%s' "`$value"
+}
+
+if ! command -v curl >/dev/null 2>&1; then
+  echo "未找到curl，请先安装curl"
+  exit 1
+fi
+
+NACOS_ADDR="`$(normalize_addr "`${CRM_NACOS_SERVER_ADDR:-`${NACOS_ADDR:-`$(read_env_value CRM_NACOS_SERVER_ADDR "127.0.0.1:8848")}}")"
+NACOS_GROUP="`${CRM_NACOS_GROUP:-`${NACOS_GROUP:-`$(read_env_value CRM_NACOS_GROUP "DEFAULT_GROUP")}}"
+NACOS_NAMESPACE="`${CRM_NACOS_NAMESPACE:-`${NACOS_NAMESPACE:-`$(read_env_value CRM_NACOS_NAMESPACE "")}}"
+NACOS_USERNAME="`${CRM_NACOS_USERNAME:-`${NACOS_USERNAME:-`$(read_env_value CRM_NACOS_USERNAME "")}}"
+NACOS_PASSWORD="`${CRM_NACOS_PASSWORD:-`${NACOS_PASSWORD:-`$(read_env_value CRM_NACOS_PASSWORD "")}}"
+CRM_GATEWAY_DATA_ID="`${CRM_GATEWAY_NACOS_DATA_ID:-`$(read_env_value CRM_GATEWAY_NACOS_DATA_ID "crm-gateway.yaml")}"
+GATEWAY_FILE="`$NACOS_DIR/crm-gateway.yaml"
+
+if [ ! -f "`$GATEWAY_FILE" ]; then
+  echo "Gateway配置文件不存在：`$GATEWAY_FILE"
+  exit 1
+fi
+
+ACCESS_TOKEN=""
+if [ -n "`$NACOS_USERNAME" ]; then
+  LOGIN_RESPONSE="`$(curl -sS -X POST "`$NACOS_ADDR/nacos/v1/auth/users/login" \
+    --data-urlencode "username=`$NACOS_USERNAME" \
+    --data-urlencode "password=`$NACOS_PASSWORD")"
+  ACCESS_TOKEN="`$(printf '%s' "`$LOGIN_RESPONSE" | sed -n 's/.*"accessToken"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p')"
+  if [ -z "`$ACCESS_TOKEN" ]; then
+    echo "Nacos登录失败：`$LOGIN_RESPONSE"
+    exit 1
+  fi
+fi
+
+ARGS=(
+  -sS
+  -X POST
+  "`$NACOS_ADDR/nacos/v1/cs/configs"
+  --data-urlencode "dataId=`$CRM_GATEWAY_DATA_ID"
+  --data-urlencode "group=`$NACOS_GROUP"
+  --data-urlencode "type=yaml"
+  --data-urlencode "content@`$GATEWAY_FILE"
+)
+
+if [ -n "`$NACOS_NAMESPACE" ]; then
+  ARGS+=(--data-urlencode "tenant=`$NACOS_NAMESPACE")
+fi
+if [ -n "`$ACCESS_TOKEN" ]; then
+  ARGS+=(--data-urlencode "accessToken=`$ACCESS_TOKEN")
+fi
+
+echo "导入Gateway Nacos配置：dataId=`$CRM_GATEWAY_DATA_ID，group=`$NACOS_GROUP"
+RESULT="`$(curl "`${ARGS[@]}")"
+if [ "`$RESULT" != "true" ]; then
+  echo "Gateway Nacos配置导入失败：`$RESULT"
+  exit 1
+fi
+
+echo "Gateway Nacos配置导入完成"
 "@
 
     $DeployContent = @"
@@ -208,8 +387,10 @@ DEPLOY_DIR="`${2:-`${CRM_DEPLOY_DIR:-}}"
 bash "`$SCRIPT_DIR/load-app-images.sh" "`$CRM_VERSION"
 
 if [ -n "`$DEPLOY_DIR" ]; then
+  bash "`$SCRIPT_DIR/sync-nacos-config.sh" "`$DEPLOY_DIR" --import
   bash "`$SCRIPT_DIR/restart-crm-app.sh" "`$CRM_VERSION" "`$DEPLOY_DIR"
 else
+  bash "`$SCRIPT_DIR/sync-nacos-config.sh" "" --import
   bash "`$SCRIPT_DIR/restart-crm-app.sh" "`$CRM_VERSION"
 fi
 "@
@@ -219,15 +400,19 @@ CRM_VERSION=$Version
 BUILD_TIME=$(Get-Date -Format "yyyy-MM-dd HH:mm:ss")
 BACKEND_IMAGE=crm-backend:$Version
 MCP_IMAGE=crm-mcp:$Version
+GATEWAY_IMAGE=crm-gateway:$Version
+AI_RUNTIME_IMAGE=crm-ai-runtime:$Version
 FRONTEND_IMAGE=crm-frontend:$Version
 "@
 
     Write-Utf8NoBomFile -Path $LoadScript -Content $LoadContent
     Write-Utf8NoBomFile -Path $RestartScript -Content $RestartContent
+    Write-Utf8NoBomFile -Path $SyncNacosScript -Content $SyncNacosContent
+    Write-Utf8NoBomFile -Path $ImportGatewayNacosScript -Content $ImportGatewayNacosContent
     Write-Utf8NoBomFile -Path $DeployScript -Content $DeployContent
     Write-Utf8NoBomFile -Path $VersionFile -Content $VersionContent
 
-    return @($LoadScript, $RestartScript, $DeployScript, $VersionFile)
+    return @($LoadScript, $RestartScript, $SyncNacosScript, $ImportGatewayNacosScript, $DeployScript, $VersionFile)
 }
 
 function Invoke-RemoteCommand {
@@ -397,15 +582,22 @@ $ContextBaseDir = Join-Path $RootDir ".build\app-images"
 $ContextDir = Join-Path $ContextBaseDir ([Guid]::NewGuid().ToString("N"))
 $BackendContextDir = Join-Path $ContextDir "backend"
 $McpContextDir = Join-Path $ContextDir "mcp"
+$GatewayContextDir = Join-Path $ContextDir "gateway"
+$AiRuntimeContextDir = Join-Path $ContextDir "ai-runtime"
 $FrontendContextDir = Join-Path $ContextDir "frontend"
 $FrontendBuildDir = Join-Path $ContextDir "frontend-build"
 $BackendImage = "crm-backend:$Version"
 $McpImage = "crm-mcp:$Version"
+$GatewayImage = "crm-gateway:$Version"
+$AiRuntimeImage = "crm-ai-runtime:$Version"
 $FrontendImage = "crm-frontend:$Version"
 $BackendArchive = Join-Path $OutputDir "crm-backend-$Version.tar"
 $McpArchive = Join-Path $OutputDir "crm-mcp-$Version.tar"
+$GatewayArchive = Join-Path $OutputDir "crm-gateway-$Version.tar"
+$AiRuntimeArchive = Join-Path $OutputDir "crm-ai-runtime-$Version.tar"
 $FrontendArchive = Join-Path $OutputDir "crm-frontend-$Version.tar"
 $ComposeFile = Join-Path $OutputDir "docker-compose.yml"
+$NacosGatewayConfig = Join-Path $OutputDir "crm-gateway.yaml"
 $ShouldUpload = $Upload.IsPresent -or $DeployRemote.IsPresent
 $OriginalJavaHome = $env:JAVA_HOME
 $OriginalPath = $env:Path
@@ -429,6 +621,8 @@ Invoke-CheckedCommand `
 New-Item -ItemType Directory -Force -Path $OutputDir | Out-Null
 New-Item -ItemType Directory -Force -Path $BackendContextDir | Out-Null
 New-Item -ItemType Directory -Force -Path $McpContextDir | Out-Null
+New-Item -ItemType Directory -Force -Path $GatewayContextDir | Out-Null
+New-Item -ItemType Directory -Force -Path $AiRuntimeContextDir | Out-Null
 New-Item -ItemType Directory -Force -Path $FrontendContextDir | Out-Null
 New-Item -ItemType Directory -Force -Path $FrontendBuildDir | Out-Null
 
@@ -439,8 +633,8 @@ try {
     try {
         Invoke-CheckedCommand `
             -Command "mvn" `
-            -Arguments @("-DskipTests", "-pl", "crm-web,crm-mcp", "-am", "clean", "package") `
-            -Description "构建后端和MCP服务Jar"
+            -Arguments @("-DskipTests", "-pl", "crm-web,crm-mcp,crm-gateway", "-am", "clean", "package") `
+            -Description "构建后端、MCP服务和Gateway服务Jar"
     } finally {
         Pop-Location
     }
@@ -465,6 +659,17 @@ try {
 
     if (-not $McpJar) {
         throw "未找到MCP服务Jar：backend\crm-mcp\target\crm-mcp-*.jar"
+    }
+
+    $GatewayJar = Get-ChildItem `
+        -LiteralPath (Join-Path $BackendDir "crm-gateway\target") `
+        -Filter "crm-gateway-*.jar" |
+        Where-Object { $_.Name -notlike "*.original" } |
+        Sort-Object LastWriteTime -Descending |
+        Select-Object -First 1
+
+    if (-not $GatewayJar) {
+        throw "未找到Gateway服务Jar：backend\crm-gateway\target\crm-gateway-*.jar"
     }
 
     $FrontendBuildFiles = @(
@@ -525,6 +730,20 @@ try {
         -LiteralPath (Join-Path $DockerDir "mcp\Dockerfile") `
         -Destination (Join-Path $McpContextDir "Dockerfile")
 
+    Copy-Item -LiteralPath $GatewayJar.FullName -Destination (Join-Path $GatewayContextDir "app.jar")
+    Copy-Item `
+        -LiteralPath (Join-Path $DockerDir "gateway\Dockerfile") `
+        -Destination (Join-Path $GatewayContextDir "Dockerfile")
+
+    Copy-Item -LiteralPath (Join-Path $RootDir "crm-ai-runtime\requirements.txt") -Destination (Join-Path $AiRuntimeContextDir "requirements.txt")
+    Copy-Item `
+        -LiteralPath (Join-Path $RootDir "crm-ai-runtime\app") `
+        -Destination (Join-Path $AiRuntimeContextDir "app") `
+        -Recurse
+    Copy-Item `
+        -LiteralPath (Join-Path $DockerDir "ai-runtime\Dockerfile") `
+        -Destination (Join-Path $AiRuntimeContextDir "Dockerfile")
+
     Copy-Item -LiteralPath $FrontendDistDir -Destination (Join-Path $FrontendContextDir "dist") -Recurse
     Copy-Item `
         -LiteralPath (Join-Path $DockerDir "frontend\Dockerfile") `
@@ -548,6 +767,16 @@ try {
 
     Invoke-CheckedCommand `
         -Command "docker" `
+        -Arguments @("build", "--pull=false", "-t", $GatewayImage, $GatewayContextDir) `
+        -Description "构建Gateway服务Docker镜像"
+
+    Invoke-CheckedCommand `
+        -Command "docker" `
+        -Arguments @("build", "--pull=false", "-t", $AiRuntimeImage, $AiRuntimeContextDir) `
+        -Description "构建AI运行时Docker镜像"
+
+    Invoke-CheckedCommand `
+        -Command "docker" `
         -Arguments @("build", "--pull=false", "-t", $FrontendImage, $FrontendContextDir) `
         -Description "构建前端Docker镜像"
 
@@ -563,19 +792,34 @@ try {
 
     Invoke-CheckedCommand `
         -Command "docker" `
+        -Arguments @("save", "-o", $GatewayArchive, $GatewayImage) `
+        -Description "导出Gateway服务镜像"
+
+    Invoke-CheckedCommand `
+        -Command "docker" `
+        -Arguments @("save", "-o", $AiRuntimeArchive, $AiRuntimeImage) `
+        -Description "导出AI运行时镜像"
+
+    Invoke-CheckedCommand `
+        -Command "docker" `
         -Arguments @("save", "-o", $FrontendArchive, $FrontendImage) `
         -Description "导出前端镜像"
 
     $BackendHash = Get-FileHash -LiteralPath $BackendArchive -Algorithm SHA256
     $McpHash = Get-FileHash -LiteralPath $McpArchive -Algorithm SHA256
+    $GatewayHash = Get-FileHash -LiteralPath $GatewayArchive -Algorithm SHA256
+    $AiRuntimeHash = Get-FileHash -LiteralPath $AiRuntimeArchive -Algorithm SHA256
     $FrontendHash = Get-FileHash -LiteralPath $FrontendArchive -Algorithm SHA256
     $ChecksumFile = Join-Path $OutputDir "SHA256SUMS.txt"
     @(
         "$($BackendHash.Hash.ToLower())  $($BackendHash.Path | Split-Path -Leaf)"
         "$($McpHash.Hash.ToLower())  $($McpHash.Path | Split-Path -Leaf)"
+        "$($GatewayHash.Hash.ToLower())  $($GatewayHash.Path | Split-Path -Leaf)"
+        "$($AiRuntimeHash.Hash.ToLower())  $($AiRuntimeHash.Path | Split-Path -Leaf)"
         "$($FrontendHash.Hash.ToLower())  $($FrontendHash.Path | Split-Path -Leaf)"
     ) | Set-Content -LiteralPath $ChecksumFile -Encoding ASCII
     Copy-Item -LiteralPath (Join-Path $DeployDir "docker-compose.yml") -Destination $ComposeFile
+    Copy-Item -LiteralPath (Join-Path $DeployDir "nacos\crm-gateway.yaml") -Destination $NacosGatewayConfig
     $ServerScripts = New-ServerScripts -OutputDir $OutputDir -Version $Version
 
     if ($ShouldUpload) {
@@ -587,7 +831,8 @@ try {
             -RemotePassword $RemotePassword `
             -SshKey $SshKey
 
-        $UploadFiles = @($BackendArchive, $McpArchive, $FrontendArchive, $ChecksumFile, $ComposeFile) + $ServerScripts
+        $NacosFiles = @($NacosGatewayConfig)
+        $UploadFiles = @($BackendArchive, $McpArchive, $GatewayArchive, $AiRuntimeArchive, $FrontendArchive, $ChecksumFile, $ComposeFile) + $NacosFiles + $ServerScripts
         Invoke-RemoteUpload `
             -Files $UploadFiles `
             -RemoteHost $RemoteHost `
@@ -597,7 +842,7 @@ try {
             -SshKey $SshKey
 
         Invoke-RemoteCommand `
-            -CommandText "chmod +x '$RemotePath/load-app-images.sh' '$RemotePath/restart-crm-app.sh' '$RemotePath/deploy-crm-app.sh'" `
+            -CommandText "chmod +x '$RemotePath/load-app-images.sh' '$RemotePath/restart-crm-app.sh' '$RemotePath/sync-nacos-config.sh' '$RemotePath/import-gateway-nacos-config.sh' '$RemotePath/deploy-crm-app.sh'" `
             -Description "授权远程部署脚本" `
             -RemoteHost $RemoteHost `
             -RemoteUser $RemoteUser `
@@ -623,15 +868,20 @@ try {
     Write-Host "构建完成" -ForegroundColor Green
     Write-Host "后端镜像：$BackendImage"
     Write-Host "MCP服务镜像：$McpImage"
+    Write-Host "Gateway服务镜像：$GatewayImage"
+    Write-Host "AI运行时镜像：$AiRuntimeImage"
     Write-Host "前端镜像：$FrontendImage"
     Write-Host "输出目录：$OutputDir"
     Write-Host ""
     Write-Host "上传以下文件到服务器：" -ForegroundColor Yellow
     Write-Host "  $BackendArchive"
     Write-Host "  $McpArchive"
+    Write-Host "  $GatewayArchive"
+    Write-Host "  $AiRuntimeArchive"
     Write-Host "  $FrontendArchive"
     Write-Host "  $ChecksumFile"
     Write-Host "  $ComposeFile"
+    Write-Host "  $NacosGatewayConfig"
     foreach ($ServerScript in $ServerScripts) {
         Write-Host "  $ServerScript"
     }

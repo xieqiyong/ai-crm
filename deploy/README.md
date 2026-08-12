@@ -4,14 +4,14 @@
 
 当前部署只管这几个服务：
 
+- `crm-gateway`：统一网关入口。
 - `crm-backend`：主后端。
 - `crm-mcp`：CRM MCP 工具服务。
+- `crm-ai-runtime`：Python LangGraph AI运行时。
 - `crm-frontend`：前端 Nginx。
 - `crm-postgres`：内置 PostgreSQL。
 - `crm-redis`：内置 Redis。
 - `crm-minio`：内置 MinIO。
-
-Python Runtime 不在当前部署链路内。
 
 后端业务配置全部走 Nacos。`.env` 只保留 Docker 启动和 Nacos 引导必需项。
 
@@ -35,7 +35,8 @@ crm-app
 │   └── crm-images.tar
 ├── nacos
 │   ├── crm.yaml
-│   └── crm-mcp.yaml
+│   ├── crm-mcp.yaml
+│   └── crm-gateway.yaml
 ├── scripts
 │   ├── deploy-offline.sh
 │   └── import-nacos-config.sh
@@ -72,12 +73,15 @@ deploy/output/crm-分支-release.tar.gz
 
 - `crm-backend` 镜像
 - `crm-mcp` 镜像
+- `crm-gateway` 镜像
+- `crm-ai-runtime` 镜像
 - `crm-frontend` 镜像
 - PostgreSQL、Redis、MinIO 镜像
 - `docker-compose.yml`
 - `.env`
 - `nacos/crm.yaml`
 - `nacos/crm-mcp.yaml`
+- `nacos/crm-gateway.yaml`
 - 部署脚本
 
 ### 2. 上传并解压到固定目录
@@ -106,6 +110,8 @@ CRM_NACOS_SERVER_ADDR=192.168.50.105:8848
 CRM_NACOS_GROUP=DEFAULT_GROUP
 CRM_NACOS_DATA_ID=crm.yaml
 CRM_MCP_NACOS_DATA_ID=crm-mcp.yaml
+CRM_GATEWAY_NACOS_DATA_ID=crm-gateway.yaml
+CRM_NACOS_DISCOVERY_ENABLED=true
 ```
 
 ### 4. 修改 Nacos 配置文件
@@ -113,6 +119,7 @@ CRM_MCP_NACOS_DATA_ID=crm-mcp.yaml
 ```bash
 vi nacos/crm.yaml
 vi nacos/crm-mcp.yaml
+vi nacos/crm-gateway.yaml
 ```
 
 注意：
@@ -121,6 +128,7 @@ vi nacos/crm-mcp.yaml
 - `nacos/crm.yaml` 里的 `spring.data.redis.password` 要和 `.env` 里的 `CRM_REDIS_PASSWORD` 一致。
 - `nacos/crm.yaml` 里的 MinIO 密钥要和 `.env` 里的 `CRM_MINIO_ACCESS_KEY`、`CRM_MINIO_SECRET_KEY` 一致。
 - 企微、火山、RAG、Agent、大模型等业务配置都写到 `nacos/crm.yaml`。
+- Gateway 路由、超时、服务名写到 `nacos/crm-gateway.yaml`。
 
 ### 5. 启动
 
@@ -132,7 +140,7 @@ sh scripts/deploy-offline.sh
 
 1. `docker load -i images/crm-images.tar`
 2. 创建 `data`、`logs`、`uploads` 目录
-3. 导入 `nacos/crm.yaml` 和 `nacos/crm-mcp.yaml`
+3. 导入 `nacos/crm.yaml`、`nacos/crm-mcp.yaml` 和 `nacos/crm-gateway.yaml`
 4. 执行：
 
 ```bash
@@ -147,6 +155,8 @@ docker compose up -d --no-build --pull never
 docker compose ps
 docker compose logs -f crm-backend
 docker compose logs -f crm-mcp
+docker compose logs -f crm-gateway
+docker compose logs -f crm-ai-runtime
 ```
 
 后端日志看到下面内容说明 Nacos 已生效：
@@ -161,7 +171,7 @@ Started CrmWebApplication
 
 增量部署只更新应用镜像，不动数据库数据目录。
 
-### 方案 A：本地打三应用镜像并上传
+### 方案 A：本地打应用镜像并上传
 
 Windows 本地执行：
 
@@ -200,10 +210,17 @@ $env:CRM_DEPLOY_SSH_KEY="$env:USERPROFILE\.ssh\crm_deploy_ed25519"
 
 - `crm-backend-crm-v2.tar`
 - `crm-mcp-crm-v2.tar`
+- `crm-gateway-crm-v2.tar`
+- `crm-ai-runtime-crm-v2.tar`
 - `crm-frontend-crm-v2.tar`
 - `load-app-images.sh`
+- `sync-nacos-config.sh`
 - `restart-crm-app.sh`
 - `deploy-crm-app.sh`
+- `crm.yaml`
+- `crm-mcp.yaml`
+- `crm-gateway.yaml`
+- `import-nacos-config.sh`
 
 然后在服务器执行：
 
@@ -214,31 +231,35 @@ sh deploy-crm-app.sh crm-v2 /app/builds/products/crm/crm-app
 
 脚本会：
 
-1. 加载三个应用镜像。
-2. 修改运行目录 `.env` 里的 `CRM_VERSION`。
-3. 重启 `crm-backend`、`crm-mcp`、`crm-frontend`。
+1. 加载应用镜像。
+2. 同步 Nacos 配置和导入脚本到运行目录。
+3. 导入 `crm.yaml`、`crm-mcp.yaml`、`crm-gateway.yaml`。
+4. 修改运行目录 `.env` 里的 `CRM_VERSION`。
+5. 重启 `crm-backend`、`crm-mcp`、`crm-ai-runtime`、`crm-gateway`、`crm-frontend`。
 
-内部重启命令：
+内部重启命令现在是：
 
 ```bash
-docker compose up -d --no-deps --force-recreate --no-build --pull never crm-backend crm-mcp crm-frontend
+docker compose up -d --no-deps --force-recreate --no-build --pull never crm-backend crm-mcp crm-ai-runtime crm-gateway crm-frontend
 ```
 
-### 方案 B：手动上传三个应用镜像
+### 方案 B：手动上传应用镜像
 
-把三个镜像 tar 上传到服务器后执行：
+把镜像 tar 上传到服务器后执行：
 
 ```bash
 cd /app/builds/products/crm
 
 docker load -i crm-backend-crm-v2.tar
 docker load -i crm-mcp-crm-v2.tar
+docker load -i crm-gateway-crm-v2.tar
+docker load -i crm-ai-runtime-crm-v2.tar
 docker load -i crm-frontend-crm-v2.tar
 
 cd /app/builds/products/crm/crm-app
 sed -i 's/^CRM_VERSION=.*/CRM_VERSION=crm-v2/' .env
 
-docker compose up -d --no-deps --force-recreate --no-build --pull never crm-backend crm-mcp crm-frontend
+docker compose up -d --no-deps --force-recreate --no-build --pull never crm-backend crm-mcp crm-ai-runtime crm-gateway crm-frontend
 docker compose ps
 ```
 
@@ -249,6 +270,7 @@ docker compose ps
 ```bash
 vi nacos/crm.yaml
 vi nacos/crm-mcp.yaml
+vi nacos/crm-gateway.yaml
 ```
 
 导入：
@@ -260,10 +282,10 @@ sh scripts/import-nacos-config.sh
 然后重启对应服务：
 
 ```bash
-docker compose up -d --no-deps --force-recreate --no-build --pull never crm-backend crm-mcp
+docker compose up -d --no-deps --force-recreate --no-build --pull never crm-backend crm-mcp crm-gateway
 ```
 
-说明：当前 Nacos 是启动加载，不是运行时热刷新。改 Nacos 后需要重启 Java 服务。
+说明：当前 Nacos 是启动加载，不是运行时热刷新。改 Nacos 后需要重启对应 Java 服务。
 
 ## 五、常用命令
 
@@ -271,9 +293,13 @@ docker compose up -d --no-deps --force-recreate --no-build --pull never crm-back
 docker compose ps
 docker compose logs -f crm-backend
 docker compose logs -f crm-mcp
+docker compose logs -f crm-gateway
+docker compose logs -f crm-ai-runtime
 docker compose logs -f crm-frontend
 docker compose restart crm-backend
 docker compose restart crm-mcp
+docker compose restart crm-gateway
+docker compose restart crm-ai-runtime
 docker compose restart crm-frontend
 docker compose down
 ```
@@ -312,6 +338,7 @@ docker tag minio/minio:latest docker.1ms.run/minio/minio:latest
 ```bash
 curl 'http://192.168.50.105:8848/nacos/v1/cs/configs?dataId=crm.yaml&group=DEFAULT_GROUP'
 curl 'http://192.168.50.105:8848/nacos/v1/cs/configs?dataId=crm-mcp.yaml&group=DEFAULT_GROUP'
+curl 'http://192.168.50.105:8848/nacos/v1/cs/configs?dataId=crm-gateway.yaml&group=DEFAULT_GROUP'
 ```
 
 ### 4. 后端连接数据库失败
@@ -329,6 +356,6 @@ curl 'http://192.168.50.105:8848/nacos/v1/cs/configs?dataId=crm-mcp.yaml&group=D
 - `scripts/build-offline-package.sh`：构建全量离线包。
 - `scripts/deploy-offline.sh`：首次部署或全量离线启动。
 - `scripts/import-nacos-config.sh`：导入 Nacos 配置。
-- `scripts/build-app-images.ps1`：Windows 本地构建三应用镜像，用于增量部署。
+- `scripts/build-app-images.ps1`：Windows 本地构建应用镜像，用于增量部署。
 
 当前部署只保留 Nacos 模式。
