@@ -72,6 +72,7 @@ public class PermissionSeedService {
 
     private String[][] permissionDefinitions() {
         return new String[][] {
+            {"crm:settings:manage", "系统参数管理", "ACTION", ""},
             {"*", "全部操作权限", "ACTION", ""},
             {"menu.dashboard", "工作台菜单", "MENU", "dashboard"},
             {"menu.leads", "线索菜单", "MENU", "leads"},

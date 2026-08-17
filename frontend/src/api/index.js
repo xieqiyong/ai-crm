@@ -12,6 +12,7 @@ import { observabilityApi } from './modules/observabilityApi'
 import { wecomApi } from './modules/wecomApi'
 import { notificationApi } from './modules/notificationApi'
 import { mailApi } from './modules/mailApi'
+import { settingsApi } from './modules/settingsApi'
 
 export const api = {
   auth: authApi,
@@ -34,6 +35,7 @@ export const api = {
   wecom: wecomApi,
   notification: notificationApi,
   mail: mailApi,
+  settings: settingsApi,
 }
 
 export { request } from './httpClient'

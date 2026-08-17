@@ -78,6 +78,9 @@ crm:
   redis:
     enabled: ${CRM_REDIS_ENABLED:true}
   task:
+    followup-inactivity:
+      first-delay-minutes: ${CRM_TASK_FOLLOWUP_INACTIVITY_FIRST_DELAY_MINUTES:720}
+      second-delay-minutes: ${CRM_TASK_FOLLOWUP_INACTIVITY_SECOND_DELAY_MINUTES:1440}
     reminder:
       enabled: ${CRM_TASK_REMINDER_ENABLED:true}
       dispatch-delay-ms: ${CRM_TASK_REMINDER_DISPATCH_DELAY_MS:30000}

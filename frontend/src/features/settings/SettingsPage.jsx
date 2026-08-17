@@ -114,7 +114,13 @@ export function SettingsPage({
               notify={notify}
             />
           )}
-          {activeTab === 'system' && <SystemSettings currentUser={currentUser} />}
+          {activeTab === 'system' && (
+            <SystemSettings
+              currentUser={currentUser}
+              notify={notify}
+              canManage={can('crm:settings:manage')}
+            />
+          )}
         </div>
       </div>
     </div>
@@ -412,7 +418,145 @@ function NotificationSettings({ canManage, notify }) {
   )
 }
 
-function SystemSettings({ currentUser }) {
+function SystemSettings({ currentUser, notify, canManage }) {
+  const [loading, setLoading] = useState(true)
+  const [saving, setSaving] = useState(false)
+  const [form, setForm] = useState({
+    firstDelayMinutes: '720',
+    secondDelayMinutes: '1440',
+  })
+  const [defaults, setDefaults] = useState({
+    firstDelayMinutes: 720,
+    secondDelayMinutes: 1440,
+  })
+
+  useEffect(() => {
+    let canceled = false
+    setLoading(true)
+    api.settings.followupTaskDetail()
+      .then((data) => {
+        if (canceled) return
+        setForm({
+          firstDelayMinutes: String(data?.firstDelayMinutes || 720),
+          secondDelayMinutes: String(data?.secondDelayMinutes || 1440),
+        })
+        setDefaults({
+          firstDelayMinutes: data?.defaultFirstDelayMinutes || 720,
+          secondDelayMinutes: data?.defaultSecondDelayMinutes || 1440,
+        })
+      })
+      .catch((err) => {
+        if (!canceled) notify?.(err.message || '系统参数加载失败', 'info')
+      })
+      .finally(() => {
+        if (!canceled) setLoading(false)
+      })
+    return () => {
+      canceled = true
+    }
+  }, [notify])
+
+  const update = (field, value) => {
+    setForm((current) => ({ ...current, [field]: value }))
+  }
+
+  const saveFollowupTaskSettings = async () => {
+    const firstDelayMinutes = normalizePositiveInteger(form.firstDelayMinutes)
+    const secondDelayMinutes = normalizePositiveInteger(form.secondDelayMinutes)
+    if (!firstDelayMinutes || !secondDelayMinutes) {
+      notify?.('提醒间隔必须是大于0的分钟数', 'info')
+      return
+    }
+    setSaving(true)
+    try {
+      const data = await api.settings.saveFollowupTask({
+        firstDelayMinutes,
+        secondDelayMinutes,
+      })
+      setForm({
+        firstDelayMinutes: String(data?.firstDelayMinutes || firstDelayMinutes),
+        secondDelayMinutes: String(data?.secondDelayMinutes || secondDelayMinutes),
+      })
+      notify?.('跟进任务系统参数已保存')
+    } catch (err) {
+      notify?.(err.message || '系统参数保存失败', 'danger')
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  return (
+    <>
+      <Card className="settings-section">
+        <div className="settings-section-head">
+          <div>
+            <h2>跟进任务提醒</h2>
+            <p>销售写完客户或线索跟进后，系统按这里的分钟数自动生成后续提醒任务。</p>
+          </div>
+          <Settings2 size={21} />
+        </div>
+        <div className="customer-form-grid system-settings-form">
+          <Field label="第一次提醒间隔（分钟）" required hint={`默认值：${formatMinutesLabel(defaults.firstDelayMinutes)}`}>
+            <input
+              type="number"
+              min="1"
+              step="1"
+              disabled={!canManage || loading}
+              value={form.firstDelayMinutes}
+              onChange={(event) => update('firstDelayMinutes', event.target.value)}
+            />
+          </Field>
+          <Field label="第二次强提醒间隔（分钟）" required hint={`默认值：${formatMinutesLabel(defaults.secondDelayMinutes)}`}>
+            <input
+              type="number"
+              min="1"
+              step="1"
+              disabled={!canManage || loading}
+              value={form.secondDelayMinutes}
+              onChange={(event) => update('secondDelayMinutes', event.target.value)}
+            />
+          </Field>
+        </div>
+        <div className="settings-security-note">
+          第二次间隔必须大于第一次才会生成升级提醒；如果只是本地测试，可以先设置为 1 分钟和 3 分钟。
+        </div>
+        <div className="settings-save-bar system-settings-save-bar">
+          <span><CheckCircle2 size={15} />保存后立即写入数据库，后续新跟进会读取最新值。</span>
+          <Button icon={Check} disabled={!canManage || loading || saving} onClick={saveFollowupTaskSettings}>
+            {saving ? '保存中' : canManage ? '保存参数' : '无保存权限'}
+          </Button>
+        </div>
+      </Card>
+      <SystemRuntimeSummary currentUser={currentUser} />
+    </>
+  )
+}
+
+function normalizePositiveInteger(value) {
+  const number = Number(value)
+  if (!Number.isFinite(number)) {
+    return 0
+  }
+  return Math.floor(number)
+}
+
+function formatMinutesLabel(value) {
+  const minutesValue = normalizePositiveInteger(value)
+  if (minutesValue <= 0) {
+    return '-'
+  }
+  const hours = Math.floor(minutesValue / 60)
+  const minutes = minutesValue % 60
+  if (hours <= 0) {
+    return `${minutes} 分钟`
+  }
+  if (minutes <= 0) {
+    return `${hours} 小时`
+  }
+  return `${hours} 小时 ${minutes} 分钟`
+}
+
+function SystemRuntimeSummary({ currentUser }) {
   return (
     <Card className="settings-section">
       <div className="settings-section-head"><div><h2>运行参数</h2><p>展示当前会话实际生效的系统隔离与接口约束。</p></div><Settings2 size={21} /></div>

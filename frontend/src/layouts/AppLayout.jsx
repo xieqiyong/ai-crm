@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import {
   Bell, ChevronDown, HelpCircle, LogOut, Menu, PanelLeftClose, PanelLeftOpen, Search, Zap,
 } from 'lucide-react'
@@ -82,8 +82,7 @@ export function AppLayout({
   const [sidebarCollapsed, setSidebarCollapsed] = useState(readSidebarCollapsed)
   const [collapsedGroups, setCollapsedGroups] = useState(readCollapsedGroups)
   const unreadCountRef = useRef(resolveUnreadCount(currentUser))
-  const unreadInitializedRef = useRef(false)
-  const popupShownIdRef = useRef('')
+  const notificationOpenRef = useRef(false)
 
   useEffect(() => {
     try {
@@ -124,49 +123,47 @@ export function AppLayout({
   }, [currentUser?.id, currentUser?.userId, currentUser?.username])
 
   useEffect(() => {
-    let canceled = false
-    let timer
-    const showLatestNotificationPopup = async () => {
-      try {
-        const data = await api.notification.page({ pageNo: 1, pageSize: 5 })
-        if (canceled) return
-        const latest = (data?.records || []).find((item) => !item.readAt)
-        if (!latest || String(latest.id) === popupShownIdRef.current) return
-        popupShownIdRef.current = String(latest.id)
-        setNotificationPopup(latest)
-      } catch {
+    notificationOpenRef.current = notificationOpen
+  }, [notificationOpen])
+
+  const refreshNotificationState = useCallback(async ({ allowPopup = true } = {}) => {
+    try {
+      const data = await api.notification.unreadCount()
+      const nextCount = Number(data?.unreadCount || 0)
+      unreadCountRef.current = nextCount
+      setUnreadCount(nextCount)
+      if (nextCount <= 0) {
+        setNotificationPopup(null)
         return
       }
+      if (!allowPopup) {
+        setNotificationPopup(null)
+        return
+      }
+      const page = await api.notification.page({ pageNo: 1, pageSize: 10 })
+      const latest = (page?.records || []).find((item) => !item.readAt)
+      setNotificationPopup((current) => {
+        if (!latest) return null
+        return current?.id === latest.id ? current : latest
+      })
+    } catch {
+      const nextCount = resolveUnreadCount(currentUser)
+      unreadCountRef.current = nextCount
+      setUnreadCount(nextCount)
     }
+  }, [currentUser])
+
+  useEffect(() => {
+    let timer
     const loadUnread = () => {
-      api.notification.unreadCount()
-        .then((data) => {
-          if (canceled) return
-          const nextCount = Number(data?.unreadCount || 0)
-          const previousCount = unreadCountRef.current
-          unreadCountRef.current = nextCount
-          setUnreadCount(nextCount)
-          if (unreadInitializedRef.current && nextCount > previousCount) {
-            showLatestNotificationPopup()
-          }
-          unreadInitializedRef.current = true
-        })
-        .catch(() => {
-          if (!canceled) {
-            const nextCount = resolveUnreadCount(currentUser)
-            unreadCountRef.current = nextCount
-            setUnreadCount(nextCount)
-            unreadInitializedRef.current = true
-          }
-        })
+      refreshNotificationState({ allowPopup: !notificationOpenRef.current }).finally(() => undefined)
     }
     loadUnread()
-    timer = window.setInterval(loadUnread, 30000)
+    timer = window.setInterval(loadUnread, 10000)
     return () => {
-      canceled = true
       window.clearInterval(timer)
     }
-  }, [currentUser?.id, currentUser?.userId, currentUser?.username])
+  }, [refreshNotificationState])
 
   const loadNotifications = async () => {
     setNotificationLoading(true)
@@ -182,7 +179,15 @@ export function AppLayout({
 
   const openNotifications = () => {
     setNotificationOpen(true)
+    setNotificationPopup(null)
     loadNotifications()
+  }
+
+  const closeNotifications = () => {
+    setNotificationOpen(false)
+    window.setTimeout(() => {
+      refreshNotificationState({ allowPopup: true })
+    }, 0)
   }
 
   const readNotification = async (item) => {
@@ -198,6 +203,9 @@ export function AppLayout({
       if (notificationPopup?.id === item.id) {
         setNotificationPopup(null)
       }
+      window.setTimeout(() => {
+        refreshNotificationState({ allowPopup: !notificationOpenRef.current })
+      }, 0)
     } catch (err) {
       onNotify(err.message || '通知状态更新失败', 'info')
     }
@@ -355,10 +363,11 @@ export function AppLayout({
         unreadCount={unreadCount}
         onRead={readNotification}
         onReadAll={readAllNotifications}
-        onClose={() => setNotificationOpen(false)}
+        onClose={closeNotifications}
       />
       <NotificationPopup
         item={notificationPopup}
+        onRead={readNotification}
         onOpen={() => {
           setNotificationPopup(null)
           openNotifications()
@@ -368,7 +377,7 @@ export function AppLayout({
   )
 }
 
-function NotificationPopup({ item, onOpen }) {
+function NotificationPopup({ item, onRead, onOpen }) {
   if (!item) return null
   return (
     <div className={`notification-popup ${item.level === 'WARNING' ? 'danger' : item.level === 'IMPORTANT' ? 'warning' : ''}`}>
@@ -379,6 +388,7 @@ function NotificationPopup({ item, onOpen }) {
       <p>{item.content}</p>
       <div className="notification-popup-foot">
         <small>{formatNotificationTime(item.createdAt)}</small>
+        <button type="button" onClick={() => onRead(item)}>标记已读</button>
         <button type="button" onClick={onOpen}>查看</button>
       </div>
     </div>

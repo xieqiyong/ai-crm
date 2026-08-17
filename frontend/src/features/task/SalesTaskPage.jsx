@@ -332,6 +332,26 @@ export function SalesTaskPage({ can, notify, navigate, currentUser }) {
     }
   }
 
+  const goFollowup = (row) => {
+    if (row.targetType === 'LEAD' && row.targetId) {
+      navigate(`leads/detail/${encodeURIComponent(row.targetId)}`)
+      return
+    }
+    if (row.targetType === 'CUSTOMER' && row.targetId) {
+      navigate(`customers/detail/${encodeURIComponent(row.targetId)}`)
+      return
+    }
+    if (row.targetType === 'OPPORTUNITY') {
+      navigate('opportunities')
+      return
+    }
+    if (row.targetType === 'CHANNEL') {
+      navigate('channels')
+      return
+    }
+    navigate('followups')
+  }
+
   if (!canView) {
     return <EmptyPermission onBack={() => navigate('dashboard')} />
   }
@@ -431,6 +451,9 @@ export function SalesTaskPage({ can, notify, navigate, currentUser }) {
                   <td>{sourceText[row.source] || row.source || '-'}</td>
                   <td>
                     <div className="table-action-row text-actions">
+                      <button type="button" className="table-text-button primary task-followup-action" onClick={() => goFollowup(row)}>
+                        去跟进
+                      </button>
                       {!isFinished(row) && row.status !== 'IN_PROGRESS' && row.status !== 'OVERDUE' && (
                         <button type="button" className="table-text-button" onClick={() => start(row)}>
                           开始
@@ -457,7 +480,7 @@ export function SalesTaskPage({ can, notify, navigate, currentUser }) {
                         </button>
                       )}
                       {canManage && (
-                        <button type="button" className="table-text-button danger" onClick={() => remove(row)}>
+                        <button type="button" className="table-text-button danger task-delete-action" onClick={() => remove(row)}>
                           删除
                         </button>
                       )}

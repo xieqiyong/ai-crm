@@ -80,6 +80,9 @@ crm:
   redis:
     enabled: true
   task:
+    followup-inactivity:
+      first-delay-minutes: 720
+      second-delay-minutes: 1440
     reminder:
       enabled: true
       dispatch-delay-ms: 30000

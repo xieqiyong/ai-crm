@@ -9,6 +9,7 @@ import com.hz.crm.application.followup.dto.FollowupTargetOptionQuery;
 import com.hz.crm.application.followup.dto.FollowupTargetOptionResponse;
 import com.hz.crm.application.media.MediaTranscriptionApplicationService;
 import com.hz.crm.application.media.dto.MediaTranscriptionResponse;
+import com.hz.crm.application.system.SystemParameterApplicationService;
 import com.hz.crm.application.task.SalesTaskApplicationService;
 import com.hz.crm.common.api.PageData;
 import com.hz.crm.common.exception.BusinessException;
@@ -17,6 +18,7 @@ import com.hz.crm.common.time.DateTimes;
 import com.hz.crm.common.user.UserDataScopeValidator;
 import com.hz.crm.common.user.UserNameResolver;
 import com.hz.crm.domain.customer.CustomerEntity;
+import com.hz.crm.domain.customer.CustomerStatus;
 import com.hz.crm.domain.customer.mapper.CustomerMapper;
 import com.hz.crm.domain.followup.FollowupRecordEntity;
 import com.hz.crm.domain.followup.FollowupObjectProjection;
@@ -68,6 +70,9 @@ public class FollowupApplicationService {
 
     @Autowired
     private MediaTranscriptionApplicationService mediaTranscriptionApplicationService;
+
+    @Autowired
+    private SystemParameterApplicationService systemParameterApplicationService;
 
     @Transactional(readOnly = true)
     public PageData<FollowupResponse> page(Long tenantId, Long userId, String dataScope, FollowupQuery query) {
@@ -189,11 +194,13 @@ public class FollowupApplicationService {
         entity.setTargetId(request.getTargetId());
         entity.setTargetName(target.getName());
         entity.setFollowupType(request.getFollowupType() == null ? FollowupType.PHONE : request.getFollowupType());
-        entity.setFollowupAt(request.getFollowupAt() == null ? now : request.getFollowupAt());
+        LocalDateTime followupAt = request.getFollowupAt() == null ? now : request.getFollowupAt();
+        entity.setFollowupAt(followupAt);
         entity.setContent(content);
         entity.setResult(trimToNull(request.getResult()));
-        entity.setNextPlan(trimToNull(request.getNextPlan()));
-        entity.setNextFollowTime(request.getNextFollowTime());
+        int autoDelayMinutes = resolveAutoNextFollowupDelayMinutes(tenantId, target);
+        entity.setNextPlan(resolveNextPlan(target, autoDelayMinutes, request.getNextPlan()));
+        entity.setNextFollowTime(resolveNextFollowTime(followupAt, autoDelayMinutes, request.getNextFollowTime()));
         Long targetOwnerId = request.getOwnerId() == null ? operatorId : request.getOwnerId();
         checkDataScope(operatorId, dataScope, targetOwnerId);
         entity.setOwnerId(targetOwnerId);
@@ -203,12 +210,70 @@ public class FollowupApplicationService {
         } else {
             followupRecordMapper.updateById(entity);
         }
-        salesTaskApplicationService.syncFollowupTask(tenantId, operatorId, dataScope, entity);
-        syncLatestFollowupReminderTasks(tenantId, operatorId, dataScope, entity.getTargetType(), entity.getTargetId());
+        if (request.getNextFollowTime() != null) {
+            salesTaskApplicationService.syncFollowupTask(tenantId, operatorId, dataScope, entity);
+            salesTaskApplicationService.cancelFollowupInactivityReminderTasks(
+                    tenantId, entity.getTargetType(), entity.getTargetId());
+        } else {
+            salesTaskApplicationService.cancelFollowupTask(tenantId, entity.getId(), "跟进记录使用系统自动提醒");
+            if (target.isAutoNextFollowupEnabled()) {
+                syncLatestFollowupReminderTasks(tenantId, operatorId, dataScope, entity.getTargetType(), entity.getTargetId());
+            } else {
+                salesTaskApplicationService.cancelFollowupInactivityReminderTasks(
+                        tenantId, entity.getTargetType(), entity.getTargetId());
+            }
+        }
         FollowupResponse response = toResponse(entity);
         fillOwnerName(tenantId, response);
         fillMediaTranscriptions(tenantId, response);
         return response;
+    }
+
+    private int resolveAutoNextFollowupDelayMinutes(Long tenantId, TargetInfo target) {
+        if (target == null || !target.isAutoNextFollowupEnabled()) {
+            return 0;
+        }
+        return systemParameterApplicationService.followupFirstDelayMinutes(tenantId);
+    }
+
+    private String resolveNextPlan(TargetInfo target, int autoDelayMinutes, String requestedNextPlan) {
+        String plan = trimToNull(requestedNextPlan);
+        if (plan != null) {
+            return plan;
+        }
+        if (autoDelayMinutes <= 0) {
+            return null;
+        }
+        String targetName = target == null ? null : trimToNull(target.getName());
+        if (targetName == null) {
+            targetName = "该对象";
+        }
+        return formatDelayMinutes(autoDelayMinutes) + "内再次跟进「" + targetName + "」，确认需求变化并推进下一步沟通。";
+    }
+
+    private LocalDateTime resolveNextFollowTime(
+            LocalDateTime followupAt, int autoDelayMinutes, LocalDateTime requestedNextFollowTime) {
+        if (requestedNextFollowTime != null) {
+            return requestedNextFollowTime;
+        }
+        if (autoDelayMinutes <= 0) {
+            return null;
+        }
+        LocalDateTime baseTime = followupAt == null ? DateTimes.now() : followupAt;
+        return baseTime.plusMinutes(autoDelayMinutes);
+    }
+
+    private String formatDelayMinutes(int delayMinutes) {
+        int safeMinutes = Math.max(1, delayMinutes);
+        int hours = safeMinutes / 60;
+        int minutes = safeMinutes % 60;
+        if (hours <= 0) {
+            return minutes + "分钟";
+        }
+        if (minutes <= 0) {
+            return hours + "小时";
+        }
+        return hours + "小时" + minutes + "分钟";
     }
 
     private void updateLeadStatusAfterFollowup(Long tenantId, FollowupTargetType targetType, Long targetId, LocalDateTime now) {
@@ -473,23 +538,39 @@ public class FollowupApplicationService {
             if (entity == null) {
                 throw new BusinessException("FOLLOWUP_006", "线索不存在");
             }
-            return new TargetInfo(resolveText(entity.getCompanyName(), entity.getName()), entity.getOwnerId());
+            return new TargetInfo(
+                    resolveText(entity.getCompanyName(), entity.getName()),
+                    entity.getOwnerId(),
+                    canAutoFollowup(entity.getStatus()));
         }
         if (FollowupTargetType.CUSTOMER == targetType) {
             CustomerEntity entity = customerMapper.selectOne(baseTargetWrapper(targetId, tenantId));
             if (entity == null) {
                 throw new BusinessException("FOLLOWUP_007", "客户不存在");
             }
-            return new TargetInfo(entity.getName(), entity.getOwnerId());
+            return new TargetInfo(entity.getName(), entity.getOwnerId(), canAutoFollowup(entity.getStatus()));
         }
         if (FollowupTargetType.OPPORTUNITY == targetType) {
             OpportunityEntity entity = opportunityMapper.selectOne(baseTargetWrapper(targetId, tenantId));
             if (entity == null) {
                 throw new BusinessException("FOLLOWUP_008", "商机不存在");
             }
-            return new TargetInfo(entity.getName(), entity.getOwnerId());
+            return new TargetInfo(entity.getName(), entity.getOwnerId(), false);
         }
         throw new BusinessException("FOLLOWUP_009", "不支持的跟进对象类型");
+    }
+
+    private boolean canAutoFollowup(LeadStatus status) {
+        return LeadStatus.CONVERTED != status
+                && LeadStatus.INVALID != status
+                && LeadStatus.DUPLICATE != status
+                && LeadStatus.CLOSED != status;
+    }
+
+    private boolean canAutoFollowup(CustomerStatus status) {
+        return CustomerStatus.COOPERATED != status
+                && CustomerStatus.CHURNED != status
+                && CustomerStatus.BLACKLIST != status;
     }
 
     private <T> QueryWrapper<T> baseTargetWrapper(Long targetId, Long tenantId) {
@@ -691,9 +772,12 @@ public class FollowupApplicationService {
 
         private Long ownerId;
 
-        TargetInfo(String name, Long ownerId) {
+        private boolean autoNextFollowupEnabled;
+
+        TargetInfo(String name, Long ownerId, boolean autoNextFollowupEnabled) {
             this.name = name;
             this.ownerId = ownerId;
+            this.autoNextFollowupEnabled = autoNextFollowupEnabled;
         }
 
         String getName() {
@@ -702,6 +786,10 @@ public class FollowupApplicationService {
 
         Long getOwnerId() {
             return ownerId;
+        }
+
+        boolean isAutoNextFollowupEnabled() {
+            return autoNextFollowupEnabled;
         }
     }
 
