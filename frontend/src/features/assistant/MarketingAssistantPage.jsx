@@ -5,6 +5,7 @@ import {
 } from 'lucide-react'
 import { Badge, Button, ConfirmDialog, EmptyPermission, MarkdownText, useConfirmDialog } from '../../components'
 import { api } from '../../api'
+import { runtimeConfig } from '../../config/env'
 
 function nextId() {
   return `${Date.now()}-${Math.random().toString(16).slice(2)}`
@@ -21,6 +22,18 @@ function formatTime(value) {
     minute: '2-digit',
     hour12: false,
   })
+}
+
+function typewriterIntervalMs() {
+  const value = Number(runtimeConfig.assistantTypewriterInterval || 12)
+  if (!Number.isFinite(value)) return 12
+  return Math.max(4, Math.min(value, 80))
+}
+
+function typewriterStep() {
+  const value = Number(runtimeConfig.assistantTypewriterStep || 4)
+  if (!Number.isFinite(value)) return 4
+  return Math.max(1, Math.min(value, 20))
 }
 
 function agentScene(agent) {
@@ -55,6 +68,19 @@ function updateLastAssistant(messages, updater) {
   return next
 }
 
+function appendUnique(values, value, maxSize = 8) {
+  const text = String(value || '').trim()
+  if (!text) return values || []
+  const next = [...(values || []).filter((item) => item !== text), text]
+  return next.slice(-maxSize)
+}
+
+function appendText(values, value) {
+  const text = String(value || '')
+  if (!text) return values || ''
+  return `${values || ''}${text}`
+}
+
 export function MarketingAssistantPage({
   navigate,
   notify,
@@ -71,6 +97,7 @@ export function MarketingAssistantPage({
   const [settling, setSettling] = useState(false)
   const [uploading, setUploading] = useState(false)
   const [progress, setProgress] = useState([])
+  const [reasoning, setReasoning] = useState('')
   const [copiedId, setCopiedId] = useState(null)
   const { confirm, dialogProps } = useConfirmDialog()
   const fileInputRef = useRef(null)
@@ -107,7 +134,7 @@ export function MarketingAssistantPage({
       }
     })
     return () => window.cancelAnimationFrame(frame)
-  }, [messages, progress])
+  }, [messages, progress, reasoning])
 
   useEffect(() => () => {
     abortControllerRef.current?.abort()
@@ -146,6 +173,7 @@ export function MarketingAssistantPage({
     if (!conversation?.id) return
     setActiveConversationId(conversation.id)
     setProgress([])
+    setReasoning('')
     try {
       const rows = await api.agent.assistantMessages(conversation.id)
       setMessages(toMessages(rows))
@@ -158,6 +186,7 @@ export function MarketingAssistantPage({
     setActiveConversationId(null)
     setMessages([])
     setProgress([])
+    setReasoning('')
     setAttachments([])
     setInput('')
   }
@@ -168,6 +197,7 @@ export function MarketingAssistantPage({
     setActiveConversationId(null)
     setMessages([])
     setProgress([])
+    setReasoning('')
     setAttachments([])
   }
 
@@ -204,7 +234,7 @@ export function MarketingAssistantPage({
         return
       }
       controller.abort()
-      setProgress((values) => [...new Set([...values, '已终止本次回答'])].slice(-5))
+      setProgress((values) => appendUnique(values, '已终止本次回答'))
     } catch (error) {
       notify(error.message || '终止回答失败', 'error')
     }
@@ -255,28 +285,66 @@ export function MarketingAssistantPage({
     setInput('')
     setAttachments([])
     setProgress(['智能体开始处理'])
+    setReasoning('')
     shouldStickToBottomRef.current = true
     setLoading(true)
     setSettling(false)
     let answer = ''
+    let answerTarget = ''
+    let answerFinished = false
+    let finishPatch = {}
     let nextConversationId = activeConversationId
     const controller = new AbortController()
     const requestId = nextId()
     abortControllerRef.current = controller
     activeRunRequestIdRef.current = requestId
-    const flushAnswer = (streaming) => {
+    const stopAnswerTimer = () => {
       if (answerRenderTimerRef.current) {
         window.clearTimeout(answerRenderTimerRef.current)
         answerRenderTimerRef.current = null
       }
-      setMessages((values) => updateLastAssistant(values, { content: answer, streaming }))
+    }
+    const renderAnswer = (streaming, patch = {}) => {
+      setMessages((values) => updateLastAssistant(values, { content: answer, streaming, ...patch }))
+    }
+    const finishAnswerIfReached = () => {
+      if (!answerFinished || answer.length < answerTarget.length) return false
+      stopAnswerTimer()
+      renderAnswer(false, finishPatch)
+      setLoading(false)
+      setSettling(false)
+      return true
     }
     const scheduleAnswerRender = () => {
       if (answerRenderTimerRef.current) return
       answerRenderTimerRef.current = window.setTimeout(() => {
         answerRenderTimerRef.current = null
-        setMessages((values) => updateLastAssistant(values, { content: answer, streaming: true }))
-      }, 45)
+        const nextLength = Math.min(answer.length + typewriterStep(), answerTarget.length)
+        answer = answerTarget.slice(0, nextLength)
+        renderAnswer(!answerFinished || answer.length < answerTarget.length)
+        if (!finishAnswerIfReached() && answer.length < answerTarget.length) {
+          scheduleAnswerRender()
+        }
+      }, typewriterIntervalMs())
+    }
+    const appendAnswerTarget = (content) => {
+      const value = String(content || '')
+      if (!value) return
+      answerTarget += value
+      scheduleAnswerRender()
+    }
+    const completeAnswer = (patch = {}, finalText = '') => {
+      const value = String(finalText || '')
+      if (value && value.length >= answerTarget.length) {
+        answerTarget = value
+      }
+      answerFinished = true
+      finishPatch = patch || {}
+      if (!answerTarget) {
+        finishAnswerIfReached()
+        return
+      }
+      scheduleAnswerRender()
     }
     try {
       await api.agent.assistantRunStream({
@@ -293,17 +361,15 @@ export function MarketingAssistantPage({
             nextConversationId = payload.conversationId
           }
           if (type === 'ANSWER_DELTA') {
-            answer += content
-            scheduleAnswerRender()
+            appendAnswerTarget(content)
             return
           }
           if (type === 'ANSWER_FINISHED') {
-            if (content && !answer) {
-              answer = content
-            }
-            flushAnswer(false)
-            setLoading(false)
-            setSettling(true)
+            completeAnswer({}, content)
+            return
+          }
+          if (type === 'THOUGHT_DELTA' || type === 'THOUGHT') {
+            setReasoning((value) => appendText(value, content))
             return
           }
           if (type === 'RUN_FINISHED') {
@@ -312,32 +378,24 @@ export function MarketingAssistantPage({
               nextConversationId = response.conversationId
               setActiveConversationId(response.conversationId)
             }
-            if (response.reply && !answer) {
-              answer = response.reply
-            }
-            flushAnswer(false)
-            setLoading(false)
-            setSettling(true)
-            setProgress((values) => [...new Set([...values, '智能体回复完成'])].slice(-5))
+            completeAnswer({}, response.reply || '')
+            setProgress((values) => appendUnique(values, '智能体回复完成'))
             return
           }
           if (type === 'RUN_ERROR') {
-            if (answerRenderTimerRef.current) {
-              window.clearTimeout(answerRenderTimerRef.current)
-              answerRenderTimerRef.current = null
-            }
+            stopAnswerTimer()
             setMessages((values) => updateLastAssistant(values, {
-              content: content || '智能体运行失败',
+              content: answer || answerTarget || content || '智能体运行失败',
               streaming: false,
               status: 'FAILED',
             }))
             setLoading(false)
-            setSettling(true)
-            setProgress((values) => [...new Set([...values, content || '智能体运行失败'])].slice(-5))
+            setSettling(false)
+            setProgress((values) => appendUnique(values, content || '智能体运行失败'))
             return
           }
           if (content && ['RUN_STATUS_CHANGED', 'CONTEXT_LOADED', 'TOOL_CALL_STARTED', 'TOOL_RESULT_FINISHED'].includes(type)) {
-            setProgress((values) => [...new Set([...values, content])].slice(-5))
+            setProgress((values) => appendUnique(values, content))
           }
         },
       }, {
@@ -349,12 +407,9 @@ export function MarketingAssistantPage({
       await loadConversations(activeAgent.id)
     } catch (error) {
       if (error.name === 'AbortError') {
-        if (answerRenderTimerRef.current) {
-          window.clearTimeout(answerRenderTimerRef.current)
-          answerRenderTimerRef.current = null
-        }
+        stopAnswerTimer()
         setMessages((values) => updateLastAssistant(values, {
-          content: answer || '本次回答已终止。',
+          content: answer || answerTarget || '本次回答已终止。',
           streaming: false,
           status: 'STOPPED',
         }))
@@ -365,12 +420,9 @@ export function MarketingAssistantPage({
         notify('本次回答已终止', 'info')
         return
       }
-      if (answerRenderTimerRef.current) {
-        window.clearTimeout(answerRenderTimerRef.current)
-        answerRenderTimerRef.current = null
-      }
+      stopAnswerTimer()
       setMessages((values) => updateLastAssistant(values, {
-        content: error.message || '智能体请求失败',
+        content: answer || answerTarget || error.message || '智能体请求失败',
         streaming: false,
         status: 'FAILED',
       }))
@@ -382,8 +434,10 @@ export function MarketingAssistantPage({
       if (activeRunRequestIdRef.current === requestId) {
         activeRunRequestIdRef.current = null
       }
-      setLoading(false)
-      setSettling(false)
+      if (!answerFinished || answer.length >= answerTarget.length) {
+        setLoading(false)
+        setSettling(false)
+      }
     }
   }
 
@@ -527,12 +581,23 @@ export function MarketingAssistantPage({
                           <small>{message.streaming ? '正在生成' : formatTime(message.createdAt)}</small>
                         </div>
                       )}
-                      {activeAssistant && progress.length > 0 && (
+                      {activeAssistant && (progress.length > 0 || reasoning) && (
                         <details className="assistant-thoughts">
-                          <summary>{message.streaming ? '正在处理' : `已完成 · ${progress.length} 步`}</summary>
-                          <ol>
-                            {progress.map((item) => <li key={item}>{item}</li>)}
-                          </ol>
+                          <summary>{message.streaming ? '分析过程' : `已完成 · ${progress.length} 步`}</summary>
+                          {progress.length > 0 && (
+                            <>
+                              <strong>执行过程</strong>
+                              <ol>
+                                {progress.map((item) => <li key={item}>{item}</li>)}
+                              </ol>
+                            </>
+                          )}
+                          {reasoning && (
+                            <div className="assistant-reasoning-text">
+                              <strong>模型推理摘要</strong>
+                              <p>{reasoning}</p>
+                            </div>
+                          )}
                         </details>
                       )}
                       {message.content

@@ -1,0 +1,227 @@
+# 说明：此文件按 backend/crm-web/src/main/resources/application.yml 的本地默认值生成。
+
+server:
+  port: 8080
+
+spring:
+  application:
+    name: crm
+  servlet:
+    multipart:
+      max-file-size: 512MB
+      max-request-size: 600MB
+  datasource:
+    url: jdbc:postgresql://localhost:5432/crm
+    username: app_user
+    password: app123456
+    driver-class-name: org.postgresql.Driver
+    druid:
+      initial-size: 1
+      min-idle: 1
+      max-active: 20
+      max-wait: 60000
+      time-between-eviction-runs-millis: 60000
+      min-evictable-idle-time-millis: 300000
+      validation-query: select 1
+      max-open-prepared-statements: 20
+      pool-prepared-statements: false
+      max-pool-prepared-statement-per-connection-size: 0
+  jpa:
+    database-platform: org.hibernate.dialect.PostgreSQLDialect
+    hibernate:
+      ddl-auto: update
+    open-in-view: true
+    properties:
+      hibernate:
+        format_sql: true
+  data:
+    redis:
+      host: 127.0.0.1
+      port: 6379
+      password:
+      database: 1
+  kafka:
+    bootstrap-servers: localhost:9092
+    producer:
+      acks: all
+      key-serializer: org.apache.kafka.common.serialization.StringSerializer
+      value-serializer: org.apache.kafka.common.serialization.StringSerializer
+      properties:
+        enable.idempotence: true
+    consumer:
+      auto-offset-reset: earliest
+      enable-auto-commit: false
+      key-deserializer: org.apache.kafka.common.serialization.StringDeserializer
+      value-deserializer: org.apache.kafka.common.serialization.StringDeserializer
+    listener:
+      ack-mode: record
+
+mybatis-plus:
+  configuration:
+    map-underscore-to-camel-case: true
+
+logging:
+  config: classpath:logback-spring.xml
+  level:
+    root: INFO
+
+crm:
+  logging:
+    path: ./logs
+    max-history: 30
+    max-file-size: 100MB
+  jwt:
+    secret: please-change-this-secret-key-to-at-least-32-bytes
+    ttl-seconds: 86400
+  auth:
+    password-reset:
+      ttl-seconds: 900
+      expose-token: true
+  redis:
+    enabled: true
+  task:
+    reminder:
+      enabled: true
+      dispatch-delay-ms: 30000
+      initial-delay-ms: 10000
+      batch-size: 50
+      max-retry: 3
+      retry-delay-seconds: 60
+  channel:
+    upload-dir: ./uploads/channel
+  media:
+    transcription:
+      enabled: true
+      max-file-size-bytes: 536870912
+      dispatch-delay-ms: 30000
+      initial-delay-ms: 10000
+      batch-size: 10
+      max-retry: 3
+      retry-delay-seconds: 60
+      public-url:
+      ffmpeg-path: ffmpeg
+      ffmpeg-timeout-ms: 600000
+      volcengine:
+        enabled: true
+        base-url: https://openspeech.bytedance.com/api/v1/auc
+        appid: 8286999944
+        token: Rz4tuArOiXPKuFS1k74NkqgYqPjETTOE
+        cluster: volc_auc_common
+        language: zh-CN
+        timeout-ms: 15000
+  wecom:
+    base-url: https://qyapi.weixin.qq.com
+    connect-timeout-ms: 5000
+    read-timeout-ms: 30000
+    schedule-delay-ms: 60000
+    schedule-initial-delay-ms: 30000
+    fetch-detail-enabled: true
+    fetch-tags-enabled: true
+  nacos:
+    enabled: true
+    server-addr: localhost:8848
+    namespace:
+    group: DEFAULT_GROUP
+    data-id: crm.yaml
+    shared-data-ids:
+    username:
+    password:
+    timeout-ms: 5000
+    fail-fast: true
+    discovery:
+      enabled: false
+      service-name: crm-web
+      ip:
+      port: 8080
+      cluster-name: DEFAULT
+  storage:
+    upload-dir: ./uploads
+    public-path: /uploads
+    minio:
+      enabled: true
+      endpoint: http://180.76.225.232:9000
+      public-url:
+      access-key: admin
+      secret-key: Xqy2018101992
+      bucket: crm
+      public-read: true
+  search:
+    elasticsearch:
+      enabled: true
+      uris: http://192.168.50.105:9200
+      username:
+      password:
+  knowledge:
+    change:
+      reconcile-delay-ms: 3000
+      reconcile-initial-delay-ms: 10000
+      kafka:
+        enabled: false
+        topic: crm-knowledge-change
+        group-id: crm-knowledge-indexer
+        publish-batch-size: 100
+        publish-delay-ms: 1000
+        publish-initial-delay-ms: 5000
+        send-timeout-ms: 10000
+    search:
+      hybrid:
+        vector-candidates: 20
+        keyword-candidates: 20
+        database-candidates: 20
+        vector-weight: 0.55
+        keyword-weight: 0.35
+        database-weight: 0.10
+        rrf-k: 60
+        min-score: 0
+        database-fallback-only: true
+    ingest:
+      stale-task-minutes: 120
+      executor:
+        core-size: 2
+        max-size: 4
+        queue-capacity: 100
+    chunk:
+      max-chars: 900
+      overlap-chars: 120
+    embedding:
+      enabled: true
+      base-url: http://localhost:11434/v1
+      api-key:
+      model: bge-m3:latest
+      dimensions: 0
+      timeout-ms: 30000
+    elasticsearch:
+      index-name: crm_knowledge_chunk
+      timeout-ms: 10000
+    milvus:
+      enabled: true
+      endpoint: http://192.168.50.105:19530
+      token:
+      database:
+      collection: crm_knowledge_chunk
+      timeout-ms: 10000
+  agent:
+    workspace: ./data/agent-runtime
+    web-search:
+      enabled: true
+      provider: searxng
+      endpoint: http://180.76.225.232:8888
+      api-key:
+      timeout-ms: 8000
+      max-results: 5
+      fetch-detail: true
+      detail-limit: 3
+    token:
+      daily-limit: 100000
+      reserve-output-tokens: 2048
+  ai:
+    runtime:
+      url: http://localhost:8001
+      internal-token:
+      timeout-ms: 90000
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info,metrics

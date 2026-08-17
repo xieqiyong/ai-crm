@@ -176,6 +176,51 @@ def trace_search_outputs(output: Any) -> dict[str, Any]:
     }
 
 
+def trace_node_inputs(inputs: dict[str, Any]) -> dict[str, Any]:
+    state = extract_value(inputs, "state", 0)
+    value = to_dict(state)
+    request = to_dict(value.get("request"))
+    lead = to_dict(value.get("lead"))
+    profile = to_dict(value.get("customer_profile"))
+    context = to_dict(request.get("context"))
+    result = {
+        "stateKeys": sorted([str(key) for key in value.keys()]),
+        "sceneCode": text(request.get("sceneCode") or request.get("scene_code")),
+        "businessType": text(request.get("businessType") or request.get("business_type")),
+        "businessId": text(request.get("businessId") or request.get("business_id")),
+        "runId": text(request.get("runId") or request.get("run_id")),
+        "conversationId": text(request.get("conversationId") or request.get("conversation_id")),
+        "traceId": text(context.get("traceId") or context.get("trace_id")),
+        "leadId": text(lead.get("id")),
+        "companyName": text(lead.get("companyName") or lead.get("company_name")),
+        "customerProfileAvailable": bool(profile.get("available")),
+        "rawOutputLength": len(text(value.get("raw_output"))),
+        "outputLength": len(text(value.get("output"))),
+    }
+    if settings.trace_capture_payload:
+        result["lead"] = clean_for_trace(lead)
+        result["customerProfile"] = clean_for_trace(profile)
+    return result
+
+
+def trace_node_outputs(output: Any) -> dict[str, Any]:
+    value = to_dict(output)
+    profile = to_dict(value.get("customer_profile"))
+    result = {
+        "outputKeys": sorted([str(key) for key in value.keys()]),
+        "eventCount": len(value.get("events") or []),
+        "customerProfileAvailable": bool(profile.get("available")),
+        "sourceUrlCount": len(profile.get("sourceUrls") or []),
+        "rawOutputLength": len(text(value.get("raw_output"))),
+        "outputLength": len(text(value.get("output"))),
+        "usage": clean_for_trace(value.get("usage") or {}),
+    }
+    if settings.trace_capture_payload:
+        result["customerProfile"] = clean_for_trace(profile)
+        result["output"] = shrink(value.get("output"), 2000)
+    return result
+
+
 def clean_for_trace(value: Any) -> Any:
     if isinstance(value, dict):
         result = {}

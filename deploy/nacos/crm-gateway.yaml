@@ -46,6 +46,11 @@ spring:
                 - Path=/api/ai,/api/ai/**,/internal/ai,/internal/ai/**
               filters:
                 - 'RewritePath=/api/ai(?<segment>/?.*), /internal/ai$\{segment}'
+            - id: crm-ai-agent-api
+              order: -90
+              uri: http://crm-ai-runtime:8001
+              predicates:
+                - Path=/api/agent,/api/agent/**,/api/agent-assistant,/api/agent-assistant/**,/api/assistant/lead/analyze,/api/assistant/langgraph/lead/analyze
             - id: crm-mcp
               order: -50
               uri: http://crm-mcp:8091

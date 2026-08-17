@@ -1023,7 +1023,7 @@ export function LeadAiAnalysisModal({ open, analysis, elapsed, canConvert, onApp
             {runtimeSteps.length > 0 && <Badge tone="success">流程步骤：{runtimeSteps.length}</Badge>}
           </div>
 
-          <RuntimeFlowCard steps={runtimeSteps} />
+          <RuntimeFlowCard steps={runtimeSteps} events={analysis.runtimeEvents} />
 
           <div className="lead-ai-conclusion-card">
             <span><Sparkles size={22} /></span>
@@ -1114,9 +1114,40 @@ export function LeadAiAnalysisModal({ open, analysis, elapsed, canConvert, onApp
   )
 }
 
-function RuntimeFlowCard({ steps = [] }) {
+function buildRuntimeTimingItems(events = []) {
+  const labels = {
+    prepare_context: '读取线索资料',
+    company_web_search: '检索客户公开信息',
+    lead_analyze: '生成销售分析',
+    validate_output: '校验结构化结果',
+    finalize: '整理分析结果',
+  }
+  const order = ['prepare_context', 'company_web_search', 'lead_analyze', 'validate_output', 'finalize']
+  return order.map((node) => {
+    const event = (events || []).find((item) => item?.metadata?.node === node && item?.metadata?.elapsedMs !== undefined)
+    if (!event) return null
+    const elapsedText = formatElapsedMs(event.metadata.elapsedMs)
+    if (!elapsedText) return null
+    return {
+      node,
+      title: event.metadata.nodeName || labels[node] || node,
+      elapsedText,
+    }
+  }).filter(Boolean)
+}
+
+function formatElapsedMs(value) {
+  const numberValue = Number(value)
+  if (!Number.isFinite(numberValue) || numberValue < 0) return ''
+  if (numberValue < 1000) return `${Math.round(numberValue)}ms`
+  if (numberValue < 10000) return `${(numberValue / 1000).toFixed(1)}秒`
+  return `${Math.round(numberValue / 1000)}秒`
+}
+
+function RuntimeFlowCard({ steps = [], events = [] }) {
   const values = (steps || []).filter(Boolean)
-  if (!values.length) return null
+  const timingItems = buildRuntimeTimingItems(events)
+  if (!values.length && !timingItems.length) return null
   return (
     <div className="lead-runtime-flow">
       <div className="lead-runtime-flow-head">
@@ -1134,6 +1165,13 @@ function RuntimeFlowCard({ steps = [] }) {
           </div>
         ))}
       </div>
+      {timingItems.length > 0 && (
+        <div className="lead-runtime-timing-list">
+          {timingItems.map((item) => (
+            <span key={item.node}>{item.title}：{item.elapsedText}</span>
+          ))}
+        </div>
+      )}
     </div>
   )
 }

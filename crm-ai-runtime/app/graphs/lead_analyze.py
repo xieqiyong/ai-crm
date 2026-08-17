@@ -4,6 +4,7 @@ from typing import Annotated, Any, Literal, TypedDict
 
 from langgraph.graph import END, START, StateGraph
 
+from app.graphs.observability import observed_node
 from app.schemas.runtime import RuntimeRunRequest
 from app.services.event_bus import runtime_event
 from app.services.llm import OpenAICompatibleClient, LlmResult, text
@@ -24,14 +25,22 @@ class LeadAnalyzeState(TypedDict, total=False):
 
 llm_client = OpenAICompatibleClient()
 
+NODE_NAMES = {
+    "prepare_context": "读取线索资料",
+    "company_web_search": "检索客户公开信息",
+    "lead_analyze": "生成销售分析",
+    "validate_output": "校验结构化结果",
+    "finalize": "整理分析结果",
+}
+
 
 def build_graph(checkpointer=None):
     builder = StateGraph(LeadAnalyzeState)
-    builder.add_node("prepare_context", prepare_context)
-    builder.add_node("company_web_search", company_web_search_node)
-    builder.add_node("lead_analyze", lead_analyze_node)
-    builder.add_node("validate_output", validate_output_node)
-    builder.add_node("finalize", finalize_node)
+    builder.add_node("prepare_context", observed_node("prepare_context", NODE_NAMES["prepare_context"], prepare_context))
+    builder.add_node("company_web_search", observed_node("company_web_search", NODE_NAMES["company_web_search"], company_web_search_node, "tool"))
+    builder.add_node("lead_analyze", observed_node("lead_analyze", NODE_NAMES["lead_analyze"], lead_analyze_node))
+    builder.add_node("validate_output", observed_node("validate_output", NODE_NAMES["validate_output"], validate_output_node, "parser"))
+    builder.add_node("finalize", observed_node("finalize", NODE_NAMES["finalize"], finalize_node))
     builder.add_edge(START, "prepare_context")
     builder.add_conditional_edges(
         "prepare_context",
@@ -142,9 +151,7 @@ def build_system_prompt(request: RuntimeRunRequest) -> str:
     skill_prompt = build_skill_prompt(request)
     if skill_prompt:
         prompts.append(skill_prompt)
-    prompts.append(
-        "你是线索分析智能体。只能基于输入的真实线索数据和工具返回结果分析，不能编造公司、联系人、电话、预算、沟通记录。"
-    )
+    prompts.append("你是线索分析智能体。只能基于输入的真实线索数据和工具返回结果分析，不能编造公司、联系人、电话、预算、沟通记录。")
     prompts.append("最终只输出合法 JSON 对象，不输出 Markdown、代码块或自然语言前后缀。")
     prompts.append("customerProfile 只能填写工具结果或线索中能够确认的信息，不能猜测。")
     return "\n".join(prompts)
@@ -226,8 +233,8 @@ def fallback_result(lead: dict[str, Any], profile: dict[str, Any], raw_output: s
         "keyFindings": ["模型未按标准 JSON 返回，暂不能生成可靠销售动作。"],
         "riskWarnings": ["本次分析结果不建议直接作为销售决策依据。"],
         "nextActions": ["请补充线索信息后重新分析。"],
-        "reason": "模型返回了非结构化内容，未生成可执行建议",
-        "nextAction": "请补充线索信息后重新分析",
+        "reason": "模型返回了非结构化内容，未生成可执行建议。",
+        "nextAction": "请补充线索信息后重新分析。",
         "customerProfile": profile,
     })
 

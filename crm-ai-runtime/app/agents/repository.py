@@ -33,7 +33,7 @@ class AgentRepository:
                 where tenant_id = %s and agent_id = %s and enabled = true and deleted = false
                 order by updated_at desc
                 """,
-                (request.tenant_id, agent.id),
+                (self._to_int(request.tenant_id), self._to_int(agent.id)),
             )
             return [SkillDefinition.from_row(item) for item in rows]
         except Exception as ex:
@@ -54,7 +54,7 @@ class AgentRepository:
                 where tenant_id = %s and agent_id = %s and enabled = true and deleted = false
                 order by updated_at desc
                 """,
-                (request.tenant_id, agent.id),
+                (self._to_int(request.tenant_id), self._to_int(agent.id)),
             )
             return [McpServerDefinition.from_row(item) for item in rows]
         except Exception as ex:
@@ -64,6 +64,20 @@ class AgentRepository:
             return values
 
     async def _load_agent_by_scene(self, request: RuntimeRunRequest) -> AgentDefinition:
+        if request.agent and request.agent.id:
+            row = await database_client.fetch_one(
+                """
+                select id, code, scene_code, scene_name, name, description, system_prompt,
+                       model_provider, model_name, base_url, api_key_env as api_key,
+                       max_iters, extra_config_json
+                from agents
+                where tenant_id = %s and id = %s and enabled = true and deleted = false
+                limit 1
+                """,
+                (self._to_int(request.tenant_id), self._to_int(request.agent.id)),
+            )
+            if row is not None:
+                return AgentDefinition.from_row(row)
         row = await database_client.fetch_one(
             """
             select id, code, scene_code, scene_name, name, description, system_prompt,
@@ -74,7 +88,7 @@ class AgentRepository:
             order by updated_at desc
             limit 1
             """,
-            (request.tenant_id, request.scene_code),
+            (self._to_int(request.tenant_id), request.scene_code),
         )
         if row is None:
             return AgentDefinition.from_runtime_agent(request.agent)
@@ -86,6 +100,14 @@ class AgentRepository:
             and database_client.enabled()
             and bool((request.scene_code or "").strip())
         )
+
+    def _to_int(self, value):
+        if value is None or value == "":
+            return None
+        try:
+            return int(value)
+        except (TypeError, ValueError):
+            return None
 
 
 agent_repository = AgentRepository()

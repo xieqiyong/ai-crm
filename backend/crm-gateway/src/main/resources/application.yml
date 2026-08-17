@@ -21,6 +21,11 @@ spring:
                 - Path=/api/ai,/api/ai/**,/internal/ai,/internal/ai/**
               filters:
                 - 'RewritePath=/api/ai(?<segment>/?.*), /internal/ai$\{segment}'
+            - id: crm-ai-agent-api
+              order: -90
+              uri: ${CRM_GATEWAY_AI_RUNTIME_FALLBACK_URL:http://localhost:8001}
+              predicates:
+                - Path=/api/agent,/api/agent/**,/api/agent-assistant,/api/agent-assistant/**,/api/assistant/lead/analyze,/api/assistant/langgraph/lead/analyze
             - id: crm-mcp
               order: -50
               uri: ${CRM_GATEWAY_MCP_FALLBACK_URL:http://localhost:8091}
@@ -48,7 +53,7 @@ crm:
     max-history: ${CRM_LOG_MAX_HISTORY:30}
     max-file-size: ${CRM_LOG_MAX_FILE_SIZE:100MB}
   nacos:
-    enabled: ${CRM_NACOS_ENABLED:false}
+    enabled: ${CRM_NACOS_ENABLED:true}
     server-addr: ${CRM_NACOS_SERVER_ADDR:localhost:8848}
     namespace: ${CRM_NACOS_NAMESPACE:}
     group: ${CRM_NACOS_GROUP:DEFAULT_GROUP}

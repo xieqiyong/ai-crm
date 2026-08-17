@@ -1,9 +1,10 @@
-from uuid import uuid4
-
 from app.core.config import settings
 from app.core.trace_utils import trace_enabled, trace_runtime_inputs, trace_runtime_outputs, traceable
-from app.graphs.lead_analyze import build_graph
+from app.graphs.generic_assistant import build_graph as build_generic_graph
+from app.graphs.lead_analyze import build_graph as build_lead_graph
+from app.platform.id_generator import id_generator
 from app.runtime.context import runtime_context_builder
+from app.runtime.store import runtime_store
 from app.schemas.runtime import RuntimeRunRequest, RuntimeRunResponse
 
 try:
@@ -43,8 +44,12 @@ class GraphRegistry:
         return InMemorySaver()
 
     def _build_graphs(self, checkpointer=None):
+        generic = build_generic_graph(checkpointer=checkpointer)
         return {
-            "LEAD_ANALYZE": build_graph(checkpointer=checkpointer),
+            "GENERAL_ASSISTANT": generic,
+            "CUSTOMER_DEEP_SUMMARY": generic,
+            "CHANNEL_ANALYZE": generic,
+            "LEAD_ANALYZE": build_lead_graph(checkpointer=checkpointer),
         }
 
     async def _run_with_postgres(self, request: RuntimeRunRequest) -> RuntimeRunResponse:
@@ -58,34 +63,41 @@ class GraphRegistry:
             if settings.checkpoint_auto_setup and not self._postgres_setup_done:
                 await checkpointer.setup()
                 self._postgres_setup_done = True
-            graph = build_graph(checkpointer=checkpointer)
+            graph = self._resolve_graph(request, build_generic_graph(checkpointer=checkpointer))
             return await self._run_graph(request, graph)
 
     async def _run_graph(self, request: RuntimeRunRequest, graph) -> RuntimeRunResponse:
         runtime_context = await runtime_context_builder.build(request)
-        state = await graph.ainvoke(
-            self._input_state(request, runtime_context.to_state()),
-            config=self._runtime_config(request),
-        )
-        events = state.get("events") or []
-        output = state.get("output") or ""
-        return RuntimeRunResponse(
-            success=True,
-            output=output,
-            events=events,
-            run_id=request.run_id,
-            conversation_id=request.conversation_id,
-            thread_id=self._thread_id(request),
-            checkpoint_enabled=settings.checkpoint_enabled,
-            trace_enabled=trace_enabled(),
-            trace_id=self._trace_id(request),
-        )
+        await runtime_store.start_run(request, runtime_context.agent)
+        try:
+            state = await graph.ainvoke(
+                self._input_state(request, runtime_context.to_state()),
+                config=self._runtime_config(request),
+            )
+            events = state.get("events") or []
+            output = state.get("output") or ""
+            usage = state.get("usage") or {}
+            await runtime_store.finish_run(request, output, events, usage)
+            return RuntimeRunResponse(
+                success=True,
+                output=output,
+                events=events,
+                run_id=request.run_id,
+                conversation_id=request.conversation_id,
+                thread_id=self._thread_id(request),
+                checkpoint_enabled=settings.checkpoint_enabled,
+                trace_enabled=trace_enabled(),
+                trace_id=self._trace_id(request),
+            )
+        except Exception as ex:
+            await runtime_store.fail_run(request, str(ex))
+            raise
 
-    def _resolve_graph(self, request: RuntimeRunRequest):
+    def _resolve_graph(self, request: RuntimeRunRequest, fallback=None):
         scene_code = (request.scene_code or "").strip().upper()
         graph = self._graphs.get(scene_code)
         if graph is None:
-            raise ValueError("暂不支持的AI场景：%s" % (scene_code or "未指定"))
+            return fallback or self._graphs.get("GENERAL_ASSISTANT")
         return graph
 
     def _input_state(self, request: RuntimeRunRequest, runtime_context: dict) -> dict:
@@ -114,7 +126,7 @@ class GraphRegistry:
 
     def _complete_runtime_identity(self, request: RuntimeRunRequest) -> None:
         if not request.run_id:
-            request.run_id = uuid4().hex
+            request.run_id = str(id_generator.next_id())
 
     def _postgres_checkpoint_enabled(self) -> bool:
         if not settings.checkpoint_enabled:

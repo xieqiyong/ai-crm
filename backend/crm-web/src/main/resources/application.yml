@@ -69,7 +69,7 @@ crm:
     max-history: ${CRM_LOG_MAX_HISTORY:30}
     max-file-size: ${CRM_LOG_MAX_FILE_SIZE:100MB}
   jwt:
-    secret: ${CRM_JWT_SECRET:please-change-this-secret-key-to-at-least-32-bytes}
+    secret: ${CRM_JWT_SECRET:7sK9pR2vG5tB8nQ4dF1jL6zX3cM0aS7hJ2bN}
     ttl-seconds: ${CRM_JWT_TTL_SECONDS:86400}
   auth:
     password-reset:
@@ -116,7 +116,7 @@ crm:
     fetch-detail-enabled: ${CRM_WECOM_FETCH_DETAIL_ENABLED:true}
     fetch-tags-enabled: ${CRM_WECOM_FETCH_TAGS_ENABLED:true}
   nacos:
-    enabled: ${CRM_NACOS_ENABLED:false}
+    enabled: ${CRM_NACOS_ENABLED:true}
     server-addr: ${CRM_NACOS_SERVER_ADDR:localhost:8848}
     namespace: ${CRM_NACOS_NAMESPACE:}
     group: ${CRM_NACOS_GROUP:DEFAULT_GROUP}

@@ -24,6 +24,16 @@ class DatabaseClient:
             return []
         return await asyncio.to_thread(self._fetch_all_sync, sql, params)
 
+    async def execute(self, sql: str, params: tuple[Any, ...]) -> int:
+        if not self.enabled():
+            return 0
+        return await asyncio.to_thread(self._execute_sync, sql, params)
+
+    async def execute_many(self, values: list[tuple[str, tuple[Any, ...]]]) -> None:
+        if not self.enabled() or not values:
+            return
+        await asyncio.to_thread(self._execute_many_sync, values)
+
     def _fetch_one_sync(self, sql: str, params: tuple[Any, ...]) -> dict[str, Any] | None:
         with psycopg.connect(settings.database_uri, row_factory=dict_row) as conn:
             with conn.cursor() as cursor:
@@ -37,6 +47,21 @@ class DatabaseClient:
                 cursor.execute(sql, params)
                 values = cursor.fetchall()
                 return [dict(item) for item in values]
+
+    def _execute_sync(self, sql: str, params: tuple[Any, ...]) -> int:
+        with psycopg.connect(settings.database_uri, row_factory=dict_row) as conn:
+            with conn.cursor() as cursor:
+                cursor.execute(sql, params)
+                rowcount = cursor.rowcount
+            conn.commit()
+            return rowcount
+
+    def _execute_many_sync(self, values: list[tuple[str, tuple[Any, ...]]]) -> None:
+        with psycopg.connect(settings.database_uri, row_factory=dict_row) as conn:
+            with conn.cursor() as cursor:
+                for sql, params in values:
+                    cursor.execute(sql, params)
+            conn.commit()
 
 
 database_client = DatabaseClient()

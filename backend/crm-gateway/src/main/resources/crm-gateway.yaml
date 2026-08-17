@@ -1,0 +1,91 @@
+# 说明：此文件按 backend/crm-gateway/src/main/resources/application.yml 的本地默认值生成。
+
+server:
+  port: 8090
+
+spring:
+  application:
+    name: crm-gateway
+  main:
+    web-application-type: reactive
+  cloud:
+    gateway:
+      server:
+        webflux:
+          httpclient:
+            connect-timeout: 5000
+            response-timeout: 300s
+          routes:
+            - id: crm-ai-runtime
+              order: -100
+              uri: http://localhost:8001
+              predicates:
+                - Path=/api/ai,/api/ai/**,/internal/ai,/internal/ai/**
+              filters:
+                - 'RewritePath=/api/ai(?<segment>/?.*), /internal/ai$\{segment}'
+            - id: crm-ai-agent-api
+              order: -90
+              uri: http://localhost:8001
+              predicates:
+                - Path=/api/agent,/api/agent/**,/api/agent-assistant,/api/agent-assistant/**,/api/assistant/lead/analyze,/api/assistant/langgraph/lead/analyze
+            - id: crm-mcp
+              order: -50
+              uri: http://localhost:8091
+              predicates:
+                - Path=/mcp,/mcp/**
+            - id: crm-uploads
+              order: -10
+              uri: http://localhost:8080
+              predicates:
+                - Path=/uploads,/uploads/**
+            - id: crm-api
+              order: 0
+              uri: http://localhost:8080
+              predicates:
+                - Path=/api,/api/**
+
+logging:
+  config: classpath:logback-spring.xml
+  level:
+    root: INFO
+
+crm:
+  logging:
+    path: ./logs
+    max-history: 30
+    max-file-size: 100MB
+  nacos:
+    enabled: true
+    server-addr: localhost:8848
+    namespace:
+    group: DEFAULT_GROUP
+    data-id: crm-gateway.yaml
+    shared-data-ids:
+    username:
+    password:
+    timeout-ms: 5000
+    fail-fast: true
+    discovery:
+      enabled: false
+      service-name: crm-gateway
+      ip:
+      port: 8090
+      cluster-name: DEFAULT
+  gateway:
+    connect-timeout-ms: 5000
+    response-timeout-ms: 300s
+    crm:
+      service-name: crm-web
+      fallback-url: http://localhost:8080
+    ai-runtime:
+      service-name: crm-ai-runtime
+      fallback-url: http://localhost:8001
+    mcp:
+      service-name: crm-mcp
+      fallback-url: http://localhost:8091
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info

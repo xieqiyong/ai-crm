@@ -1,5 +1,6 @@
 from functools import lru_cache
 import os
+from pathlib import Path
 
 try:
     from dotenv import load_dotenv
@@ -9,20 +10,26 @@ except ImportError:
 
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
-load_dotenv(override=False)
+ENV_FILE = Path(__file__).resolve().parents[2] / ".env"
+
+load_dotenv(ENV_FILE, override=False)
 os.environ.setdefault("LANGGRAPH_STRICT_MSGPACK", "true")
 
 
 class Settings(BaseSettings):
-    model_config = SettingsConfigDict(env_file=".env", extra="ignore")
+    model_config = SettingsConfigDict(env_file=str(ENV_FILE), extra="ignore")
 
     app_name: str = "crm-ai-runtime"
     host: str = "0.0.0.0"
     port: int = 8001
     internal_token: str = ""
+    jwt_secret: str = ""
     log_level: str = "INFO"
 
     llm_timeout_seconds: int = 60
+    llm_stream_include_usage: bool = True
+    assistant_stream_chunk_size: int = 8
+    assistant_stream_delay_ms: int = 25
 
     web_search_enabled: bool = True
     web_search_provider: str = "searxng"
@@ -39,8 +46,10 @@ class Settings(BaseSettings):
 
     database_enabled: bool = False
     database_uri: str = ""
-    agent_config_source: str = "request"
+    agent_config_source: str = "database"
     agent_config_fail_fast: bool = False
+    token_daily_limit: int = 0
+    token_reserve_output_tokens: int = 4000
 
     nacos_enabled: bool = False
     nacos_server_addr: str = "localhost:8848"
