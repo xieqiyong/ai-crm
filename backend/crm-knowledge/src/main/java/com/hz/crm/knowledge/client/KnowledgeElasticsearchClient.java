@@ -82,7 +82,8 @@ public class KnowledgeElasticsearchClient {
             JSONObject query = new JSONObject();
             query.put("bool", bool);
             body.put("query", query);
-            request("POST", baseUri() + "/" + safeIndexName(targetIndex) + "/_delete_by_query", body);
+            requestAllowNotFound(
+                    "POST", baseUri() + "/" + safeIndexName(targetIndex) + "/_delete_by_query", body);
         } catch (Exception ex) {
             throw new BusinessException("KB_ES_004", "知识分片清理ES失败：" + ex.getMessage());
         }
@@ -104,7 +105,8 @@ public class KnowledgeElasticsearchClient {
             JSONObject query = new JSONObject();
             query.put("bool", bool);
             body.put("query", query);
-            request("POST", baseUri() + "/" + safeIndexName(targetIndex) + "/_delete_by_query", body);
+            requestAllowNotFound(
+                    "POST", baseUri() + "/" + safeIndexName(targetIndex) + "/_delete_by_query", body);
         } catch (Exception ex) {
             throw new BusinessException("KB_ES_004", "知识版本分片清理ES失败：" + ex.getMessage());
         }
@@ -115,7 +117,7 @@ public class KnowledgeElasticsearchClient {
             return;
         }
         try {
-            request("DELETE", baseUri() + "/" + safeIndexName(targetIndex), null);
+            requestAllowNotFound("DELETE", baseUri() + "/" + safeIndexName(targetIndex), null);
         } catch (Exception ex) {
             throw new BusinessException("KB_ES_006", "ES索引删除失败：" + ex.getMessage());
         }
@@ -236,6 +238,14 @@ public class KnowledgeElasticsearchClient {
     }
 
     private String request(String method, String url, JSONObject body) throws Exception {
+        return request(method, url, body, false);
+    }
+
+    private String requestAllowNotFound(String method, String url, JSONObject body) throws Exception {
+        return request(method, url, body, true);
+    }
+
+    private String request(String method, String url, JSONObject body, boolean allowNotFound) throws Exception {
         HttpURLConnection connection = (HttpURLConnection) new URL(url).openConnection();
         connection.setConnectTimeout(timeoutMs);
         connection.setReadTimeout(timeoutMs);
@@ -253,6 +263,9 @@ public class KnowledgeElasticsearchClient {
         }
         int statusCode = connection.getResponseCode();
         String responseText = readResponse(connection, statusCode);
+        if (allowNotFound && statusCode == HttpURLConnection.HTTP_NOT_FOUND) {
+            return responseText;
+        }
         if (statusCode < 200 || statusCode >= 300) {
             throw new BusinessException("KB_ES_003", "ES接口调用失败：" + shrink(responseText));
         }

@@ -2,6 +2,7 @@ package com.hz.crm.application.channel;
 
 import com.baomidou.mybatisplus.core.conditions.query.QueryWrapper;
 import com.hz.crm.application.channel.dto.ChannelDocumentImportRequest;
+import com.hz.crm.application.channel.dto.ChannelBatchAssignRequest;
 import com.hz.crm.application.channel.dto.ChannelMediaImportRequest;
 import com.hz.crm.application.channel.dto.ChannelPromoteRequest;
 import com.hz.crm.application.channel.dto.ChannelQuery;
@@ -13,10 +14,12 @@ import com.hz.crm.application.channel.dto.ExternalChannelSyncResult;
 import com.hz.crm.application.lead.LeadApplicationService;
 import com.hz.crm.application.lead.dto.LeadResponse;
 import com.hz.crm.application.lead.dto.LeadSaveRequest;
+import com.hz.crm.application.product.ProductReferenceResolver;
 import com.hz.crm.common.api.PageData;
 import com.hz.crm.common.exception.BusinessException;
 import com.hz.crm.common.id.SnowflakeIdGenerator;
 import com.hz.crm.common.time.DateTimes;
+import com.hz.crm.common.user.AssignableUserResolver;
 import com.hz.crm.common.user.UserNameResolver;
 import com.hz.crm.domain.channel.ChannelRecordEntity;
 import com.hz.crm.domain.channel.ChannelSource;
@@ -26,7 +29,9 @@ import com.hz.crm.domain.channel.mapper.ChannelRecordMapper;
 import com.hz.crm.domain.lead.LeadStatus;
 import java.time.LocalDateTime;
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.HashSet;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
@@ -52,6 +57,12 @@ public class ChannelApplicationService {
     @Autowired(required = false)
     private UserNameResolver userNameResolver;
 
+    @Autowired
+    private AssignableUserResolver assignableUserResolver;
+
+    @Autowired
+    private ProductReferenceResolver productReferenceResolver;
+
     @Transactional(readOnly = true)
     public PageData<ChannelResponse> page(Long tenantId, Long userId, String dataScope, ChannelQuery query) {
         ChannelQuery safeQuery = query == null ? new ChannelQuery() : query;
@@ -67,6 +78,32 @@ public class ChannelApplicationService {
             records.add(toResponse(entity));
         }
         fillOwnerNames(tenantId, records);
+        fillProductNames(tenantId, records);
+        return PageData.of(total, pageNo, pageSize, records);
+    }
+
+    @Transactional(readOnly = true)
+    public PageData<ChannelResponse> publicPoolPage(Long tenantId, ChannelQuery query) {
+        ChannelQuery safeQuery = query == null ? new ChannelQuery() : query;
+        QueryWrapper<ChannelRecordEntity> countWrapper = buildQueryWrapper(
+                tenantId, null, "ALL", safeQuery);
+        countWrapper.isNull("lead_id");
+        long total = channelRecordMapper.selectCount(countWrapper);
+        QueryWrapper<ChannelRecordEntity> wrapper = buildQueryWrapper(
+                tenantId, null, "ALL", safeQuery);
+        wrapper.isNull("lead_id");
+        int pageNo = safeQuery.safePageNo();
+        int pageSize = safeQuery.safePageSize();
+        int offset = (pageNo - 1) * pageSize;
+        wrapper.orderByDesc("created_at").orderByDesc("id")
+                .last("limit " + pageSize + " offset " + offset);
+        List<ChannelRecordEntity> entities = channelRecordMapper.selectList(wrapper);
+        List<ChannelResponse> records = new ArrayList<ChannelResponse>();
+        for (ChannelRecordEntity entity : entities) {
+            records.add(toResponse(entity));
+        }
+        fillOwnerNames(tenantId, records);
+        fillProductNames(tenantId, records);
         return PageData.of(total, pageNo, pageSize, records);
     }
 
@@ -142,6 +179,9 @@ public class ChannelApplicationService {
         wrapper.eq("external_provider", trimToNull(request.getExternalProvider()));
         wrapper.eq("external_key", trimToNull(request.getExternalKey()));
         ChannelRecordEntity entity = channelRecordMapper.selectOne(wrapper);
+        if (entity == null) {
+            entity = findDuplicateExternalChannel(tenantId, request);
+        }
         ExternalChannelSyncResult result = new ExternalChannelSyncResult();
         LocalDateTime now = DateTimes.now();
         if (entity == null) {
@@ -149,7 +189,7 @@ public class ChannelApplicationService {
             entity.setId(snowflakeIdGenerator.nextId());
             entity.setTenantId(tenantId);
             entity.setDeleted(false);
-            entity.setCreatedAt(now);
+            entity.setCreatedAt(request.getOccurredAt() == null ? now : request.getOccurredAt());
             entity.setStatus(ChannelStatus.NEW);
             entity.setChannelType(ChannelType.WECOM);
             entity.setExternalProvider(trimToNull(request.getExternalProvider()));
@@ -161,17 +201,11 @@ public class ChannelApplicationService {
         } else if (entity.isDeleted()) {
             result.setSkipped(true);
         } else {
-            boolean changed = !Objects.equals(
-                    trimToNull(entity.getExternalVersion()), trimToNull(request.getExternalVersion()));
+            boolean changed = hasExternalChannelChanges(entity, request);
             if (changed && entity.getLeadId() == null) {
-                applyExternalChannel(entity, request);
                 resetExternalAnalysis(entity);
+                applyExternalChannel(entity, request);
                 entity.setStatus(ChannelStatus.NEW);
-                entity.setUpdatedAt(now);
-                channelRecordMapper.updateById(entity);
-                result.setUpdated(true);
-            } else if (entity.getOwnerId() == null && request.getOwnerId() != null) {
-                entity.setOwnerId(request.getOwnerId());
                 entity.setUpdatedAt(now);
                 channelRecordMapper.updateById(entity);
                 result.setUpdated(true);
@@ -338,6 +372,89 @@ public class ChannelApplicationService {
         if (!isPromotionReady(entity)) {
             throw new BusinessException("CHANNEL_015", resolvePromotionBlockReason(entity));
         }
+        return promoteEntity(tenantId, operatorId, dataScope, request, entity);
+    }
+
+    @Transactional
+    public ChannelResponse assignPublicPool(
+            Long tenantId, Long operatorId, String dataScope, ChannelPromoteRequest request) {
+        if (request == null || request.getId() == null) {
+            throw new BusinessException("PUBLIC_POOL_001", "公海数据编号不能为空");
+        }
+        if (request.getOwnerId() == null) {
+            throw new BusinessException("PUBLIC_POOL_002", "请选择要分配的销售负责人");
+        }
+        ChannelRecordEntity entity = findOne(tenantId, request.getId());
+        if (entity.getLeadId() != null) {
+            throw new BusinessException("PUBLIC_POOL_003", "该公海数据已经完成分配");
+        }
+        if (!isPromotionReady(entity)) {
+            throw new BusinessException("PUBLIC_POOL_004", resolvePromotionBlockReason(entity));
+        }
+        assignableUserResolver.resolveAssignableName(
+                tenantId, operatorId, dataScope, request.getOwnerId());
+        return promoteEntity(tenantId, operatorId, dataScope, request, entity);
+    }
+
+    @Transactional
+    public List<ChannelResponse> assignPublicPoolBatch(
+            Long tenantId,
+            Long operatorId,
+            String dataScope,
+            ChannelBatchAssignRequest request) {
+        if (request == null || request.getIds() == null || request.getIds().isEmpty()) {
+            throw new BusinessException("PUBLIC_POOL_BATCH_001", "请选择需要分配的公海数据");
+        }
+        if (request.getOwnerId() == null) {
+            throw new BusinessException("PUBLIC_POOL_BATCH_002", "请选择要分配的销售负责人");
+        }
+        Set<Long> uniqueIds = new LinkedHashSet<Long>(request.getIds());
+        if (uniqueIds.size() > 100) {
+            throw new BusinessException("PUBLIC_POOL_BATCH_003", "单次最多分配100条公海数据");
+        }
+        if (uniqueIds.contains(null)) {
+            throw new BusinessException("PUBLIC_POOL_BATCH_004", "公海数据编号不能为空");
+        }
+        assignableUserResolver.resolveAssignableName(
+                tenantId, operatorId, dataScope, request.getOwnerId());
+        QueryWrapper<ChannelRecordEntity> wrapper = new QueryWrapper<ChannelRecordEntity>();
+        wrapper.eq("tenant_id", tenantId);
+        wrapper.eq("deleted", false);
+        wrapper.in("id", uniqueIds);
+        List<ChannelRecordEntity> entities = channelRecordMapper.selectList(wrapper);
+        Map<Long, ChannelRecordEntity> entityMap = new HashMap<Long, ChannelRecordEntity>();
+        for (ChannelRecordEntity entity : entities) {
+            entityMap.put(entity.getId(), entity);
+        }
+        for (Long id : uniqueIds) {
+            ChannelRecordEntity entity = entityMap.get(id);
+            if (entity == null) {
+                throw new BusinessException("PUBLIC_POOL_BATCH_005", "部分公海数据不存在或已被删除");
+            }
+            if (entity.getLeadId() != null) {
+                throw new BusinessException("PUBLIC_POOL_BATCH_006", "部分公海数据已经完成分配，请刷新后重试");
+            }
+            if (!isPromotionReady(entity)) {
+                throw new BusinessException("PUBLIC_POOL_BATCH_007", resolvePromotionBlockReason(entity));
+            }
+        }
+        List<ChannelResponse> responses = new ArrayList<ChannelResponse>();
+        for (Long id : uniqueIds) {
+            ChannelPromoteRequest promoteRequest = new ChannelPromoteRequest();
+            promoteRequest.setId(id);
+            promoteRequest.setOwnerId(request.getOwnerId());
+            responses.add(promoteEntity(
+                    tenantId, operatorId, dataScope, promoteRequest, entityMap.get(id)));
+        }
+        return responses;
+    }
+
+    private ChannelResponse promoteEntity(
+            Long tenantId,
+            Long operatorId,
+            String dataScope,
+            ChannelPromoteRequest request,
+            ChannelRecordEntity entity) {
         LeadSaveRequest leadRequest = new LeadSaveRequest();
         leadRequest.setName(resolveLeadName(entity));
         leadRequest.setCompanyName(entity.getCompanyName());
@@ -346,8 +463,10 @@ public class ChannelApplicationService {
         leadRequest.setSource(resolveLeadSource(entity));
         leadRequest.setStatus(LeadStatus.recommended());
         leadRequest.setOwnerId(request.getOwnerId() == null ? entity.getOwnerId() : request.getOwnerId());
+        leadRequest.setProductId(entity.getProductId());
         leadRequest.setRemark(resolveLeadRemark(entity));
-        LeadResponse lead = leadApplicationService.save(tenantId, operatorId, dataScope, leadRequest);
+        LeadResponse lead = leadApplicationService.createFromPublicPool(
+                tenantId, operatorId, dataScope, leadRequest);
         entity.setLeadId(lead.getId());
         entity.setStatus(ChannelStatus.PROMOTED);
         entity.setUpdatedAt(DateTimes.now());
@@ -407,6 +526,38 @@ public class ChannelApplicationService {
             wrapper.eq("owner_id", userId);
         }
         return wrapper;
+    }
+
+    private ChannelRecordEntity findDuplicateExternalChannel(
+            Long tenantId, ExternalChannelSyncRequest request) {
+        String phone = normalizePhone(request.getPhone());
+        String companyName = normalizeCompanyName(request.getCompanyName());
+        if (phone == null && companyName == null) {
+            return null;
+        }
+        QueryWrapper<ChannelRecordEntity> wrapper = new QueryWrapper<ChannelRecordEntity>();
+        wrapper.eq("tenant_id", tenantId);
+        wrapper.eq("deleted", false);
+        if (request.getProductId() != null) {
+            wrapper.eq("product_id", request.getProductId());
+        }
+        wrapper.and(condition -> {
+            boolean hasPhone = phone != null;
+            if (hasPhone) {
+                condition.apply(
+                        "regexp_replace(coalesce(phone, ''), '[^0-9]', '', 'g') = {0}", phone);
+            }
+            if (companyName != null) {
+                if (hasPhone) {
+                    condition.or();
+                }
+                condition.apply(
+                        "regexp_replace(lower(coalesce(company_name, '')), '\\s+', '', 'g') = {0}",
+                        companyName);
+            }
+        });
+        wrapper.orderByAsc("created_at").orderByAsc("id").last("limit 1");
+        return channelRecordMapper.selectOne(wrapper);
     }
 
     private ChannelRecordEntity findOne(Long tenantId, Long id) {
@@ -487,11 +638,52 @@ public class ChannelApplicationService {
         entity.setCompanyName(firstText(request.getCompanyName(), entity.getCompanyName()));
         entity.setPhone(firstText(request.getPhone(), entity.getPhone()));
         entity.setEmail(firstText(request.getEmail(), entity.getEmail()));
-        if (entity.getOwnerId() == null && request.getOwnerId() != null) {
-            entity.setOwnerId(request.getOwnerId());
+        if (request.getProductId() != null) {
+            entity.setProductId(request.getProductId());
         }
+        entity.setRemark(trimToNull(request.getRemark()));
         entity.setExternalVersion(trimToNull(request.getExternalVersion()));
         entity.setSourceSnapshot(trimToNull(request.getSourceSnapshot()));
+    }
+
+    private boolean hasExternalChannelChanges(
+            ChannelRecordEntity entity, ExternalChannelSyncRequest request) {
+        if (!Objects.equals(
+                trimToNull(entity.getExternalVersion()), trimToNull(request.getExternalVersion()))) {
+            return true;
+        }
+        if (!Objects.equals(entity.getProductId(), request.getProductId())) {
+            return true;
+        }
+        if (hasChangedValue(entity.getContactName(), request.getContactName())
+                || hasChangedValue(entity.getCompanyName(), request.getCompanyName())
+                || hasChangedValue(entity.getPhone(), request.getPhone())
+                || hasChangedValue(entity.getEmail(), request.getEmail())) {
+            return true;
+        }
+        return !Objects.equals(trimToNull(entity.getRemark()), trimToNull(request.getRemark()));
+    }
+
+    private boolean hasChangedValue(String currentValue, String incomingValue) {
+        String incoming = trimToNull(incomingValue);
+        return incoming != null && !Objects.equals(trimToNull(currentValue), incoming);
+    }
+
+    private String normalizePhone(String value) {
+        String text = trimToNull(value);
+        if (text == null) {
+            return null;
+        }
+        String normalized = text.replaceAll("[^0-9]", "");
+        return normalized.length() == 0 ? null : normalized;
+    }
+
+    private String normalizeCompanyName(String value) {
+        String text = trimToNull(value);
+        if (text == null) {
+            return null;
+        }
+        return text.toLowerCase(Locale.ROOT).replaceAll("\\s+", "");
     }
 
     private void resetExternalAnalysis(ChannelRecordEntity entity) {
@@ -637,16 +829,12 @@ public class ChannelApplicationService {
     private String resolveLeadRemark(ChannelRecordEntity entity) {
         StringBuilder builder = new StringBuilder();
         appendLine(builder, "渠道标题", entity.getTitle());
-        appendLine(builder, "渠道备注", entity.getRemark());
+        appendMarkdown(builder, entity.getRemark());
         appendLine(builder, "渠道材料", entity.getMediaFileName());
         appendLine(builder, "转译文本", entity.getTranscriptText());
         appendLine(builder, "AI总结", entity.getAiSummary());
         appendLine(builder, "有用信息", entity.getUsefulInfo());
-        String remark = builder.toString();
-        if (remark.length() > 512) {
-            return remark.substring(0, 512);
-        }
-        return remark;
+        return builder.toString();
     }
 
     private void appendLine(StringBuilder builder, String label, String value) {
@@ -657,6 +845,16 @@ public class ChannelApplicationService {
             builder.append("\n");
         }
         builder.append(label).append("：").append(value);
+    }
+
+    private void appendMarkdown(StringBuilder builder, String value) {
+        if (!StringUtils.hasText(value)) {
+            return;
+        }
+        if (builder.length() > 0) {
+            builder.append("\n\n");
+        }
+        builder.append(value.trim());
     }
 
     private String trimToNull(String value) {
@@ -699,6 +897,7 @@ public class ChannelApplicationService {
         response.setAiAnalyzedAt(entity.getAiAnalyzedAt());
         response.setLeadId(entity.getLeadId());
         response.setOwnerId(entity.getOwnerId());
+        response.setProductId(entity.getProductId());
         response.setRemark(entity.getRemark());
         response.setExternalProvider(entity.getExternalProvider());
         response.setExternalKey(entity.getExternalKey());
@@ -718,6 +917,7 @@ public class ChannelApplicationService {
         List<ChannelResponse> records = new ArrayList<ChannelResponse>();
         records.add(response);
         fillOwnerNames(tenantId, records);
+        fillProductNames(tenantId, records);
     }
 
     private void fillOwnerNames(Long tenantId, List<ChannelResponse> records) {
@@ -737,6 +937,24 @@ public class ChannelApplicationService {
         for (ChannelResponse response : records) {
             if (response.getOwnerId() != null) {
                 response.setOwnerName(names.get(response.getOwnerId()));
+            }
+        }
+    }
+
+    private void fillProductNames(Long tenantId, List<ChannelResponse> records) {
+        if (records == null || records.isEmpty()) {
+            return;
+        }
+        Set<Long> productIds = new HashSet<Long>();
+        for (ChannelResponse response : records) {
+            if (response.getProductId() != null) {
+                productIds.add(response.getProductId());
+            }
+        }
+        Map<Long, String> names = productReferenceResolver.resolveNames(tenantId, productIds);
+        for (ChannelResponse response : records) {
+            if (response.getProductId() != null) {
+                response.setProductName(names.get(response.getProductId()));
             }
         }
     }

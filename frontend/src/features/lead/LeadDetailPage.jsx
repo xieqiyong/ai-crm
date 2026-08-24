@@ -336,6 +336,7 @@ export function LeadDetailPage({ routeParams, can, notify, navigate }) {
           <InfoCell label="负责人" value={ownerName(data)} icon={UserRound} />
           <InfoCell label="联系电话" value={data.phone} icon={Phone} />
           <InfoCell label="联系邮箱" value={data.email} icon={Mail} />
+          <InfoCell label="意向产品" value={data.productName} />
           <InfoCell label="线索来源" value={leadSourceText[data.source] || data.source} />
           <InfoCell label="当前状态" value={leadStatusText[data.status] || data.status} />
           <InfoCell label="关联客户" value={data.customerName || data.customerId} />

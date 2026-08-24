@@ -91,3 +91,11 @@ export const taskApi = {
   cancel: (payload) => request('/api/task/cancel', { method: 'POST', body: JSON.stringify(payload) }),
   delete: (id) => remove('/api/task', id),
 }
+
+export const channelSourceApi = {
+  list: (payload) => request('/api/channel/source/list', { method: 'POST', body: JSON.stringify(payload || {}) }),
+  detail: (id) => request('/api/channel/source/detail', { method: 'POST', body: JSON.stringify({ id }) }),
+  save: (payload) => request('/api/channel/source/save', { method: 'POST', body: JSON.stringify(payload || {}) }),
+  delete: (id) => request('/api/channel/source/delete', { method: 'POST', body: JSON.stringify({ id }) }),
+  logs: (id) => request('/api/channel/source/logs', { method: 'POST', body: JSON.stringify({ id }) }),
+}

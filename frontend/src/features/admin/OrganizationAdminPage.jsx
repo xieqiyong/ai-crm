@@ -39,6 +39,7 @@ const MODULE_DEFINITIONS = [
   { key: 'global', label: '全局权限', actionCodes: ['*'] },
   { key: 'dashboard', label: '工作台', menuCodes: ['menu.dashboard'], actionPrefixes: ['crm:dashboard:'] },
   { key: 'leads', label: '线索管理', menuCodes: ['menu.leads'], actionPrefixes: ['crm:lead:'] },
+  { key: 'public_pool', label: '公海池', menuCodes: ['menu.public_pool'], actionPrefixes: ['crm:public-pool:'] },
   { key: 'channels', label: '渠道管理', menuCodes: ['menu.channels'], actionPrefixes: ['crm:channel:'] },
   { key: 'customers', label: '客户管理', menuCodes: ['menu.customers'], actionPrefixes: ['crm:customer:'] },
   { key: 'products', label: '产品管理', menuCodes: ['menu.products'], actionPrefixes: ['crm:product:'] },

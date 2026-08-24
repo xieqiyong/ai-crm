@@ -63,6 +63,8 @@ public class LeadEntity extends BaseEntity {
 
     private Long ownerId;
 
+    private Long productId;
+
     @Column(columnDefinition = "text")
     private String remark;
 }

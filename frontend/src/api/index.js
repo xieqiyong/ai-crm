@@ -4,7 +4,7 @@ import { agentApi } from './modules/agentApi'
 import { adminApi, modelConfigApi } from './modules/adminApi'
 import { assistantApi } from './modules/assistantApi'
 import { attachmentApi } from './modules/attachmentApi'
-import { customerApi, followupApi, leadApi, opportunityApi, productApi, taskApi } from './modules/crmApi'
+import { channelSourceApi, customerApi, followupApi, leadApi, opportunityApi, productApi, taskApi } from './modules/crmApi'
 import { channelApi } from './modules/channelApi'
 import { dashboardApi } from './modules/dashboardApi'
 import { knowledgeApi } from './modules/knowledgeApi'
@@ -20,6 +20,7 @@ export const api = {
   dashboard: dashboardApi,
   lead: leadApi,
   channel: channelApi,
+  channelSource: channelSourceApi,
   customer: customerApi,
   product: productApi,
   opportunity: opportunityApi,

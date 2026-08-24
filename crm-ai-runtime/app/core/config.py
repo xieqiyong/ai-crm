@@ -38,16 +38,22 @@ class Settings(BaseSettings):
     web_search_timeout_seconds: int = 8
     web_search_max_results: int = 5
 
+    crm_api_base_url: str = "http://crm-gateway:8090"
+    crm_api_timeout_seconds: int = 30
+    mcp_fail_fast: bool = True
+
     checkpoint_enabled: bool = False
     checkpoint_backend: str = "memory"
     checkpoint_postgres_uri: str = ""
-    checkpoint_auto_setup: bool = True
+    checkpoint_pool_min_size: int = 1
+    checkpoint_pool_max_size: int = 10
+    checkpoint_pool_timeout_seconds: int = 30
     trace_capture_payload: bool = False
 
     database_enabled: bool = False
     database_uri: str = ""
     agent_config_source: str = "database"
-    agent_config_fail_fast: bool = False
+    agent_config_fail_fast: bool = True
     token_daily_limit: int = 0
     token_reserve_output_tokens: int = 4000
 

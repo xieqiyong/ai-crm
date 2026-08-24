@@ -189,6 +189,31 @@ public class WecomApiClient {
         return groupChat;
     }
 
+    public JSONObject getSmartSheetFields(String accessToken, String docId, String sheetId, int offset, int limit) {
+        JSONObject body = new JSONObject();
+        body.put("docid", docId);
+        body.put("sheet_id", sheetId);
+        body.put("offset", Math.max(0, offset));
+        body.put("limit", Math.max(1, Math.min(limit, 1000)));
+        return execute(
+                "POST",
+                "/cgi-bin/wedoc/smartsheet/get_fields?access_token=" + encode(accessToken),
+                body);
+    }
+
+    public JSONObject getSmartSheetRecords(String accessToken, String docId, String sheetId, int offset, int limit) {
+        JSONObject body = new JSONObject();
+        body.put("docid", docId);
+        body.put("sheet_id", sheetId);
+        body.put("offset", Math.max(0, offset));
+        body.put("limit", Math.max(1, Math.min(limit, 1000)));
+        body.put("key_type", "CELL_VALUE_KEY_TYPE_FIELD_TITLE");
+        return execute(
+                "POST",
+                "/cgi-bin/wedoc/smartsheet/get_records?access_token=" + encode(accessToken),
+                body);
+    }
+
     private JSONObject execute(String method, String path, JSONObject body) {
         HttpURLConnection connection = null;
         try {

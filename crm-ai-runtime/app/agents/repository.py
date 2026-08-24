@@ -1,4 +1,5 @@
 import logging
+from typing import Any
 
 from app.agents.models import AgentDefinition, McpServerDefinition, SkillDefinition
 from app.core.config import settings
@@ -15,6 +16,8 @@ class AgentRepository:
                 agent = await self._load_agent_by_scene(request)
                 if agent.id:
                     return agent
+            except ValueError:
+                raise
             except Exception as ex:
                 if settings.agent_config_fail_fast:
                     raise
@@ -65,19 +68,10 @@ class AgentRepository:
 
     async def _load_agent_by_scene(self, request: RuntimeRunRequest) -> AgentDefinition:
         if request.agent and request.agent.id:
-            row = await database_client.fetch_one(
-                """
-                select id, code, scene_code, scene_name, name, description, system_prompt,
-                       model_provider, model_name, base_url, api_key_env as api_key,
-                       max_iters, extra_config_json
-                from agents
-                where tenant_id = %s and id = %s and enabled = true and deleted = false
-                limit 1
-                """,
-                (self._to_int(request.tenant_id), self._to_int(request.agent.id)),
-            )
+            row = await self._load_agent_by_id(request)
             if row is not None:
                 return AgentDefinition.from_row(row)
+            raise ValueError("当前租户和场景下不存在指定智能体，或智能体已停用")
         row = await database_client.fetch_one(
             """
             select id, code, scene_code, scene_name, name, description, system_prompt,
@@ -93,6 +87,33 @@ class AgentRepository:
         if row is None:
             return AgentDefinition.from_runtime_agent(request.agent)
         return AgentDefinition.from_row(row)
+
+    async def _load_agent_by_id(self, request: RuntimeRunRequest) -> dict[str, Any] | None:
+        scene_code = (request.scene_code or "").strip()
+        if scene_code:
+            return await database_client.fetch_one(
+                """
+                select id, code, scene_code, scene_name, name, description, system_prompt,
+                       model_provider, model_name, base_url, api_key_env as api_key,
+                       max_iters, extra_config_json
+                from agents
+                where tenant_id = %s and id = %s and scene_code = %s
+                  and enabled = true and deleted = false
+                limit 1
+                """,
+                (self._to_int(request.tenant_id), self._to_int(request.agent.id), scene_code),
+            )
+        return await database_client.fetch_one(
+            """
+            select id, code, scene_code, scene_name, name, description, system_prompt,
+                   model_provider, model_name, base_url, api_key_env as api_key,
+                   max_iters, extra_config_json
+            from agents
+            where tenant_id = %s and id = %s and enabled = true and deleted = false
+            limit 1
+            """,
+            (self._to_int(request.tenant_id), self._to_int(request.agent.id)),
+        )
 
     def _use_database(self, request: RuntimeRunRequest) -> bool:
         return (

@@ -2,6 +2,7 @@ package com.hz.crm.web.channel;
 
 import com.hz.crm.application.channel.dto.ChannelDocumentImportRequest;
 import com.hz.crm.application.channel.ChannelApplicationService;
+import com.hz.crm.application.channel.dto.ChannelBatchAssignRequest;
 import com.hz.crm.application.channel.dto.ChannelMediaImportRequest;
 import com.hz.crm.application.channel.dto.ChannelPromoteRequest;
 import com.hz.crm.application.channel.dto.ChannelQuery;
@@ -28,6 +29,7 @@ import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
+import java.util.List;
 import java.util.zip.ZipEntry;
 import java.util.zip.ZipInputStream;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -61,6 +63,48 @@ public class ChannelController {
             @RequestBody(required = false) ChannelQuery query, JwtPrincipal principal) {
         return ApiResult.ok(channelApplicationService.page(
                 principal.getTenantId(), principal.getUserId(), principal.getDataScope(), query));
+    }
+
+    @PostMapping("/public-pool/page")
+    @PreAuthorize("hasAuthority('*') or hasAuthority('crm:public-pool:view')")
+    public ApiResult<PageData<ChannelResponse>> publicPoolPage(
+            @RequestBody(required = false) ChannelQuery query, JwtPrincipal principal) {
+        return ApiResult.ok(channelApplicationService.publicPoolPage(
+                principal.getTenantId(), query));
+    }
+
+    @PostMapping("/public-pool/assign")
+    @PreAuthorize("hasAuthority('*') or hasAuthority('crm:public-pool:assign')")
+    @AuditOperation(
+            module = "PUBLIC_POOL",
+            action = "ASSIGN",
+            description = "分配公海数据并生成线索",
+            targetType = "CHANNEL",
+            targetIdField = "id")
+    public ApiResult<ChannelResponse> assignPublicPool(
+            @RequestBody ChannelPromoteRequest request, JwtPrincipal principal) {
+        return ApiResult.ok(channelApplicationService.assignPublicPool(
+                principal.getTenantId(),
+                principal.getUserId(),
+                principal.getDataScope(),
+                request));
+    }
+
+    @PostMapping("/public-pool/batch-assign")
+    @PreAuthorize("hasAuthority('*') or hasAuthority('crm:public-pool:assign')")
+    @AuditOperation(
+            module = "PUBLIC_POOL",
+            action = "BATCH_ASSIGN",
+            description = "批量分配公海数据并生成线索",
+            targetType = "CHANNEL",
+            recordParameters = false)
+    public ApiResult<List<ChannelResponse>> batchAssignPublicPool(
+            @RequestBody ChannelBatchAssignRequest request, JwtPrincipal principal) {
+        return ApiResult.ok(channelApplicationService.assignPublicPoolBatch(
+                principal.getTenantId(),
+                principal.getUserId(),
+                principal.getDataScope(),
+                request));
     }
 
     @PostMapping("/statistics")

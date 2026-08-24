@@ -14,6 +14,7 @@ import com.hz.crm.application.lead.dto.LeadImportRow;
 import com.hz.crm.application.lead.dto.LeadQuery;
 import com.hz.crm.application.lead.dto.LeadResponse;
 import com.hz.crm.application.lead.dto.LeadSaveRequest;
+import com.hz.crm.application.product.ProductReferenceResolver;
 import com.hz.crm.common.api.PageData;
 import com.hz.crm.common.exception.BusinessException;
 import com.hz.crm.common.id.SnowflakeIdGenerator;
@@ -68,6 +69,9 @@ public class LeadApplicationService {
     @Autowired
     private UserDataScopeValidator userDataScopeValidator;
 
+    @Autowired
+    private ProductReferenceResolver productReferenceResolver;
+
     @Transactional(readOnly = true)
     public PageData<LeadResponse> page(Long tenantId, Long userId, String dataScope, LeadQuery query) {
         LeadQuery safeQuery = query == null ? new LeadQuery() : query;
@@ -87,6 +91,7 @@ public class LeadApplicationService {
         }
         fillOwnerNames(tenantId, records);
         fillCustomerNames(tenantId, records);
+        fillProductNames(tenantId, records);
         return PageData.of(total == null ? 0L : total.longValue(), pageNo, pageSize, records);
     }
 
@@ -135,8 +140,45 @@ public class LeadApplicationService {
         Long targetOwnerId = request.getOwnerId() == null ? operatorId : request.getOwnerId();
         checkOwnerScope(operatorId, dataScope, targetOwnerId);
         entity.setOwnerId(targetOwnerId);
+        if (request.getId() == null || request.getProductId() != null) {
+            entity.setProductId(request.getProductId());
+        }
         entity.setRemark(trimToNull(request.getRemark()));
         saveEntity(entity, request.getId() == null);
+        LeadResponse response = toResponse(entity);
+        fillOwnerName(tenantId, response);
+        fillCustomerNames(tenantId, response);
+        return response;
+    }
+
+    @Transactional
+    public LeadResponse createFromPublicPool(
+            Long tenantId, Long operatorId, String dataScope, LeadSaveRequest request) {
+        if (request == null) {
+            throw new BusinessException("LEAD_PUBLIC_POOL_001", "公海线索信息不能为空");
+        }
+        String leadName = trimToNull(request.getName());
+        if (leadName == null) {
+            leadName = trimToNull(request.getCompanyName());
+        }
+        if (leadName == null) {
+            throw new BusinessException("LEAD_PUBLIC_POOL_002", "公海数据缺少可识别的线索名称");
+        }
+        LeadEntity entity = new LeadEntity();
+        entity.setId(snowflakeIdGenerator.nextId());
+        entity.setTenantId(tenantId);
+        entity.setName(leadName);
+        entity.setCompanyName(trimToNull(request.getCompanyName()));
+        entity.setPhone(trimToNull(request.getPhone()));
+        entity.setEmail(trimToNull(request.getEmail()));
+        entity.setSource(trimToNull(request.getSource()));
+        entity.setStatus(request.getStatus() == null ? LeadStatus.recommended() : request.getStatus());
+        Long targetOwnerId = request.getOwnerId() == null ? operatorId : request.getOwnerId();
+        checkOwnerScope(operatorId, dataScope, targetOwnerId);
+        entity.setOwnerId(targetOwnerId);
+        entity.setProductId(request.getProductId());
+        entity.setRemark(trimToNull(request.getRemark()));
+        saveEntity(entity, true);
         LeadResponse response = toResponse(entity);
         fillOwnerName(tenantId, response);
         fillCustomerNames(tenantId, response);
@@ -401,6 +443,7 @@ public class LeadApplicationService {
                 .set(LeadEntity::getAiConfidence, entity.getAiConfidence())
                 .set(LeadEntity::getAiAnalyzedAt, entity.getAiAnalyzedAt())
                 .set(LeadEntity::getOwnerId, entity.getOwnerId())
+                .set(LeadEntity::getProductId, entity.getProductId())
                 .set(LeadEntity::getRemark, entity.getRemark())
                 .set(LeadEntity::isDeleted, entity.isDeleted())
                 .set(LeadEntity::getUpdatedAt, entity.getUpdatedAt()));
@@ -650,6 +693,7 @@ public class LeadApplicationService {
         response.setAiConfidence(entity.getAiConfidence());
         response.setAiAnalyzedAt(entity.getAiAnalyzedAt());
         response.setOwnerId(entity.getOwnerId());
+        response.setProductId(entity.getProductId());
         response.setRemark(entity.getRemark());
         response.setCreatedAt(entity.getCreatedAt());
         response.setUpdatedAt(entity.getUpdatedAt());
@@ -660,6 +704,7 @@ public class LeadApplicationService {
         List<LeadResponse> records = new ArrayList<LeadResponse>();
         records.add(response);
         fillOwnerNames(tenantId, records);
+        fillProductNames(tenantId, records);
     }
 
     private void fillCustomerNames(Long tenantId, LeadResponse response) {
@@ -719,6 +764,24 @@ public class LeadApplicationService {
         for (LeadResponse response : records) {
             if (response.getCustomerId() != null) {
                 response.setCustomerName(names.get(response.getCustomerId()));
+            }
+        }
+    }
+
+    private void fillProductNames(Long tenantId, List<LeadResponse> records) {
+        if (records == null || records.isEmpty()) {
+            return;
+        }
+        Set<Long> productIds = new HashSet<Long>();
+        for (LeadResponse response : records) {
+            if (response.getProductId() != null) {
+                productIds.add(response.getProductId());
+            }
+        }
+        Map<Long, String> names = productReferenceResolver.resolveNames(tenantId, productIds);
+        for (LeadResponse response : records) {
+            if (response.getProductId() != null) {
+                response.setProductName(names.get(response.getProductId()));
             }
         }
     }

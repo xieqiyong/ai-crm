@@ -1,5 +1,6 @@
 package com.hz.crm.application.channel.dto;
 
+import java.time.LocalDateTime;
 import lombok.Getter;
 import lombok.Setter;
 
@@ -26,6 +27,12 @@ public class ExternalChannelSyncRequest {
     private String email;
 
     private Long ownerId;
+
+    private Long productId;
+
+    private String remark;
+
+    private LocalDateTime occurredAt;
 
     private String sourceSnapshot;
 }

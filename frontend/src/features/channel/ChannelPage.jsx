@@ -1,14 +1,12 @@
 import { useEffect, useState } from 'react'
 import {
   ArrowUpRight,
-  CheckCircle2,
   CloudUpload,
   Copy,
   ExternalLink,
   FileText,
   Link2,
   MessageSquareText,
-  MessagesSquare,
   MoreHorizontal,
   Plus,
   RefreshCw,
@@ -32,7 +30,7 @@ import {
 } from '../../components'
 import { ownerName } from '../../hooks/useOwnerOptions'
 import { leadSourceOptions as sourceOptions, leadSourceText as sourceText } from '../../models/crmSource'
-import { WecomSyncModal } from './WecomSyncModal'
+import { ChannelSourceBoard } from './ChannelSourceBoard'
 
 const typeOptions = [
   { value: '', label: '全部类型' },
@@ -108,7 +106,7 @@ const emptyMarketingForm = {
   source: 'LANDING_PAGE',
   submitMessage: '提交成功，我们会尽快联系您。',
   status: 'PUBLISHED',
-  autoCreateLead: true,
+  autoCreateLead: false,
   fields: [
     {
       fieldKey: 'name',
@@ -287,9 +285,6 @@ export function ChannelPage({ can, notify }) {
   const canMedia = can('crm:channel:media') || canManage
   const canAnalyze = can('crm:channel:analyze') || canManage
   const canPromote = can('crm:channel:promote')
-  const canWecomView = can('crm:wecom:view') || can('crm:channel:view') || canManage
-  const canWecomManage = can('crm:wecom:manage') || canManage
-  const canWecomSync = can('crm:wecom:sync') || canManage
   const { confirm, dialogProps } = useConfirmDialog()
 
   const [query, setQuery] = useState({
@@ -316,12 +311,7 @@ export function ChannelPage({ can, notify }) {
   const [marketingFormOpen, setMarketingFormOpen] = useState(false)
   const [marketingFormEditing, setMarketingFormEditing] = useState(null)
   const [analyzingId, setAnalyzingId] = useState(null)
-  const [wecomOpen, setWecomOpen] = useState(false)
-  const [statistics, setStatistics] = useState({
-    totalUserCount: 0,
-    todayNewUserCount: 0,
-    convertedLeadUserCount: 0,
-  })
+  const [rawPoolOpen, setRawPoolOpen] = useState(false)
 
   const load = async (nextQuery = query) => {
     setLoading(true)
@@ -348,28 +338,12 @@ export function ChannelPage({ can, notify }) {
     }
   }
 
-  const loadStatistics = async () => {
-    try {
-      const data = await api.channel.statistics()
-      setStatistics({
-        totalUserCount: data?.totalUserCount || 0,
-        todayNewUserCount: data?.todayNewUserCount || 0,
-        convertedLeadUserCount: data?.convertedLeadUserCount || 0,
-      })
-    } catch (err) {
-      notify(err.message || '加载渠道统计失败', 'info')
-    }
-  }
-
   useEffect(() => {
-    load()
     loadMarketingForms()
-    loadStatistics()
   }, [])
 
   const refreshFirstPage = () => {
-    load({ ...query, pageNo: 1 })
-    loadStatistics()
+    setQuery({ ...query, pageNo: 1 })
   }
 
   const refreshAll = () => {
@@ -401,7 +375,6 @@ export function ChannelPage({ can, notify }) {
         setSelected(null)
       }
       load({ ...query, pageNo: 1 })
-      loadStatistics()
     } catch (err) {
       notify(err.message || '渠道删除失败', 'info')
     }
@@ -440,7 +413,6 @@ export function ChannelPage({ can, notify }) {
       notify('渠道已晋升为线索', 'success')
       setSelected(null)
       load()
-      loadStatistics()
     } catch (err) {
       notify(err.message || '渠道晋升线索失败', 'info')
     }
@@ -482,27 +454,14 @@ export function ChannelPage({ can, notify }) {
 
   const headerActions = (
     <>
-      <Button variant="secondary" icon={RefreshCw} onClick={refreshFirstPage}>
-        刷新
-      </Button>
       {canMedia && (
         <Button variant="secondary" icon={Upload} onClick={() => setImporting(true)}>
           导入渠道材料
         </Button>
       )}
-      {canWecomView && (
-        <Button variant="secondary" icon={MessagesSquare} onClick={() => setWecomOpen(true)}>
-          企业微信同步
-        </Button>
-      )}
       <Button variant="secondary" icon={Link2} onClick={() => setMarketingFormOpen(true)}>
         获客表单
       </Button>
-      {canManage && (
-        <Button icon={Plus} onClick={() => setEditing(emptyForm)}>
-          新增渠道
-        </Button>
-      )}
     </>
   )
 
@@ -516,44 +475,14 @@ export function ChannelPage({ can, notify }) {
       <PageHeader
         eyebrow="渠道管理"
         title="渠道管理"
-        description="统一沉淀渠道材料，先由渠道智能体整理销售备注，再将有效信息晋升为线索"
+        description="按获客场景管理数据来源和运行状态，具体获客数据统一进入公海池"
         actions={headerActions}
       />
 
-      <div className="channel-overview">
-        <ChannelStat icon={FileText} label="渠道总用户数" value={statistics.totalUserCount} />
-        <ChannelStat icon={CloudUpload} label="今日新增用户数" value={statistics.todayNewUserCount} />
-        <ChannelStat icon={CheckCircle2} label="转化为线索用户数" value={statistics.convertedLeadUserCount} />
-      </div>
-
-      <ChannelFilter
-        query={query}
-        setQuery={setQuery}
-        onSearch={refreshFirstPage}
+      <ChannelSourceBoard
+        canManage={canManage}
+        notify={notify}
       />
-
-      <div className="channel-layout">
-        <ChannelTable
-          records={records}
-          loading={loading}
-          page={page}
-          query={query}
-          canManage={canManage}
-          canMedia={canMedia}
-          canAnalyzePermission={canAnalyze}
-          canPromote={canPromote}
-          analyzingId={analyzingId}
-          currentPage={currentPage}
-          totalPages={totalPages}
-          onLoad={load}
-          onEdit={setEditing}
-          onSelect={openDetail}
-          onPrepareTranscription={handlePrepareTranscription}
-          onPrepareAnalysis={handlePrepareAnalysis}
-          onPromote={handlePromote}
-          onDelete={deleteChannel}
-        />
-      </div>
 
       <ChannelEditModal
         open={Boolean(editing)}
@@ -602,25 +531,7 @@ export function ChannelPage({ can, notify }) {
         onDelete={deleteChannel}
       />
       <ConfirmDialog {...dialogProps} />
-      <WecomSyncModal
-        open={wecomOpen}
-        canManage={canWecomManage}
-        canSync={canWecomSync}
-        onClose={() => setWecomOpen(false)}
-        notify={notify}
-        onSynced={refreshFirstPage}
-      />
     </div>
-  )
-}
-
-function ChannelStat({ icon: Icon, label, value }) {
-  return (
-    <Card className="channel-stat">
-      <span><Icon size={18} /></span>
-      <small>{label}</small>
-      <b>{value}</b>
-    </Card>
   )
 }
 
@@ -955,7 +866,7 @@ function MarketingFormPanel({
                 <Badge tone={formStatusTone[row.status] || 'neutral'}>{formStatusText[row.status] || row.status}</Badge>
                 <span>访问 {row.viewCount || 0}</span>
                 <span>提交 {row.submitCount || 0}</span>
-                {row.autoCreateLead && <Badge tone="success">自动转线索</Badge>}
+                <Badge tone="info">提交后进入公海池</Badge>
               </div>
               <div className="marketing-form-actions">
                 <button className="text-action" onClick={() => onCopyLink(row)}>
@@ -1029,6 +940,7 @@ function MarketingFormModal({ open, data, onClose, notify, reload }) {
     try {
       await api.channel.formSave({
         ...form,
+        autoCreateLead: false,
         fields: (form.fields || []).map((field, index) => ({ ...field, sortOrder: index })),
       })
       notify('获客表单已保存', 'success')
@@ -1086,17 +998,12 @@ function MarketingFormModal({ open, data, onClose, notify, reload }) {
           </Field>
         </div>
 
-        <label className="marketing-form-switch">
-          <input
-            type="checkbox"
-            checked={Boolean(form.autoCreateLead)}
-            onChange={(event) => setForm({ ...form, autoCreateLead: event.target.checked })}
-          />
+        <div className="marketing-form-switch">
           <span>
-            <b>提交后自动创建线索</b>
-            <small>客户提交后先进入渠道池；满足姓名或公司名称时，同步创建线索。</small>
+            <b>提交后进入公海池</b>
+            <small>系统按公司名称或手机号去重，由负责人确认后再分配给销售。</small>
           </span>
-        </label>
+        </div>
 
         <div className="marketing-field-editor">
           <div className="marketing-field-head">

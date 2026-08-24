@@ -10,7 +10,6 @@ import com.hz.crm.wecom.dto.WecomConfigResponse;
 import com.hz.crm.wecom.dto.WecomConfigSaveRequest;
 import com.hz.crm.wecom.dto.WecomSyncTaskResponse;
 import com.hz.crm.wecom.service.WecomManageService;
-import com.hz.crm.wecom.service.WecomSyncCoordinator;
 import com.hz.crm.web.support.IdRequest;
 import java.util.List;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -26,9 +25,6 @@ public class WecomController {
 
     @Autowired
     private WecomManageService manageService;
-
-    @Autowired
-    private WecomSyncCoordinator syncCoordinator;
 
     @PostMapping("/config/detail")
     @PreAuthorize(
@@ -71,20 +67,6 @@ public class WecomController {
     public ApiResult<List<WecomBindingResponse>> bindingSave(
             @RequestBody WecomBindingSaveRequest request, JwtPrincipal principal) {
         return ApiResult.ok(manageService.saveBindings(principal.getTenantId(), request));
-    }
-
-    @PostMapping("/sync/start")
-    @PreAuthorize(
-            "hasAuthority('*') or hasAuthority('crm:wecom:sync') or hasAuthority('crm:channel:manage')")
-    @AuditOperation(
-            module = "WECOM",
-            action = "SYNC_START",
-            description = "启动企业微信客户同步",
-            targetType = "WECOM_SYNC_TASK")
-    public ApiResult<WecomSyncTaskResponse> syncStart(
-            @RequestBody WecomConfigIdRequest request, JwtPrincipal principal) {
-        return ApiResult.ok(syncCoordinator.startManual(
-                principal.getTenantId(), principal.getUserId(), request.getConfigId()));
     }
 
     @PostMapping("/sync/latest")

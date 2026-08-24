@@ -2,6 +2,7 @@ package com.hz.crm.application.channel;
 
 import com.alibaba.fastjson2.JSON;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
+import com.baomidou.mybatisplus.core.conditions.query.QueryWrapper;
 import com.hz.crm.application.channel.dto.MarketingFormFieldRequest;
 import com.hz.crm.application.channel.dto.MarketingFormFieldResponse;
 import com.hz.crm.application.channel.dto.MarketingFormQuery;
@@ -28,15 +29,13 @@ import com.hz.crm.domain.channel.mapper.MarketingFormFieldMapper;
 import com.hz.crm.domain.channel.mapper.MarketingFormMapper;
 import com.hz.crm.domain.channel.mapper.MarketingFormSubmissionMapper;
 import com.hz.crm.domain.common.BaseEntity;
-import com.hz.crm.domain.lead.LeadEntity;
-import com.hz.crm.domain.lead.LeadStatus;
-import com.hz.crm.domain.lead.mapper.LeadMapper;
 import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.Comparator;
 import java.util.HashMap;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
@@ -57,9 +56,6 @@ public class MarketingFormApplicationService {
 
     @Autowired
     private ChannelRecordMapper channelRecordMapper;
-
-    @Autowired
-    private LeadMapper leadMapper;
 
     @Autowired
     private SnowflakeIdGenerator snowflakeIdGenerator;
@@ -184,22 +180,14 @@ public class MarketingFormApplicationService {
         String email = mappedValue(fields, values, "email");
         String remark = mappedValue(fields, values, "remark");
         ChannelRecordEntity channel = createChannel(form, values, contactName, companyName, phone, email, remark);
-        Long leadId = null;
-        if (form.isAutoCreateLead() && (StringUtils.hasText(contactName) || StringUtils.hasText(companyName))) {
-            LeadEntity lead = createLead(form, contactName, companyName, phone, email, remark);
-            leadId = lead.getId();
-            channel.setLeadId(leadId);
-            channel.setStatus(ChannelStatus.PROMOTED);
-            touch(channel);
-            channelRecordMapper.updateById(channel);
-        }
+        Long leadId = channel.getLeadId();
         createSubmission(form, channel.getId(), leadId, values, contactName, companyName, phone, email, visitorIp, userAgent);
         form.setSubmitCount(safeLong(form.getSubmitCount()) + 1L);
         touch(form);
         marketingFormMapper.updateById(form);
         PublicMarketingFormSubmitResponse response = new PublicMarketingFormSubmitResponse();
         response.setSubmitted(true);
-        response.setLeadCreated(leadId != null);
+        response.setLeadCreated(false);
         response.setChannelId(channel.getId());
         response.setLeadId(leadId);
         response.setMessage(resolveSubmitMessage(form.getSubmitMessage()));
@@ -214,6 +202,10 @@ public class MarketingFormApplicationService {
             String phone,
             String email,
             String remark) {
+        ChannelRecordEntity duplicate = findDuplicateChannel(form.getTenantId(), companyName, phone);
+        if (duplicate != null) {
+            return duplicate;
+        }
         ChannelRecordEntity entity = new ChannelRecordEntity();
         prepareNew(entity, form.getTenantId());
         entity.setId(snowflakeIdGenerator.nextId());
@@ -225,28 +217,39 @@ public class MarketingFormApplicationService {
         entity.setCompanyName(trimToNull(companyName));
         entity.setPhone(trimToNull(phone));
         entity.setEmail(trimToNull(email));
-        entity.setOwnerId(form.getOwnerId());
         entity.setRemark(shrink(resolveChannelRemark(form, remark), 512));
         entity.setUsefulInfo(JSON.toJSONString(values));
         channelRecordMapper.insert(entity);
         return entity;
     }
 
-    private LeadEntity createLead(
-            MarketingFormEntity form, String contactName, String companyName, String phone, String email, String remark) {
-        LeadEntity entity = new LeadEntity();
-        prepareNew(entity, form.getTenantId());
-        entity.setId(snowflakeIdGenerator.nextId());
-        entity.setName(resolveLeadName(contactName, companyName));
-        entity.setCompanyName(trimToNull(companyName));
-        entity.setPhone(trimToNull(phone));
-        entity.setEmail(trimToNull(email));
-        entity.setSource(resolveSource(form));
-        entity.setStatus(LeadStatus.recommended());
-        entity.setOwnerId(form.getOwnerId());
-        entity.setRemark(shrink(resolveLeadRemark(form, remark), 512));
-        leadMapper.insert(entity);
-        return entity;
+    private ChannelRecordEntity findDuplicateChannel(Long tenantId, String companyName, String phone) {
+        String normalizedPhone = normalizePhone(phone);
+        String normalizedCompanyName = normalizeCompanyName(companyName);
+        if (normalizedPhone == null && normalizedCompanyName == null) {
+            return null;
+        }
+        QueryWrapper<ChannelRecordEntity> wrapper = new QueryWrapper<ChannelRecordEntity>();
+        wrapper.eq("tenant_id", tenantId);
+        wrapper.eq("deleted", false);
+        wrapper.and(condition -> {
+            boolean hasPhone = normalizedPhone != null;
+            if (hasPhone) {
+                condition.apply(
+                        "regexp_replace(coalesce(phone, ''), '[^0-9]', '', 'g') = {0}",
+                        normalizedPhone);
+            }
+            if (normalizedCompanyName != null) {
+                if (hasPhone) {
+                    condition.or();
+                }
+                condition.apply(
+                        "regexp_replace(lower(coalesce(company_name, '')), '\\s+', '', 'g') = {0}",
+                        normalizedCompanyName);
+            }
+        });
+        wrapper.orderByAsc("created_at").orderByAsc("id").last("limit 1");
+        return channelRecordMapper.selectOne(wrapper);
     }
 
     private void createSubmission(
@@ -444,14 +447,6 @@ public class MarketingFormApplicationService {
         return "表单提交-" + name;
     }
 
-    private String resolveLeadName(String contactName, String companyName) {
-        String name = trimToNull(contactName);
-        if (name != null) {
-            return name;
-        }
-        return trimToNull(companyName);
-    }
-
     private String resolveSource(MarketingFormEntity form) {
         String source = normalizeSource(form.getSource());
         return shrink("获客表单-" + source, 64);
@@ -464,10 +459,6 @@ public class MarketingFormApplicationService {
             builder.append("\n客户填写：").append(remark.trim());
         }
         return builder.toString();
-    }
-
-    private String resolveLeadRemark(MarketingFormEntity form, String remark) {
-        return resolveChannelRemark(form, remark);
     }
 
     private String resolveSubmitMessage(String value) {
@@ -569,6 +560,23 @@ public class MarketingFormApplicationService {
             return null;
         }
         return value.trim();
+    }
+
+    private String normalizePhone(String value) {
+        String text = trimToNull(value);
+        if (text == null) {
+            return null;
+        }
+        String normalized = text.replaceAll("[^0-9]", "");
+        return normalized.length() == 0 ? null : normalized;
+    }
+
+    private String normalizeCompanyName(String value) {
+        String text = trimToNull(value);
+        if (text == null) {
+            return null;
+        }
+        return text.toLowerCase(Locale.ROOT).replaceAll("\\s+", "");
     }
 
     private String normalizeSource(String value) {

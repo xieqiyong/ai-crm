@@ -1,5 +1,5 @@
 import {
-  BarChart3, BookOpen, Bot, BriefcaseBusiness, ClipboardCheck, FileClock,
+  Archive, BarChart3, BookOpen, Bot, BriefcaseBusiness, ClipboardCheck, FileClock,
   LayoutDashboard, Mail, MessageSquareText, Network, Package, Settings, UserRoundCog, Users,
 } from 'lucide-react'
 import { AgentConfigPage } from '../features/agent/AgentConfigPage'
@@ -17,6 +17,7 @@ import { LeadDetailPage } from '../features/lead/LeadDetailPage'
 import { LeadPage } from '../features/lead/LeadPage'
 import { OpportunityPage } from '../features/opportunity/OpportunityPage'
 import { ProductPage } from '../features/product/ProductPage'
+import { PublicPoolPage } from '../features/channel/PublicPoolPage'
 import { SettingsPage } from '../features/settings/SettingsPage'
 import { MailPage } from '../features/mail/MailPage'
 import { SalesTaskPage } from '../features/task/SalesTaskPage'
@@ -75,6 +76,13 @@ export const routeGroups = [
         icon: Network,
         permission: 'menu.channels',
         component: ChannelPage,
+      },
+      {
+        key: 'public-pool',
+        label: '公海池',
+        icon: Archive,
+        permission: 'menu.public_pool',
+        component: PublicPoolPage,
       },
     ],
   },

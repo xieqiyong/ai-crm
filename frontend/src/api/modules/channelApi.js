@@ -2,6 +2,18 @@ import { request } from '../httpClient'
 
 export const channelApi = {
   page: (payload) => request('/api/channel/page', { method: 'POST', body: JSON.stringify(payload || {}) }),
+  publicPoolPage: (payload) => request('/api/channel/public-pool/page', {
+    method: 'POST',
+    body: JSON.stringify(payload || {}),
+  }),
+  assignPublicPool: (payload) => request('/api/channel/public-pool/assign', {
+    method: 'POST',
+    body: JSON.stringify(payload || {}),
+  }),
+  batchAssignPublicPool: (payload) => request('/api/channel/public-pool/batch-assign', {
+    method: 'POST',
+    body: JSON.stringify(payload || {}),
+  }),
   statistics: () => request('/api/channel/statistics', { method: 'POST' }),
   detail: (id) => request('/api/channel/detail', { method: 'POST', body: JSON.stringify({ id }) }),
   save: (payload) => request('/api/channel/save', { method: 'POST', body: JSON.stringify(payload) }),

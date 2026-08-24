@@ -14,10 +14,6 @@ export const wecomApi = {
     method: 'POST',
     body: JSON.stringify(payload || {}),
   }),
-  syncStart: (configId) => request('/api/wecom/sync/start', {
-    method: 'POST',
-    body: JSON.stringify({ configId }),
-  }),
   syncLatest: (configId) => request('/api/wecom/sync/latest', {
     method: 'POST',
     body: JSON.stringify({ configId }),

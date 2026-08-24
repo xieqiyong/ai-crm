@@ -24,5 +24,7 @@ public class LeadSaveRequest {
 
     private Long ownerId;
 
+    private Long productId;
+
     private String remark;
 }

@@ -1,0 +1,85 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>企微渠道采集器设置</title>
+    <link rel="stylesheet" href="ui.css">
+  </head>
+  <body class="options-body">
+    <main class="options-shell">
+      <header class="options-header">
+        <img src="icon.svg" alt="">
+        <div>
+          <h1>企微渠道采集器设置</h1>
+          <p>浏览器需要保持运行，并使用当前浏览器账号登录企微文档。</p>
+        </div>
+      </header>
+
+      <section class="settings-card">
+        <h2>CRM连接</h2>
+        <div class="form-grid">
+          <label class="field wide">
+            <span>CRM地址</span>
+            <input id="crmBaseUrl" placeholder="http://localhost:5173">
+          </label>
+          <label class="field wide">
+            <span>上传接口</span>
+            <input id="uploadPath" placeholder="/api/channel/source/import-excel">
+          </label>
+          <label class="field wide">
+            <span>登录凭证</span>
+            <div class="password-field">
+              <input id="token" type="password" autocomplete="off" placeholder="建议从插件弹窗绑定当前CRM登录">
+              <button type="button" id="toggleToken">显示</button>
+            </div>
+          </label>
+        </div>
+        <div class="inline-actions">
+          <button id="testButton">测试CRM连接</button>
+          <span class="hint">登录凭证失效后，在CRM页面点击插件并重新绑定即可。</span>
+        </div>
+      </section>
+
+      <section class="settings-card">
+        <div class="section-heading">
+          <div>
+            <h2>自动同步</h2>
+            <p>默认每天运行两次，浏览器关闭或电脑休眠时不会执行。</p>
+          </div>
+          <label class="switch-row">
+            <input id="enabled" type="checkbox">
+            <span>启用</span>
+          </label>
+        </div>
+        <div class="form-grid two-columns">
+          <label class="field">
+            <span>第一次同步</span>
+            <input id="scheduleTime1" type="time">
+          </label>
+          <label class="field">
+            <span>第二次同步</span>
+            <input id="scheduleTime2" type="time">
+          </label>
+        </div>
+      </section>
+
+      <section class="settings-card">
+        <div class="section-heading">
+          <div>
+            <h2>智能表格</h2>
+            <p>链接必须包含文档路径和tab参数，并且已在CRM渠道来源中配置。</p>
+          </div>
+          <button type="button" id="addSourceButton">添加表格</button>
+        </div>
+        <div id="sourceList" class="source-settings-list"></div>
+      </section>
+
+      <footer class="options-footer">
+        <div class="message" id="message"></div>
+        <button class="primary save-button" id="saveButton">保存设置</button>
+      </footer>
+    </main>
+    <script src="options.js"></script>
+  </body>
+</html>

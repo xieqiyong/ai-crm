@@ -1,0 +1,256 @@
+import unittest
+
+from langchain.agents import create_agent
+from langchain.agents.middleware import ModelCallLimitMiddleware
+from langchain.agents.middleware.model_call_limit import ModelCallLimitExceededError
+from langchain.agents.structured_output import ToolStrategy
+from langchain.messages import AIMessage, AIMessageChunk, ToolMessage
+from langchain.tools import tool
+from langchain_core.language_models.chat_models import BaseChatModel
+from langchain_core.outputs import ChatGeneration, ChatResult
+from langgraph.checkpoint.memory import InMemorySaver
+
+from app.runtime.stream_adapter import AgentStreamAccumulator
+from app.models.openai_compatible import OpenAICompatibleChatModel
+from app.schemas.lead_analysis import LeadAnalysisResult
+from app.tools.builtin import crm_lead_page, load_skill
+from app.workflows.lead_analysis.workflow import lead_analysis_workflow_factory
+
+
+@tool
+def echo_value(value: str) -> str:
+    """返回输入值。"""
+    return value
+
+
+class ToolCallingFakeModel(BaseChatModel):
+    @property
+    def _llm_type(self) -> str:
+        return "tool-calling-fake-model"
+
+    def bind_tools(self, tools, **kwargs):
+        return self
+
+    def _generate(self, messages, stop=None, run_manager=None, **kwargs):
+        tool_messages = [item for item in messages if isinstance(item, ToolMessage)]
+        if tool_messages:
+            message = AIMessage(
+                content="工具结果：" + str(tool_messages[-1].content),
+                usage_metadata={"input_tokens": 5, "output_tokens": 2, "total_tokens": 7},
+            )
+        else:
+            message = AIMessage(
+                content="",
+                tool_calls=[{
+                    "name": "echo_value",
+                    "args": {"value": "真实结果"},
+                    "id": "call-1",
+                    "type": "tool_call",
+                }],
+                usage_metadata={"input_tokens": 3, "output_tokens": 1, "total_tokens": 4},
+            )
+        return ChatResult(generations=[ChatGeneration(message=message)])
+
+
+class MessageCountFakeModel(BaseChatModel):
+    @property
+    def _llm_type(self) -> str:
+        return "message-count-fake-model"
+
+    def bind_tools(self, tools, **kwargs):
+        return self
+
+    def _generate(self, messages, stop=None, run_manager=None, **kwargs):
+        return ChatResult(generations=[ChatGeneration(
+            message=AIMessage(content="消息数量：%s" % len(messages)),
+        )])
+
+
+class StructuredOutputFakeModel(BaseChatModel):
+    @property
+    def _llm_type(self) -> str:
+        return "structured-output-fake-model"
+
+    def bind_tools(self, tools, **kwargs):
+        return self
+
+    def _generate(self, messages, stop=None, run_manager=None, **kwargs):
+        return ChatResult(generations=[ChatGeneration(message=AIMessage(
+            content="",
+            tool_calls=[{
+                "name": "LeadAnalysisResult",
+                "args": {
+                    "conclusionTitle": "建议继续跟进",
+                    "salesConclusion": "已获得真实需求，暂未确认预算。",
+                    "stage": "FOLLOWING",
+                    "priority": "MEDIUM",
+                    "recommendConvert": False,
+                    "score": 65,
+                    "confidence": 0.8,
+                    "keyFindings": ["客户已表达需求"],
+                    "riskWarnings": ["预算尚未确认"],
+                    "nextActions": ["确认预算和决策人"],
+                    "reason": "存在需求但关键信息不足",
+                    "nextAction": "确认预算和决策人",
+                    "convertDraft": {
+                        "customerName": "测试企业",
+                        "level": "NORMAL",
+                        "status": "POTENTIAL",
+                    },
+                    "customerProfile": {
+                        "companyScale": "",
+                        "industry": "",
+                        "sourceUrls": [],
+                    },
+                },
+                "id": "structured-call-1",
+                "type": "tool_call",
+            }],
+        ))])
+
+
+class EndlessToolCallingFakeModel(BaseChatModel):
+    @property
+    def _llm_type(self) -> str:
+        return "endless-tool-calling-fake-model"
+
+    def bind_tools(self, tools, **kwargs):
+        return self
+
+    def _generate(self, messages, stop=None, run_manager=None, **kwargs):
+        call_id = "call-%s" % len(messages)
+        return ChatResult(generations=[ChatGeneration(message=AIMessage(
+            content="",
+            tool_calls=[{
+                "name": "echo_value",
+                "args": {"value": "继续调用"},
+                "id": call_id,
+                "type": "tool_call",
+            }],
+        ))])
+
+
+class StandardAgentRuntimeTest(unittest.IsolatedAsyncioTestCase):
+    async def test_agent_executes_standard_tool_loop(self):
+        graph = create_agent(ToolCallingFakeModel(), [echo_value], name="test_tool_agent")
+        self.assertEqual(
+            {"__start__", "model", "tools", "__end__"},
+            set(graph.get_graph().nodes.keys()),
+        )
+        accumulator = AgentStreamAccumulator()
+        async for part in graph.astream(
+                {"messages": [{"role": "user", "content": "调用工具"}]},
+                stream_mode=["messages", "updates", "values", "custom"],
+                version="v2"):
+            await accumulator.consume(part)
+        self.assertEqual("工具结果：真实结果", accumulator.output())
+        self.assertEqual(11, accumulator.usage()["totalTokens"])
+        self.assertEqual("echo_value", accumulator.events[0]["toolName"])
+
+    async def test_checkpoint_retains_messages_between_runs(self):
+        checkpointer = InMemorySaver()
+        config = {"configurable": {"thread_id": "tenant:user:conversation"}}
+        first_graph = create_agent(
+            MessageCountFakeModel(),
+            [],
+            checkpointer=checkpointer,
+            name="test_memory_agent",
+        )
+        await first_graph.ainvoke(
+            {"messages": [{"role": "user", "content": "第一轮"}]},
+            config=config,
+        )
+        second_graph = create_agent(
+            MessageCountFakeModel(),
+            [],
+            checkpointer=checkpointer,
+            name="test_memory_agent",
+        )
+        result = await second_graph.ainvoke(
+            {"messages": [{"role": "user", "content": "第二轮"}]},
+            config=config,
+        )
+        self.assertEqual(4, len(result["messages"]))
+        self.assertEqual("消息数量：3", str(result["messages"][-1].content))
+
+    async def test_tool_strategy_returns_validated_structured_response(self):
+        graph = create_agent(
+            StructuredOutputFakeModel(),
+            [],
+            response_format=ToolStrategy(LeadAnalysisResult),
+            name="test_structured_agent",
+        )
+        result = await graph.ainvoke({"messages": [{"role": "user", "content": "分析线索"}]})
+        structured = result.get("structured_response")
+        self.assertIsInstance(structured, LeadAnalysisResult)
+        self.assertEqual("建议继续跟进", structured.conclusion_title)
+        self.assertEqual("POTENTIAL", structured.convert_draft.status)
+
+    async def test_model_call_limit_stops_endless_tool_loop(self):
+        graph = create_agent(
+            EndlessToolCallingFakeModel(),
+            [echo_value],
+            middleware=[ModelCallLimitMiddleware(run_limit=2, exit_behavior="error")],
+            name="test_call_limit_agent",
+        )
+        with self.assertRaises(ModelCallLimitExceededError):
+            await graph.ainvoke({"messages": [{"role": "user", "content": "持续调用工具"}]})
+
+    async def test_lead_analysis_uses_explicit_state_graph(self):
+        analysis_agent = create_agent(
+            StructuredOutputFakeModel(),
+            [],
+            response_format=ToolStrategy(LeadAnalysisResult),
+            name="test_lead_analysis_inner_agent",
+        )
+        graph = lead_analysis_workflow_factory.compile(analysis_agent)
+        self.assertEqual(
+            {
+                "__start__", "prepare_context", "company_web_search",
+                "analysis_agent", "validate_output", "finalize_result", "__end__",
+            },
+            set(graph.get_graph().nodes.keys()),
+        )
+        result = await graph.ainvoke({
+            "messages": [{"role": "user", "content": "分析线索"}],
+            "lead": {"id": "1", "companyName": ""},
+            "customer_profile": {},
+        })
+        self.assertIsInstance(result.get("structured_response"), LeadAnalysisResult)
+        self.assertEqual("建议继续跟进", result["structured_response"].conclusion_title)
+
+    def test_runtime_context_is_not_exposed_to_model_schema(self):
+        lead_schema = crm_lead_page.tool_call_schema.model_json_schema()
+        skill_schema = load_skill.tool_call_schema.model_json_schema()
+        self.assertNotIn("runtime", lead_schema.get("properties", {}))
+        self.assertNotIn("runtime", skill_schema.get("properties", {}))
+        self.assertIn("skill_code", skill_schema.get("properties", {}))
+
+    def test_openai_compatible_reasoning_delta_is_preserved(self):
+        model = OpenAICompatibleChatModel(
+            model="test-model",
+            api_key="test-key",
+            base_url="http://localhost:9999/v1",
+        )
+        generation = model._convert_chunk_to_generation_chunk(
+            {
+                "choices": [{
+                    "delta": {
+                        "role": "assistant",
+                        "content": "",
+                        "reasoning_content": "正在分析真实业务数据",
+                    },
+                }],
+            },
+            AIMessageChunk,
+            None,
+        )
+        self.assertIsNotNone(generation)
+        self.assertEqual(
+            "正在分析真实业务数据",
+            generation.message.additional_kwargs.get("reasoning_content"),
+        )
+
+
+if __name__ == "__main__":
+    unittest.main()

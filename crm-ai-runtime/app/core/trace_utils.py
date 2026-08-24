@@ -117,43 +117,6 @@ def trace_runtime_outputs(output: Any) -> dict[str, Any]:
     return result
 
 
-def trace_llm_inputs(inputs: dict[str, Any]) -> dict[str, Any]:
-    agent = extract_value(inputs, "agent", 1)
-    if not agent:
-        agent = extract_value(inputs, "agent", 0)
-    agent_value = to_dict(agent)
-    system_prompt = extract_value(inputs, "system_prompt", 2)
-    user_prompt = extract_value(inputs, "user_prompt", 3)
-    if system_prompt is None:
-        system_prompt = extract_value(inputs, "system_prompt", 1)
-    if user_prompt is None:
-        user_prompt = extract_value(inputs, "user_prompt", 2)
-    result = {
-        "modelProvider": text(agent_value.get("modelProvider") or agent_value.get("model_provider")),
-        "modelName": text(agent_value.get("modelName") or agent_value.get("model_name")),
-        "baseUrl": text(agent_value.get("baseUrl") or agent_value.get("base_url")),
-        "systemPromptLength": len(text(system_prompt)),
-        "userPromptLength": len(text(user_prompt)),
-    }
-    if settings.trace_capture_payload:
-        result["systemPrompt"] = shrink(system_prompt, 2000)
-        result["userPrompt"] = shrink(user_prompt, 3000)
-    return result
-
-
-def trace_llm_outputs(output: Any) -> dict[str, Any]:
-    value = to_dict(output)
-    result = {
-        "inputTokens": int_value(value.get("input_tokens") or value.get("inputTokens")),
-        "outputTokens": int_value(value.get("output_tokens") or value.get("outputTokens")),
-        "totalTokens": int_value(value.get("total_tokens") or value.get("totalTokens")),
-        "contentLength": len(text(value.get("content"))),
-    }
-    if settings.trace_capture_payload:
-        result["content"] = shrink(value.get("content"), 2000)
-    return result
-
-
 def trace_search_inputs(inputs: dict[str, Any]) -> dict[str, Any]:
     company_name = extract_value(inputs, "company_name", 1)
     if company_name is None:
@@ -174,51 +137,6 @@ def trace_search_outputs(output: Any) -> dict[str, Any]:
         "sourceUrlCount": len(value.get("sourceUrls") or []),
         "summaryLength": len(text(value.get("sourceSummary"))),
     }
-
-
-def trace_node_inputs(inputs: dict[str, Any]) -> dict[str, Any]:
-    state = extract_value(inputs, "state", 0)
-    value = to_dict(state)
-    request = to_dict(value.get("request"))
-    lead = to_dict(value.get("lead"))
-    profile = to_dict(value.get("customer_profile"))
-    context = to_dict(request.get("context"))
-    result = {
-        "stateKeys": sorted([str(key) for key in value.keys()]),
-        "sceneCode": text(request.get("sceneCode") or request.get("scene_code")),
-        "businessType": text(request.get("businessType") or request.get("business_type")),
-        "businessId": text(request.get("businessId") or request.get("business_id")),
-        "runId": text(request.get("runId") or request.get("run_id")),
-        "conversationId": text(request.get("conversationId") or request.get("conversation_id")),
-        "traceId": text(context.get("traceId") or context.get("trace_id")),
-        "leadId": text(lead.get("id")),
-        "companyName": text(lead.get("companyName") or lead.get("company_name")),
-        "customerProfileAvailable": bool(profile.get("available")),
-        "rawOutputLength": len(text(value.get("raw_output"))),
-        "outputLength": len(text(value.get("output"))),
-    }
-    if settings.trace_capture_payload:
-        result["lead"] = clean_for_trace(lead)
-        result["customerProfile"] = clean_for_trace(profile)
-    return result
-
-
-def trace_node_outputs(output: Any) -> dict[str, Any]:
-    value = to_dict(output)
-    profile = to_dict(value.get("customer_profile"))
-    result = {
-        "outputKeys": sorted([str(key) for key in value.keys()]),
-        "eventCount": len(value.get("events") or []),
-        "customerProfileAvailable": bool(profile.get("available")),
-        "sourceUrlCount": len(profile.get("sourceUrls") or []),
-        "rawOutputLength": len(text(value.get("raw_output"))),
-        "outputLength": len(text(value.get("output"))),
-        "usage": clean_for_trace(value.get("usage") or {}),
-    }
-    if settings.trace_capture_payload:
-        result["customerProfile"] = clean_for_trace(profile)
-        result["output"] = shrink(value.get("output"), 2000)
-    return result
 
 
 def clean_for_trace(value: Any) -> Any:
@@ -294,10 +212,3 @@ def shrink(value: Any, max_length: int) -> str:
     if len(text_value) <= max_length:
         return text_value
     return text_value[:max_length]
-
-
-def int_value(value: Any) -> int:
-    try:
-        return int(value)
-    except (TypeError, ValueError):
-        return 0

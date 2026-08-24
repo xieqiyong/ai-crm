@@ -56,6 +56,10 @@ public class ChannelResponse {
 
     private String ownerName;
 
+    private Long productId;
+
+    private String productName;
+
     private String remark;
 
     private String externalProvider;

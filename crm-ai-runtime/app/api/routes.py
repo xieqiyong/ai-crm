@@ -7,10 +7,10 @@ from app.core.auth import CurrentPrincipal, require_any_authority, require_curre
 from app.core.config import settings
 from app.core.security import require_internal_token
 from app.core.trace_utils import runtime_trace_metadata, runtime_trace_tags
-from app.graphs.registry import graph_registry
 from app.runtime.agent_management_repository import agent_management_repository
 from app.runtime.assistant_repository import assistant_repository
 from app.runtime.business_repository import business_repository
+from app.runtime.executor import agent_runtime_executor
 from app.runtime.streaming import STREAM_END, RuntimeStream, reset_runtime_stream, set_runtime_stream
 from app.schemas.runtime import (
     AgentIdManageRequest,
@@ -276,7 +276,11 @@ async def public_assistant_run_stream(http_request: Request):
     payload = with_principal(await json_body(http_request), principal)
     request = AssistantRunRequest.model_validate(payload)
     return StreamingResponse(
-        assistant_stream_generator(request),
+        assistant_stream_generator(
+            request,
+            http_request.headers.get("Authorization"),
+            http_request.headers.get("X-Trace-Id"),
+        ),
         media_type="text/event-stream",
         headers={
             "Cache-Control": "no-cache",
@@ -334,6 +338,7 @@ async def public_lead_analyze(http_request: Request):
                 "permissions": principal.permissions,
                 "conversationTitle": "线索分析：" + str(lead.get("companyName") or lead.get("name") or lead_id),
             },
+            authorization=http_request.headers.get("Authorization"),
         )
         response = await execute_runtime(runtime_request)
         result = business_repository.parse_result(response.output)
@@ -391,6 +396,7 @@ async def run_runtime(
     _: None = Depends(require_internal_token),
 ):
     enrich_trace_context(runtime_request, http_request)
+    runtime_request.authorization = http_request.headers.get("Authorization")
     return await execute_runtime(runtime_request)
 
 
@@ -401,6 +407,7 @@ async def analyze_lead(
     _: None = Depends(require_internal_token),
 ):
     enrich_trace_context(runtime_request, http_request)
+    runtime_request.authorization = http_request.headers.get("Authorization")
     runtime_request.scene_code = "LEAD_ANALYZE"
     return await execute_runtime(runtime_request)
 
@@ -451,7 +458,11 @@ async def assistant_run_stream(
 ):
     enrich_assistant_context(request, http_request)
     return StreamingResponse(
-        assistant_stream_generator(request),
+        assistant_stream_generator(
+            request,
+            http_request.headers.get("Authorization"),
+            http_request.headers.get("X-Trace-Id"),
+        ),
         media_type="text/event-stream",
         headers={
             "Cache-Control": "no-cache",
@@ -625,7 +636,7 @@ async def agent_token_quota_clear(
 
 async def execute_runtime(request: RuntimeRunRequest) -> RuntimeRunResponse:
     try:
-        return await graph_registry.run(
+        return await agent_runtime_executor.run(
             request,
             langsmith_extra={
                 "metadata": runtime_trace_metadata(request),
@@ -650,7 +661,10 @@ def enrich_assistant_context(request: AssistantRunRequest, http_request: Request
         request.model_extra["traceId"] = trace_id
 
 
-async def assistant_stream_generator(request: AssistantRunRequest):
+async def assistant_stream_generator(
+        request: AssistantRunRequest,
+        authorization: str | None = None,
+        trace_id: str | None = None):
     key = active_key(request.tenant_id, request.user_id, request.request_id)
     if key in active_tasks:
         yield sse("RUN_ERROR", {"type": "RUN_ERROR", "content": "本次回答已经在运行中"})
@@ -667,7 +681,7 @@ async def assistant_stream_generator(request: AssistantRunRequest):
             "stage": "运行状态变更",
             "content": "智能体开始处理",
         })
-        run_request = await build_assistant_runtime_request(request)
+        run_request = await build_assistant_runtime_request(request, authorization, trace_id)
         stream = RuntimeStream()
 
         async def run_with_stream():
@@ -693,20 +707,6 @@ async def assistant_stream_generator(request: AssistantRunRequest):
             yield sse(event_type, payload)
 
         response = await run_task
-        for event in response.events:
-            payload = event.model_dump(by_alias=True, mode="json")
-            payload["runId"] = response.run_id
-            payload["conversationId"] = response.conversation_id
-            event_type = payload.get("type") or "RUNTIME_EVENT"
-            if event_type == "STEP":
-                yield sse("RUN_STATUS_CHANGED", {
-                    "type": "RUN_STATUS_CHANGED",
-                    "stage": "执行进度",
-                    "content": payload.get("content") or "智能体正在处理",
-                    "metadata": payload.get("metadata") or {},
-                    "runId": response.run_id,
-                    "conversationId": response.conversation_id,
-                })
         if not streamed_answer:
             chunk_size = max(1, min(int(settings.assistant_stream_chunk_size or 8), 40))
             delay_seconds = max(0, min(int(settings.assistant_stream_delay_ms or 0), 200)) / 1000
@@ -765,7 +765,10 @@ async def assistant_stream_generator(request: AssistantRunRequest):
         active_tasks.pop(key, None)
 
 
-async def build_assistant_runtime_request(request: AssistantRunRequest) -> RuntimeRunRequest:
+async def build_assistant_runtime_request(
+        request: AssistantRunRequest,
+        authorization: str | None = None,
+        trace_id: str | None = None) -> RuntimeRunRequest:
     agent_payload = await assistant_repository.agent_runtime_payload(request.tenant_id, request.agent_id)
     agent = RuntimeAgent.model_validate(agent_payload)
     context = {
@@ -775,6 +778,8 @@ async def build_assistant_runtime_request(request: AssistantRunRequest) -> Runti
         "dataScope": request.data_scope or "SELF",
         "permissions": request.permissions,
     }
+    if trace_id:
+        context["traceId"] = trace_id
     return RuntimeRunRequest(
         tenantId=request.tenant_id,
         userId=request.user_id,
@@ -784,6 +789,7 @@ async def build_assistant_runtime_request(request: AssistantRunRequest) -> Runti
         sessionId="conversation-" + request.conversation_id if request.conversation_id else None,
         context=context,
         agent=agent,
+        authorization=authorization,
     )
 
 
@@ -809,7 +815,7 @@ def build_lead_analyze_message(lead: dict, instruction: str | None) -> str:
     values = [
         "请分析以下真实线索数据，输出销售可直接使用的结构化结论。",
         "如果存在公司名称，可以检索公开客户信息；公开信息只用于补充公司规模、行业、来源链接。",
-        "最终必须返回合法JSON对象，不要输出Markdown、代码块或自然语言前后缀。",
+        "最终必须通过当前场景提供的结构化输出工具提交结果，不要用普通文本代替。",
     ]
     if instruction:
         values.append("补充要求：" + str(instruction).strip())

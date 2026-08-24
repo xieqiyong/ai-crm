@@ -28,6 +28,10 @@ import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 import java.util.zip.ZipEntry;
 import java.util.zip.ZipInputStream;
+import org.apache.pdfbox.Loader;
+import org.apache.pdfbox.pdmodel.PDDocument;
+import org.apache.pdfbox.pdmodel.encryption.InvalidPasswordException;
+import org.apache.pdfbox.text.PDFTextStripper;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.MediaType;
 import org.springframework.security.access.prepost.PreAuthorize;
@@ -137,7 +141,7 @@ public class KnowledgeDocumentController {
     }
 
     @PostMapping("/search")
-    @PreAuthorize("hasAuthority('*') or hasAuthority('crm:knowledge:manage')")
+    @PreAuthorize("hasAuthority('*') or hasAuthority('crm:knowledge:manage') or hasAuthority('crm:assistant:use')")
     public ApiResult<KnowledgeSearchResponse> search(
             @RequestBody KnowledgeSearchRequest request, JwtPrincipal principal) {
         return ApiResult.ok(knowledgeDocumentService.search(principal.getTenantId(), request));
@@ -187,7 +191,7 @@ public class KnowledgeDocumentController {
         if (isDocumentFile(file.getContentType(), file.getOriginalFilename())) {
             return;
         }
-        throw new BusinessException("KB_FILE_002", "仅支持html、txt、md、docx文件");
+        throw new BusinessException("KB_FILE_002", "仅支持PDF、HTML、TXT、MD、DOCX文件");
     }
 
     private String resolveTitle(String title, MultipartFile file) {
@@ -215,6 +219,19 @@ public class KnowledgeDocumentController {
 
     private String extractDocumentText(MultipartFile file, byte[] bytes) {
         String fileName = resolveFileName(file).toLowerCase();
+        if (fileName.endsWith(".pdf") || isPdfContentType(file.getContentType())) {
+            try {
+                String text = normalizePlainText(extractPdfText(bytes));
+                if (!StringUtils.hasText(text)) {
+                    throw new BusinessException("KB_FILE_004", "PDF未提取到可索引文本，请确认文件不是扫描件");
+                }
+                return text;
+            } catch (InvalidPasswordException ex) {
+                throw new BusinessException("KB_FILE_005", "加密PDF暂不支持导入，请先解除密码保护");
+            } catch (IOException ex) {
+                throw new BusinessException("KB_FILE_003", "PDF文档读取失败");
+            }
+        }
         if (fileName.endsWith(".docx")) {
             try {
                 return normalizePlainText(extractDocxText(bytes));
@@ -228,6 +245,16 @@ public class KnowledgeDocumentController {
             return extractHtmlText(text);
         }
         return normalizePlainText(text);
+    }
+
+    private String extractPdfText(byte[] bytes) throws IOException {
+        PDDocument document = Loader.loadPDF(bytes);
+        try {
+            PDFTextStripper textStripper = new PDFTextStripper();
+            return textStripper.getText(document);
+        } finally {
+            document.close();
+        }
     }
 
     private String decodeText(byte[] bytes) {
@@ -316,7 +343,10 @@ public class KnowledgeDocumentController {
     }
 
     private boolean isDocumentFile(String contentType, String fileName) {
-        if (isHtmlContentType(contentType) || isTextContentType(contentType) || isDocxContentType(contentType)) {
+        if (isHtmlContentType(contentType)
+                || isTextContentType(contentType)
+                || isDocxContentType(contentType)
+                || isPdfContentType(contentType)) {
             return true;
         }
         if (!StringUtils.hasText(fileName)) {
@@ -328,7 +358,8 @@ public class KnowledgeDocumentController {
                 || lowerName.endsWith(".txt")
                 || lowerName.endsWith(".md")
                 || lowerName.endsWith(".markdown")
-                || lowerName.endsWith(".docx");
+                || lowerName.endsWith(".docx")
+                || lowerName.endsWith(".pdf");
     }
 
     private boolean isHtmlContentType(String contentType) {
@@ -350,5 +381,9 @@ public class KnowledgeDocumentController {
         }
         String lowerContentType = contentType.toLowerCase();
         return lowerContentType.contains("wordprocessingml.document");
+    }
+
+    private boolean isPdfContentType(String contentType) {
+        return StringUtils.hasText(contentType) && contentType.toLowerCase().contains("application/pdf");
     }
 }

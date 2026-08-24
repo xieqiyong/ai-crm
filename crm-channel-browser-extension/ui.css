@@ -1,0 +1,419 @@
+:root {
+  color: #1f2926;
+  background: #f5f7f6;
+  font-family: Inter, "PingFang SC", "Microsoft YaHei", sans-serif;
+  font-synthesis: none;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+}
+
+button,
+input {
+  font: inherit;
+}
+
+button {
+  border: 1px solid #d8dfdc;
+  border-radius: 9px;
+  background: #fff;
+  color: #27332f;
+  cursor: pointer;
+  transition: 0.16s ease;
+}
+
+button:hover:not(:disabled) {
+  border-color: #8bb4a7;
+  background: #f5faf8;
+}
+
+button:disabled {
+  cursor: wait;
+  opacity: 0.58;
+}
+
+button.primary {
+  border-color: #216e5b;
+  background: #216e5b;
+  color: #fff;
+}
+
+.popup-body {
+  width: 390px;
+  min-height: 520px;
+  background: #f5f7f6;
+}
+
+.popup-shell {
+  padding: 18px;
+}
+
+.brand-row,
+.options-header {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.brand-row img {
+  width: 42px;
+  height: 42px;
+}
+
+.brand-row h1,
+.options-header h1 {
+  margin: 0;
+  font-size: 17px;
+}
+
+.brand-row p,
+.options-header p,
+.section-heading p {
+  margin: 4px 0 0;
+  color: #71807a;
+  font-size: 12px;
+}
+
+.status-card {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin: 16px 0;
+  padding: 13px 14px;
+  border: 1px solid #dde4e1;
+  border-radius: 11px;
+  background: #fff;
+}
+
+.status-card .status-dot {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  background: #9aa6a1;
+}
+
+.status-card.running .status-dot {
+  background: #e58b35;
+  box-shadow: 0 0 0 5px rgba(229, 139, 53, 0.13);
+}
+
+.status-card.failed .status-dot {
+  background: #c74444;
+}
+
+.status-card strong,
+.status-card small {
+  display: block;
+}
+
+.status-card strong {
+  font-size: 13px;
+}
+
+.status-card small {
+  margin-top: 3px;
+  color: #84908b;
+  font-size: 11px;
+}
+
+.action-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+}
+
+.action-grid button {
+  min-height: 39px;
+  padding: 8px 10px;
+  font-size: 12px;
+}
+
+.action-grid .wide {
+  grid-column: 1 / -1;
+}
+
+.message {
+  display: none;
+  margin-top: 10px;
+  padding: 9px 11px;
+  border-radius: 8px;
+  background: #e8f3ef;
+  color: #216e5b;
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+.message.visible {
+  display: block;
+}
+
+.message.error {
+  background: #fbeaea;
+  color: #b53838;
+}
+
+.history-block {
+  margin-top: 17px;
+}
+
+.section-title,
+.section-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+}
+
+.section-title {
+  margin-bottom: 8px;
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.text-button,
+.danger-text {
+  border: 0;
+  background: transparent;
+  padding: 2px 4px;
+  color: #216e5b;
+}
+
+.danger-text {
+  color: #b83d3d;
+}
+
+.history-list {
+  overflow: hidden;
+  border: 1px solid #e0e6e3;
+  border-radius: 10px;
+  background: #fff;
+}
+
+.history-item {
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 10px 11px;
+  border-bottom: 1px solid #edf0ef;
+}
+
+.history-item:last-child {
+  border-bottom: 0;
+}
+
+.history-item strong,
+.history-item span {
+  display: block;
+}
+
+.history-item strong {
+  max-width: 250px;
+  overflow: hidden;
+  font-size: 12px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.history-item span {
+  margin-top: 3px;
+  color: #74817c;
+  font-size: 11px;
+  line-height: 1.4;
+}
+
+.history-item.failed span {
+  color: #b83d3d;
+}
+
+.history-item time {
+  flex: 0 0 auto;
+  color: #9aa49f;
+  font-size: 10px;
+}
+
+.empty {
+  padding: 22px;
+  color: #98a29e;
+  text-align: center;
+  font-size: 12px;
+}
+
+.options-body {
+  min-width: 900px;
+  min-height: 100vh;
+  background: #f4f7f5;
+}
+
+.options-shell {
+  width: min(980px, calc(100% - 48px));
+  margin: 0 auto;
+  padding: 36px 0 54px;
+}
+
+.options-header {
+  margin-bottom: 24px;
+}
+
+.options-header img {
+  width: 54px;
+  height: 54px;
+}
+
+.options-header h1 {
+  font-size: 24px;
+}
+
+.options-header p {
+  font-size: 14px;
+}
+
+.settings-card {
+  margin-bottom: 16px;
+  padding: 22px;
+  border: 1px solid #e0e6e3;
+  border-radius: 14px;
+  background: #fff;
+  box-shadow: 0 7px 24px rgba(34, 67, 57, 0.04);
+}
+
+.settings-card h2 {
+  margin: 0 0 16px;
+  font-size: 17px;
+}
+
+.section-heading h2 {
+  margin-bottom: 0;
+}
+
+.form-grid {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 14px;
+}
+
+.form-grid.two-columns {
+  grid-template-columns: 1fr 1fr;
+  margin-top: 18px;
+}
+
+.field span {
+  display: block;
+  margin-bottom: 7px;
+  color: #53615c;
+  font-size: 13px;
+}
+
+.field input {
+  width: 100%;
+  height: 40px;
+  border: 1px solid #d8dfdc;
+  border-radius: 9px;
+  outline: none;
+  padding: 0 11px;
+  color: #24302c;
+}
+
+.field input:focus {
+  border-color: #4c927f;
+  box-shadow: 0 0 0 3px rgba(50, 132, 109, 0.12);
+}
+
+.password-field {
+  display: flex;
+  gap: 8px;
+}
+
+.password-field button {
+  flex: 0 0 72px;
+}
+
+.inline-actions {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-top: 14px;
+}
+
+.inline-actions button,
+.section-heading button {
+  min-height: 36px;
+  padding: 7px 14px;
+}
+
+.hint {
+  color: #84908b;
+  font-size: 12px;
+}
+
+.switch-row {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  font-size: 13px;
+}
+
+.switch-row.compact {
+  align-self: end;
+  min-height: 40px;
+}
+
+.source-settings-list {
+  display: grid;
+  gap: 10px;
+  margin-top: 18px;
+}
+
+.source-setting-item {
+  display: grid;
+  grid-template-columns: 72px 180px minmax(320px, 1fr) 48px;
+  align-items: end;
+  gap: 10px;
+  padding: 14px;
+  border: 1px solid #e3e9e6;
+  border-radius: 11px;
+  background: #fafcfb;
+}
+
+.options-footer {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 14px;
+  position: sticky;
+  bottom: 0;
+  padding: 14px 0;
+  background: rgba(244, 247, 245, 0.92);
+  backdrop-filter: blur(10px);
+}
+
+.options-footer .message {
+  flex: 1;
+  margin: 0;
+}
+
+.save-button {
+  min-width: 130px;
+  min-height: 42px;
+  padding: 9px 18px;
+}
+
+@media (max-width: 760px) {
+  .options-body {
+    min-width: 0;
+  }
+
+  .options-shell {
+    width: calc(100% - 24px);
+    padding-top: 18px;
+  }
+
+  .form-grid.two-columns,
+  .source-setting-item {
+    grid-template-columns: 1fr;
+  }
+}

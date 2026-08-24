@@ -25,14 +25,16 @@ public class ProductController {
     private ProductApplicationService productApplicationService;
 
     @PostMapping("/page")
-    @PreAuthorize("hasAuthority('*') or hasAuthority('crm:product:view')")
+    @PreAuthorize("hasAuthority('*') or hasAuthority('crm:product:view') "
+            + "or hasAuthority('crm:channel:manage')")
     public ApiResult<PageData<ProductResponse>> pagePost(
             @RequestBody(required = false) ProductQuery query, JwtPrincipal principal) {
         return ApiResult.ok(productApplicationService.page(principal.getTenantId(), query));
     }
 
     @PostMapping("/detail")
-    @PreAuthorize("hasAuthority('*') or hasAuthority('crm:product:view')")
+    @PreAuthorize("hasAuthority('*') or hasAuthority('crm:product:view') "
+            + "or hasAuthority('crm:channel:manage')")
     public ApiResult<ProductResponse> detailPost(@RequestBody IdRequest request, JwtPrincipal principal) {
         return ApiResult.ok(productApplicationService.detail(principal.getTenantId(), request.getId()));
     }

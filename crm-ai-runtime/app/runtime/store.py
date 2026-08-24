@@ -150,6 +150,27 @@ class RuntimeStore:
         )
         await self.add_token_usage(request, 0, 0, 0, False)
 
+    async def cancel_run(self, request: RuntimeRunRequest) -> None:
+        if not database_client.enabled() or not request.run_id:
+            return
+        now = datetime.now()
+        started_at = await self._run_started_at(request)
+        elapsed_ms = int((now - started_at).total_seconds() * 1000) if started_at else None
+        await database_client.execute(
+            """
+            update agent_run
+            set status = 'STOPPED', finished_at = %s, elapsed_ms = %s, updated_at = %s
+            where id = %s and tenant_id = %s and deleted = false
+            """,
+            (
+                now,
+                elapsed_ms,
+                now,
+                self._to_int(request.run_id),
+                self._to_int(request.tenant_id),
+            ),
+        )
+
     async def stop_run(self, tenant_id: str, user_id: str, request_id: str) -> bool:
         return False
 

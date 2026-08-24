@@ -48,6 +48,7 @@ class RuntimeRunRequest(CamelModel):
     agent: RuntimeAgent | None = None
     mcps: list[RuntimeResource] = Field(default_factory=list)
     skills: list[RuntimeResource] = Field(default_factory=list)
+    authorization: str | None = Field(default=None, exclude=True)
 
 
 class RuntimeEvent(CamelModel):

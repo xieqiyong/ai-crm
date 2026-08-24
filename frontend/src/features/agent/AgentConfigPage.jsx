@@ -1033,7 +1033,7 @@ function AgentDrawer({ open, form, models, canManage, onChange, onSave, onClose 
               </Field>
             </>
           )}
-          <Field label="最大迭代次数">
+          <Field label="大模型最大调用轮次" hint="限制单次任务调用大模型的次数，默认8次；不影响后续新会话">
             <input type="number" min="1" max="50" value={form.maxIters || 8} onChange={(event) => onChange({ ...form, maxIters: event.target.value })} />
           </Field>
           <Field label="备注">

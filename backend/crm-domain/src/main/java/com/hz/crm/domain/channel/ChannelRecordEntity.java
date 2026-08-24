@@ -82,6 +82,8 @@ public class ChannelRecordEntity extends BaseEntity {
 
     private Long ownerId;
 
+    private Long productId;
+
     @Column(columnDefinition = "text")
     private String remark;
 

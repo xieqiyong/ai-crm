@@ -9,7 +9,7 @@ import {
   Upload,
 } from 'lucide-react'
 import { api } from '../../api'
-import { Badge, Button, Card, ConfirmDialog, Field, Modal, PageHeader, useConfirmDialog } from '../../components'
+import { Badge, Button, Card, ConfirmDialog, Field, Modal, PageHeader, Select, useConfirmDialog } from '../../components'
 
 const statusText = {
   DRAFT: '草稿',
@@ -42,6 +42,31 @@ const taskStatusText = {
 }
 
 const terminalTaskStatuses = ['SUCCESS', 'SKIPPED', 'FAILED']
+
+const knowledgeStatusOptions = [
+  { value: '', label: '全部状态' },
+  { value: 'DRAFT', label: '草稿' },
+  { value: 'INDEXING', label: '入库中' },
+  { value: 'READY', label: '可检索' },
+  { value: 'WAITING_VECTOR', label: '待向量' },
+  { value: 'FAILED', label: '失败' },
+]
+
+const knowledgeSourceOptions = [
+  { value: '', label: '全部来源' },
+  { value: 'PRODUCT', label: '产品资料' },
+  { value: 'SOLUTION', label: '解决方案' },
+  { value: 'CASE', label: '客户案例' },
+  { value: 'FAQ', label: 'FAQ' },
+  { value: 'SALES_SOP', label: '销售话术' },
+  { value: 'DOCUMENT', label: '文档导入' },
+]
+
+const knowledgePageSizeOptions = [
+  { value: '10', label: '10 条/页' },
+  { value: '20', label: '20 条/页' },
+  { value: '50', label: '50 条/页' },
+]
 
 const emptyQuery = {
   pageNo: 1,
@@ -95,6 +120,22 @@ function toEditForm(row) {
     sourceUrl: row.sourceUrl || '',
     content: row.content || '',
   }
+}
+
+function buildPageItems(currentPage, totalPages) {
+  if (totalPages <= 7) {
+    return Array.from({ length: totalPages }, (_, index) => index + 1)
+  }
+  const items = [1]
+  const start = Math.max(2, currentPage - 1)
+  const end = Math.min(totalPages - 1, currentPage + 1)
+  if (start > 2) items.push('start-ellipsis')
+  for (let pageNo = start; pageNo <= end; pageNo += 1) {
+    items.push(pageNo)
+  }
+  if (end < totalPages - 1) items.push('end-ellipsis')
+  items.push(totalPages)
+  return items
 }
 
 export function KnowledgePage({ notify }) {
@@ -231,11 +272,16 @@ export function KnowledgePage({ notify }) {
     }
   }
 
+  const resetFilters = () => {
+    const nextQuery = { ...emptyQuery, pageSize: query.pageSize || emptyQuery.pageSize }
+    load(nextQuery)
+  }
+
   const records = page.records || []
   const readyCount = records.filter((item) => item.status === 'READY').length
   const chunkCount = records.reduce((sum, item) => sum + Number(item.chunkCount || 0), 0)
-  const currentPage = page.pageNo || query.pageNo || 1
-  const pageSize = page.pageSize || query.pageSize || 20
+  const currentPage = Number(page.pageNo || query.pageNo || 1)
+  const pageSize = Number(page.pageSize || query.pageSize || 20)
   const totalPages = Math.max(1, Math.ceil((page.total || 0) / pageSize))
 
   return (
@@ -260,28 +306,37 @@ export function KnowledgePage({ notify }) {
       </div>
 
       <Card className="knowledge-search-card">
-        <div>
-          <b>知识库检索测试</b>
-          <span>用于验证产品知识、方案资料、FAQ 是否能被AI检索到。</span>
+        <div className="knowledge-search-head">
+          <span className="knowledge-search-icon"><Search size={19} /></span>
+          <div>
+            <b>RAG 检索验证</b>
+            <span>输入真实业务问题，检查产品知识、方案资料和 FAQ 的召回效果。</span>
+          </div>
+          {searchResult && (
+            <div className="knowledge-search-health">
+              <Badge dot tone={searchResult.elasticsearchEnabled ? 'success' : 'neutral'}>全文检索</Badge>
+              <Badge dot tone={searchResult.milvusEnabled ? 'success' : 'neutral'}>向量检索</Badge>
+            </div>
+          )}
         </div>
         <div className="knowledge-search-line">
-          <input
-            value={searchText}
-            onChange={(event) => setSearchText(event.target.value)}
-            onKeyDown={(event) => event.key === 'Enter' && searchKnowledge()}
-            placeholder="例如：我们产品能解决哪些客户运维痛点？"
-          />
-          <Button icon={Search} onClick={searchKnowledge}>检索</Button>
+          <div className="knowledge-search-input">
+            <Search size={18} />
+            <input
+              value={searchText}
+              onChange={(event) => setSearchText(event.target.value)}
+              onKeyDown={(event) => event.key === 'Enter' && searchKnowledge()}
+              placeholder="例如：我们的产品能解决哪些客户运维痛点？"
+            />
+          </div>
+          <Button icon={Search} onClick={searchKnowledge}>开始检索</Button>
         </div>
         {searchResult && (
           <div className="knowledge-search-result">
-            <small>
-              {searchResult.message}
-              {' · '}
-              Milvus：{searchResult.milvusEnabled ? '已启用' : '未启用'}
-              {' · '}
-              ES：{searchResult.elasticsearchEnabled ? '已启用' : '未启用'}
-            </small>
+            <div className="knowledge-result-summary">
+              <b>召回结果</b>
+              <span>{searchResult.message || `共找到 ${(searchResult.hits || []).length} 条相关知识`}</span>
+            </div>
             {(searchResult.hits || []).map((hit) => (
               <div className="knowledge-hit" key={hit.chunkId}>
                 <div>
@@ -298,34 +353,54 @@ export function KnowledgePage({ notify }) {
         )}
       </Card>
 
-      <Card className="filter-card knowledge-filter">
-        <label>
-          <span>关键词</span>
-          <input
-            value={query.keyword}
-            onChange={(event) => setQuery({ ...query, keyword: event.target.value })}
-            placeholder="标题、标签或内容"
-          />
-        </label>
-        <label>
-          <span>分类</span>
-          <input
-            value={query.category}
-            onChange={(event) => setQuery({ ...query, category: event.target.value })}
-            placeholder="产品知识 / 客户案例"
-          />
-        </label>
-        <label>
-          <span>状态</span>
-          <select value={query.status} onChange={(event) => setQuery({ ...query, status: event.target.value })}>
-            <option value="">全部</option>
-            <option value="DRAFT">草稿</option>
-            <option value="READY">可检索</option>
-            <option value="WAITING_VECTOR">待向量</option>
-            <option value="FAILED">失败</option>
-          </select>
-        </label>
-        <Button variant="secondary" icon={Search} onClick={refreshFirstPage}>筛选</Button>
+      <Card className="knowledge-filter-card">
+        <div className="knowledge-filter-head">
+          <div>
+            <b>知识文档</b>
+            <span>按文档信息快速定位知识，并查看真实入库状态。</span>
+          </div>
+          <button type="button" className="knowledge-filter-reset" onClick={resetFilters}>重置筛选</button>
+        </div>
+        <div className="knowledge-filter">
+          <label className="knowledge-keyword-field">
+            <span>关键词</span>
+            <div className="knowledge-filter-input">
+              <Search size={16} />
+              <input
+                value={query.keyword}
+                onChange={(event) => setQuery({ ...query, keyword: event.target.value })}
+                onKeyDown={(event) => event.key === 'Enter' && refreshFirstPage()}
+                placeholder="搜索标题、标签或正文"
+              />
+            </div>
+          </label>
+          <label>
+            <span>分类</span>
+            <input
+              value={query.category}
+              onChange={(event) => setQuery({ ...query, category: event.target.value })}
+              onKeyDown={(event) => event.key === 'Enter' && refreshFirstPage()}
+              placeholder="例如：产品知识"
+            />
+          </label>
+          <label>
+            <span>来源</span>
+            <Select
+              value={query.sourceType}
+              options={knowledgeSourceOptions}
+              onChange={(sourceType) => setQuery({ ...query, sourceType })}
+            />
+          </label>
+          <label>
+            <span>状态</span>
+            <Select
+              value={query.status}
+              options={knowledgeStatusOptions}
+              onChange={(status) => setQuery({ ...query, status })}
+            />
+          </label>
+          <Button icon={Search} onClick={refreshFirstPage}>查询</Button>
+        </div>
       </Card>
 
       <KnowledgeTable
@@ -335,6 +410,7 @@ export function KnowledgePage({ notify }) {
         query={query}
         currentPage={currentPage}
         totalPages={totalPages}
+        pageSize={pageSize}
         taskMap={taskMap}
         onLoad={load}
         onEdit={openEdit}
@@ -355,6 +431,7 @@ export function KnowledgePage({ notify }) {
         open={importing}
         onClose={() => setImporting(false)}
         notify={notify}
+        onTaskStart={trackTask}
         reload={refreshFirstPage}
       />
       <ConfirmDialog {...dialogProps} />
@@ -379,6 +456,7 @@ function KnowledgeTable({
   query,
   currentPage,
   totalPages,
+  pageSize,
   taskMap,
   onLoad,
   onEdit,
@@ -386,6 +464,23 @@ function KnowledgeTable({
   onForceIngest,
   onDelete,
 }) {
+  const [jumpPage, setJumpPage] = useState(String(currentPage))
+  const pageItems = buildPageItems(currentPage, totalPages)
+
+  useEffect(() => {
+    setJumpPage(String(currentPage))
+  }, [currentPage])
+
+  const jumpToPage = (event) => {
+    event.preventDefault()
+    const targetPage = Number.parseInt(jumpPage, 10)
+    if (!Number.isInteger(targetPage) || targetPage < 1 || targetPage > totalPages) {
+      setJumpPage(String(currentPage))
+      return
+    }
+    onLoad({ ...query, pageNo: targetPage })
+  }
+
   return (
     <Card className="table-card knowledge-table-card">
       <div className="data-table-wrap">
@@ -434,21 +529,64 @@ function KnowledgeTable({
       </div>
 
       <div className="table-footer">
-        <span>共 {page.total || 0} 条，当前第 {currentPage} / {totalPages} 页</span>
-        <div className="pagination">
-          <button
-            disabled={currentPage <= 1}
-            onClick={() => onLoad({ ...query, pageNo: currentPage - 1 })}
-          >
-            上一页
-          </button>
-          <button className="active">{currentPage}</button>
-          <button
-            disabled={currentPage >= totalPages}
-            onClick={() => onLoad({ ...query, pageNo: currentPage + 1 })}
-          >
-            下一页
-          </button>
+        <div className="knowledge-page-summary">
+          <span>共 <b>{page.total || 0}</b> 条文档</span>
+          <span>第 {currentPage} / {totalPages} 页</span>
+        </div>
+        <div className="knowledge-pagination-wrap">
+          <Select
+            className="knowledge-page-size"
+            value={String(pageSize)}
+            options={knowledgePageSizeOptions}
+            disabled={loading}
+            onChange={(value) => onLoad({ ...query, pageNo: 1, pageSize: Number(value) })}
+          />
+          <div className="pagination knowledge-pagination">
+            <button
+              type="button"
+              disabled={loading || currentPage <= 1}
+              onClick={() => onLoad({ ...query, pageNo: currentPage - 1 })}
+              aria-label="上一页"
+            >
+              ‹
+            </button>
+            {pageItems.map((item) => (
+              typeof item === 'number' ? (
+                <button
+                  type="button"
+                  className={item === currentPage ? 'active' : ''}
+                  disabled={loading || item === currentPage}
+                  onClick={() => onLoad({ ...query, pageNo: item })}
+                  key={item}
+                >
+                  {item}
+                </button>
+              ) : <span className="knowledge-page-ellipsis" key={item}>···</span>
+            ))}
+            <button
+              type="button"
+              disabled={loading || currentPage >= totalPages}
+              onClick={() => onLoad({ ...query, pageNo: currentPage + 1 })}
+              aria-label="下一页"
+            >
+              ›
+            </button>
+          </div>
+          <form className="knowledge-page-jump" onSubmit={jumpToPage}>
+            <span>跳至</span>
+            <input
+              type="number"
+              min="1"
+              max={totalPages}
+              step="1"
+              inputMode="numeric"
+              aria-label="跳转页码"
+              value={jumpPage}
+              onChange={(event) => setJumpPage(event.target.value)}
+            />
+            <span>页</span>
+            <button type="submit" disabled={loading}>确定</button>
+          </form>
         </div>
       </div>
     </Card>
@@ -620,9 +758,15 @@ function KnowledgeImportModal({ open, onClose, notify, onTaskStart, reload }) {
     try {
       const response = await api.knowledge.importDocument(formData)
       notify(response.message || '知识文档已导入，后台正在入库', 'success')
-      onTaskStart(response)
-      onClose()
-      reload()
+      if (typeof onTaskStart === 'function') {
+        onTaskStart(response)
+      }
+      if (typeof onClose === 'function') {
+        onClose()
+      }
+      if (typeof reload === 'function') {
+        reload()
+      }
     } catch (err) {
       notify(err.message || '知识文档导入失败', 'info')
     }
@@ -638,12 +782,12 @@ function KnowledgeImportModal({ open, onClose, notify, onTaskStart, reload }) {
   return (
     <Modal open={open} title="上传知识文档" onClose={onClose} footer={footer}>
       <div className="form-grid">
-        <Field label="知识文档" required hint="支持 HTML、TXT、MD、DOCX，导入后会自动切分并写入检索索引。">
+        <Field label="知识文档" required hint="支持 PDF、HTML、TXT、MD、DOCX，导入后会自动切分并写入检索索引。">
           <div className="upload-drop">
             <Upload size={26} />
             <span>{file ? file.name : '选择知识文档'}</span>
             <small>建议先导入产品介绍、部署方案、FAQ、客户案例和销售SOP。</small>
-            <input type="file" accept=".html,.htm,.txt,.md,.markdown,.docx" onChange={selectFile} />
+            <input type="file" accept=".pdf,.html,.htm,.txt,.md,.markdown,.docx" onChange={selectFile} />
           </div>
         </Field>
         <Field label="标题">

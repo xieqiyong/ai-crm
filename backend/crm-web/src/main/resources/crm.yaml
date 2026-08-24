@@ -116,8 +116,6 @@ crm:
     base-url: https://qyapi.weixin.qq.com
     connect-timeout-ms: 5000
     read-timeout-ms: 30000
-    schedule-delay-ms: 60000
-    schedule-initial-delay-ms: 30000
     fetch-detail-enabled: true
     fetch-tags-enabled: true
   nacos:

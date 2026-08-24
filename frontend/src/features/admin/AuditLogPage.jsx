@@ -25,6 +25,7 @@ const moduleText = {
   LEAD: '线索管理',
   CUSTOMER: '客户管理',
   CHANNEL: '渠道管理',
+  PUBLIC_POOL: '公海池',
   PRODUCT: '产品管理',
   OPPORTUNITY: '商机管理',
   FOLLOWUP: '跟进记录',

@@ -114,8 +114,6 @@ crm:
     base-url: ${CRM_WECOM_BASE_URL:https://qyapi.weixin.qq.com}
     connect-timeout-ms: ${CRM_WECOM_CONNECT_TIMEOUT_MS:5000}
     read-timeout-ms: ${CRM_WECOM_READ_TIMEOUT_MS:30000}
-    schedule-delay-ms: ${CRM_WECOM_SCHEDULE_DELAY_MS:60000}
-    schedule-initial-delay-ms: ${CRM_WECOM_SCHEDULE_INITIAL_DELAY_MS:30000}
     fetch-detail-enabled: ${CRM_WECOM_FETCH_DETAIL_ENABLED:true}
     fetch-tags-enabled: ${CRM_WECOM_FETCH_TAGS_ENABLED:true}
   nacos:
@@ -188,7 +186,7 @@ crm:
       enabled: ${CRM_KB_EMBEDDING_ENABLED:true}
       base-url: ${CRM_KB_EMBEDDING_BASE_URL:http://localhost:11434/v1}
       api-key: ${CRM_KB_EMBEDDING_API_KEY:}
-      model: ${CRM_KB_EMBEDDING_MODEL:bge-m3:latest}
+      model: ${CRM_KB_EMBEDDING_MODEL:bge-m3}
       dimensions: ${CRM_KB_EMBEDDING_DIMENSIONS:0}
       timeout-ms: ${CRM_KB_EMBEDDING_TIMEOUT_MS:30000}
     elasticsearch:
