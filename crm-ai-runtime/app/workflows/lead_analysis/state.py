@@ -11,3 +11,5 @@ class LeadAnalysisState(TypedDict, total=False):
     lead: dict[str, Any]
     customer_profile: dict[str, Any]
     structured_response: LeadAnalysisResult
+    analysis_started_at_ns: int
+    analysis_elapsed_ms: float

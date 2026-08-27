@@ -61,7 +61,9 @@ class LeadAnalysisWorkflowFactory:
                 "检索客户公开信息",
             )(lead_analysis_nodes.company_web_search),
         )
+        builder.add_node("prepare_analysis", lead_analysis_nodes.prepare_analysis)
         builder.add_node("analysis_agent", analysis_agent)
+        builder.add_node("record_analysis", lead_analysis_nodes.record_analysis)
         builder.add_node(
             "validate_output",
             observable_node(
@@ -82,11 +84,13 @@ class LeadAnalysisWorkflowFactory:
             lead_analysis_nodes.route_after_prepare,
             {
                 "company_web_search": "company_web_search",
-                "analysis_agent": "analysis_agent",
+                "analysis_agent": "prepare_analysis",
             },
         )
-        builder.add_edge("company_web_search", "analysis_agent")
-        builder.add_edge("analysis_agent", "validate_output")
+        builder.add_edge("company_web_search", "prepare_analysis")
+        builder.add_edge("prepare_analysis", "analysis_agent")
+        builder.add_edge("analysis_agent", "record_analysis")
+        builder.add_edge("record_analysis", "validate_output")
         builder.add_edge("validate_output", "finalize_result")
         builder.add_edge("finalize_result", END)
         return builder.compile(checkpointer=checkpointer)

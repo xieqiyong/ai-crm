@@ -23,8 +23,12 @@ class CrmApiClient:
         if trace_id:
             headers["X-Trace-Id"] = trace_id
         timeout = max(int(settings.crm_api_timeout_seconds or 30), 5)
-        async with httpx.AsyncClient(timeout=timeout) as client:
-            response = await client.post(url, json=payload, headers=headers)
+        try:
+            async with httpx.AsyncClient(timeout=timeout, trust_env=False) as client:
+                response = await client.post(url, json=payload, headers=headers)
+        except httpx.HTTPError as ex:
+            message = str(ex).strip() or type(ex).__name__
+            raise RuntimeError("CRM接口调用失败，地址：%s，原因：%s" % (url, message)) from ex
         if response.status_code < 200 or response.status_code >= 300:
             raise RuntimeError("CRM接口调用失败，状态码：%s" % response.status_code)
         try:

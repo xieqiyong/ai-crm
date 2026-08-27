@@ -25,7 +25,7 @@ def observable_node(node_name: str, display_name: str):
             logger.info("Graph节点开始 node=%s name=%s", node_name, display_name)
             try:
                 result = await func(state, runtime)
-                elapsed_ms = int((time.perf_counter() - started_at) * 1000)
+                elapsed_ms = _elapsed_ms(started_at)
                 writer({
                     "type": "GRAPH_NODE_STATUS",
                     "content": display_name,
@@ -42,7 +42,7 @@ def observable_node(node_name: str, display_name: str):
                 )
                 return result
             except Exception:
-                elapsed_ms = int((time.perf_counter() - started_at) * 1000)
+                elapsed_ms = _elapsed_ms(started_at)
                 writer({
                     "type": "GRAPH_NODE_STATUS",
                     "content": display_name + "失败",
@@ -62,3 +62,7 @@ def observable_node(node_name: str, display_name: str):
         return wrapper
 
     return decorator
+
+
+def _elapsed_ms(started_at: float) -> float:
+    return round((time.perf_counter() - started_at) * 1000, 3)

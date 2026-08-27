@@ -65,8 +65,9 @@ class AgentRuntimeExecutor:
                 await runtime_store.fail_run(request, message)
             raise RuntimeError(message) from ex
         except Exception as ex:
+            message = str(ex).strip() or type(ex).__name__
             if started:
-                await runtime_store.fail_run(request, str(ex))
+                await runtime_store.fail_run(request, message)
             raise
         finally:
             runtime_credential_store.revoke(request.run_id)

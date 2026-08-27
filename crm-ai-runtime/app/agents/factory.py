@@ -27,7 +27,11 @@ class ToolCallingAgentFactory:
             workflow_prompt: str | None = None) -> RuntimeGraphBundle:
         if request.agent is None:
             raise RuntimeError("当前场景没有可用的智能体配置")
-        model = chat_model_factory.build(request.agent)
+        response_format = self._response_format(request)
+        model = chat_model_factory.build(
+            request.agent,
+            force_tool_choice=response_format is not None,
+        )
         mcp_bundle = await mcp_registry.load_tools(runtime_context.mcps)
         tools = self._tools(runtime_context, mcp_bundle, excluded_tool_names or set())
         execution_context = AgentExecutionContext.from_request(request, runtime_context.skills)
@@ -43,7 +47,7 @@ class ToolCallingAgentFactory:
                 ),
                 AgentObservabilityMiddleware(),
             ],
-            response_format=self._response_format(request),
+            response_format=response_format,
             context_schema=AgentExecutionContext,
             checkpointer=checkpointer,
             name=self._agent_name(request),

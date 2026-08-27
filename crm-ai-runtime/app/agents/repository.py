@@ -70,50 +70,79 @@ class AgentRepository:
         if request.agent and request.agent.id:
             row = await self._load_agent_by_id(request)
             if row is not None:
-                return AgentDefinition.from_row(row)
+                return self._agent_definition(row)
             raise ValueError("当前租户和场景下不存在指定智能体，或智能体已停用")
         row = await database_client.fetch_one(
             """
-            select id, code, scene_code, scene_name, name, description, system_prompt,
-                   model_provider, model_name, base_url, api_key_env as api_key,
-                   max_iters, extra_config_json
-            from agents
-            where tenant_id = %s and scene_code = %s and enabled = true and deleted = false
-            order by updated_at desc
+            select a.id, a.code, a.scene_code, a.scene_name, a.name, a.description, a.system_prompt,
+                   a.model_config_id,
+                   case when a.model_config_id is null then a.model_provider else m.provider end as model_provider,
+                   case when a.model_config_id is null then a.model_name else m.model_name end as model_name,
+                   case when a.model_config_id is null then a.base_url else m.base_url end as base_url,
+                   case when a.model_config_id is null then a.api_key_env else m.api_key_env end as api_key,
+                   a.max_iters, a.extra_config_json,
+                   m.id as resolved_model_config_id, m.enabled as model_config_enabled
+            from agents a
+            left join llm_model_config m
+              on m.tenant_id = a.tenant_id and m.id = a.model_config_id and m.deleted = false
+            where a.tenant_id = %s and a.scene_code = %s and a.enabled = true and a.deleted = false
+            order by a.updated_at desc
             limit 1
             """,
             (self._to_int(request.tenant_id), request.scene_code),
         )
         if row is None:
             return AgentDefinition.from_runtime_agent(request.agent)
-        return AgentDefinition.from_row(row)
+        return self._agent_definition(row)
 
     async def _load_agent_by_id(self, request: RuntimeRunRequest) -> dict[str, Any] | None:
         scene_code = (request.scene_code or "").strip()
         if scene_code:
             return await database_client.fetch_one(
                 """
-                select id, code, scene_code, scene_name, name, description, system_prompt,
-                       model_provider, model_name, base_url, api_key_env as api_key,
-                       max_iters, extra_config_json
-                from agents
-                where tenant_id = %s and id = %s and scene_code = %s
-                  and enabled = true and deleted = false
+                select a.id, a.code, a.scene_code, a.scene_name, a.name, a.description, a.system_prompt,
+                       a.model_config_id,
+                       case when a.model_config_id is null then a.model_provider else m.provider end as model_provider,
+                       case when a.model_config_id is null then a.model_name else m.model_name end as model_name,
+                       case when a.model_config_id is null then a.base_url else m.base_url end as base_url,
+                       case when a.model_config_id is null then a.api_key_env else m.api_key_env end as api_key,
+                       a.max_iters, a.extra_config_json,
+                       m.id as resolved_model_config_id, m.enabled as model_config_enabled
+                from agents a
+                left join llm_model_config m
+                  on m.tenant_id = a.tenant_id and m.id = a.model_config_id and m.deleted = false
+                where a.tenant_id = %s and a.id = %s and a.scene_code = %s
+                  and a.enabled = true and a.deleted = false
                 limit 1
                 """,
                 (self._to_int(request.tenant_id), self._to_int(request.agent.id), scene_code),
             )
         return await database_client.fetch_one(
             """
-            select id, code, scene_code, scene_name, name, description, system_prompt,
-                   model_provider, model_name, base_url, api_key_env as api_key,
-                   max_iters, extra_config_json
-            from agents
-            where tenant_id = %s and id = %s and enabled = true and deleted = false
+            select a.id, a.code, a.scene_code, a.scene_name, a.name, a.description, a.system_prompt,
+                   a.model_config_id,
+                   case when a.model_config_id is null then a.model_provider else m.provider end as model_provider,
+                   case when a.model_config_id is null then a.model_name else m.model_name end as model_name,
+                   case when a.model_config_id is null then a.base_url else m.base_url end as base_url,
+                   case when a.model_config_id is null then a.api_key_env else m.api_key_env end as api_key,
+                   a.max_iters, a.extra_config_json,
+                   m.id as resolved_model_config_id, m.enabled as model_config_enabled
+            from agents a
+            left join llm_model_config m
+              on m.tenant_id = a.tenant_id and m.id = a.model_config_id and m.deleted = false
+            where a.tenant_id = %s and a.id = %s and a.enabled = true and a.deleted = false
             limit 1
             """,
             (self._to_int(request.tenant_id), self._to_int(request.agent.id)),
         )
+
+    def _agent_definition(self, row: dict[str, Any]) -> AgentDefinition:
+        if row.get("model_config_id") is not None:
+            if row.get("resolved_model_config_id") is None:
+                raise ValueError("智能体关联的大模型配置不存在")
+            if not bool(row.get("model_config_enabled")):
+                raise ValueError("智能体关联的大模型配置已停用")
+        return AgentDefinition.from_row(row)
 
     def _use_database(self, request: RuntimeRunRequest) -> bool:
         return (

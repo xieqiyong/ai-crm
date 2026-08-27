@@ -1,5 +1,6 @@
 import asyncio
 import json
+import logging
 from fastapi import APIRouter, Depends, HTTPException, Request
 from fastapi.responses import StreamingResponse
 
@@ -33,6 +34,7 @@ from app.schemas.runtime import (
 
 router = APIRouter()
 active_tasks: dict[str, asyncio.Task] = {}
+logger = logging.getLogger(__name__)
 
 
 def api_ok(data=None) -> dict:
@@ -387,6 +389,10 @@ async def public_lead_analyze(http_request: Request):
         return api_fail("AI_LEAD_002", str(ex))
     except RuntimeError as ex:
         return api_fail("AI_LEAD_003", str(ex))
+    except Exception as ex:
+        logger.exception("线索AI分析执行失败，线索编号：%s", lead_id)
+        message = str(ex).strip() or type(ex).__name__
+        return api_fail("AI_LEAD_003", "线索AI分析失败：" + message)
 
 
 @router.post("/internal/ai/runtime/run", response_model=RuntimeRunResponse)
@@ -819,7 +825,6 @@ def build_lead_analyze_message(lead: dict, instruction: str | None) -> str:
     ]
     if instruction:
         values.append("补充要求：" + str(instruction).strip())
-    values.append("线索真实数据：" + json.dumps(lead, ensure_ascii=False, default=str))
     return "\n".join(values)
 
 

@@ -1,4 +1,6 @@
 import unittest
+from types import SimpleNamespace
+from unittest.mock import AsyncMock, patch
 
 from langchain.agents import create_agent
 from langchain.agents.middleware import ModelCallLimitMiddleware
@@ -11,9 +13,13 @@ from langchain_core.outputs import ChatGeneration, ChatResult
 from langgraph.checkpoint.memory import InMemorySaver
 
 from app.runtime.stream_adapter import AgentStreamAccumulator
+from app.models.chat_model_factory import chat_model_factory
 from app.models.openai_compatible import OpenAICompatibleChatModel
+from app.runtime.execution_context import AgentExecutionContext
 from app.schemas.lead_analysis import LeadAnalysisResult
+from app.schemas.runtime import RuntimeAgent
 from app.tools.builtin import crm_lead_page, load_skill
+from app.workflows.lead_analysis.nodes import lead_analysis_nodes
 from app.workflows.lead_analysis.workflow import lead_analysis_workflow_factory
 
 
@@ -207,7 +213,8 @@ class StandardAgentRuntimeTest(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(
             {
                 "__start__", "prepare_context", "company_web_search",
-                "analysis_agent", "validate_output", "finalize_result", "__end__",
+                "prepare_analysis", "analysis_agent", "record_analysis",
+                "validate_output", "finalize_result", "__end__",
             },
             set(graph.get_graph().nodes.keys()),
         )
@@ -218,6 +225,69 @@ class StandardAgentRuntimeTest(unittest.IsolatedAsyncioTestCase):
         })
         self.assertIsInstance(result.get("structured_response"), LeadAnalysisResult)
         self.assertEqual("建议继续跟进", result["structured_response"].conclusion_title)
+
+    async def test_lead_analysis_records_agent_node_elapsed_time(self):
+        execution_context = AgentExecutionContext(
+            tenant_id="100",
+            user_id="200",
+            scene_code="LEAD_ANALYZE",
+            data_scope="SELF",
+            permissions=("crm:lead:view",),
+            business_type="LEAD",
+            business_id="300",
+            credential_key=None,
+            trace_id=None,
+            skills=(),
+        )
+        analysis_agent = create_agent(
+            StructuredOutputFakeModel(),
+            [],
+            response_format=ToolStrategy(LeadAnalysisResult),
+            context_schema=AgentExecutionContext,
+            name="test_observable_lead_analysis_agent",
+        )
+        graph = lead_analysis_workflow_factory.compile(analysis_agent)
+        accumulator = AgentStreamAccumulator()
+        async for part in graph.astream(
+                {
+                    "messages": [{"role": "user", "content": "分析线索"}],
+                    "lead": {"id": "300", "companyName": ""},
+                    "customer_profile": {},
+                },
+                context=execution_context,
+                stream_mode=["messages", "updates", "values", "custom"],
+                version="v2"):
+            await accumulator.consume(part)
+        agent_events = [
+            item for item in accumulator.events
+            if item.get("metadata", {}).get("node") == "analysis_agent"
+        ]
+        self.assertEqual(1, len(agent_events))
+        self.assertGreaterEqual(agent_events[0]["metadata"]["elapsedMs"], 0)
+
+    async def test_lead_analysis_loads_real_lead_by_business_id(self):
+        execution_context = AgentExecutionContext(
+            tenant_id="100",
+            user_id="200",
+            scene_code="LEAD_ANALYZE",
+            data_scope="SELF",
+            permissions=("crm:lead:view",),
+            business_type="LEAD",
+            business_id="300",
+            credential_key=None,
+            trace_id=None,
+            skills=(),
+        )
+        runtime = SimpleNamespace(context=execution_context)
+        lead = {"id": "300", "companyName": "测试企业"}
+        with patch(
+                "app.workflows.lead_analysis.nodes.business_repository.lead_detail",
+                new_callable=AsyncMock,
+                return_value=lead) as lead_detail:
+            result = await lead_analysis_nodes.prepare_context({"lead": {}}, runtime)
+        lead_detail.assert_awaited_once_with("100", "200", "SELF", "300")
+        self.assertEqual(lead, result["lead"])
+        self.assertIn("测试企业", str(result["messages"][0].content))
 
     def test_runtime_context_is_not_exposed_to_model_schema(self):
         lead_schema = crm_lead_page.tool_call_schema.model_json_schema()
@@ -250,6 +320,21 @@ class StandardAgentRuntimeTest(unittest.IsolatedAsyncioTestCase):
             "正在分析真实业务数据",
             generation.message.additional_kwargs.get("reasoning_content"),
         )
+
+    def test_deepseek_v4_forced_tool_choice_disables_thinking(self):
+        agent = RuntimeAgent(
+            id="1",
+            sceneCode="LEAD_ANALYZE",
+            modelProvider="OPENAI",
+            modelName="deepseek-v4-flash",
+            baseUrl="https://api.deepseek.com",
+            apiKey="test-key",
+            extraConfigJson='{"reasoningEffort":"high","extraBody":{"custom":"value"}}',
+        )
+        model = chat_model_factory.build(agent, force_tool_choice=True)
+        self.assertIsNone(model.reasoning_effort)
+        self.assertEqual("value", model.extra_body.get("custom"))
+        self.assertEqual({"type": "disabled"}, model.extra_body.get("thinking"))
 
 
 if __name__ == "__main__":

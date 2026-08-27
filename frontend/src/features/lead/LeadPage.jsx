@@ -283,7 +283,7 @@ function matchRuntimeEvent(event, options = {}) {
   return nodes.includes(node)
     || nodeNames.some((item) => nodeName.includes(item))
     || types.includes(type)
-    || tools.includes(toolName)
+    || tools.some((item) => String(item).toLowerCase() === String(toolName).toLowerCase())
 }
 
 function buildBusinessRuntimeSteps(events = []) {
@@ -320,17 +320,17 @@ function buildBusinessRuntimeSteps(events = []) {
       title: '生成销售分析',
       status: '完成',
       matched: values.some((event) => matchRuntimeEvent(event, {
-        nodes: ['RUN_AGENT', 'lead_analyze'],
+        nodes: ['RUN_AGENT', 'lead_analyze', 'analysis_agent'],
         nodeNames: ['执行智能体分析', '线索结论整理'],
         types: ['AGENT_RESULT'],
-        tools: ['lead_analysis_result'],
+        tools: ['lead_analysis_result', 'LeadAnalysisResult'],
       })),
     },
     {
       title: '整理分析结果',
       status: '完成',
       matched: values.some((event) => matchRuntimeEvent(event, {
-        nodes: ['FINALIZE_RESULT', 'validate_output', 'finalize'],
+        nodes: ['FINALIZE_RESULT', 'validate_output', 'finalize', 'finalize_result'],
         nodeNames: ['整理分析结果', '整理分析结论', '生成行动建议'],
       })),
     },
@@ -1118,11 +1118,13 @@ function buildRuntimeTimingItems(events = []) {
   const labels = {
     prepare_context: '读取线索资料',
     company_web_search: '检索客户公开信息',
+    analysis_agent: '生成销售分析',
     lead_analyze: '生成销售分析',
     validate_output: '校验结构化结果',
+    finalize_result: '整理分析结果',
     finalize: '整理分析结果',
   }
-  const order = ['prepare_context', 'company_web_search', 'lead_analyze', 'validate_output', 'finalize']
+  const order = ['prepare_context', 'company_web_search', 'analysis_agent', 'lead_analyze', 'validate_output', 'finalize_result', 'finalize']
   return order.map((node) => {
     const event = (events || []).find((item) => item?.metadata?.node === node && item?.metadata?.elapsedMs !== undefined)
     if (!event) return null
@@ -1139,6 +1141,7 @@ function buildRuntimeTimingItems(events = []) {
 function formatElapsedMs(value) {
   const numberValue = Number(value)
   if (!Number.isFinite(numberValue) || numberValue < 0) return ''
+  if (numberValue < 1) return '<1ms'
   if (numberValue < 1000) return `${Math.round(numberValue)}ms`
   if (numberValue < 10000) return `${(numberValue / 1000).toFixed(1)}秒`
   return `${Math.round(numberValue / 1000)}秒`

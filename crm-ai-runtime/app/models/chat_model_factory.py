@@ -1,13 +1,19 @@
 import json
+import logging
 from typing import Any
 
 from app.core.config import settings
 from app.models.openai_compatible import OpenAICompatibleChatModel
 from app.schemas.runtime import RuntimeAgent
 
+logger = logging.getLogger("crm_ai_runtime.model.factory")
+
 
 class ChatModelFactory:
-    def build(self, agent: RuntimeAgent) -> OpenAICompatibleChatModel:
+    def build(
+            self,
+            agent: RuntimeAgent,
+            force_tool_choice: bool = False) -> OpenAICompatibleChatModel:
         if agent is None:
             raise RuntimeError("智能体配置不能为空")
         model_name = self._text(agent.model_name)
@@ -26,9 +32,14 @@ class ChatModelFactory:
         timeout = float(config.get("timeoutSeconds") or settings.llm_timeout_seconds)
         max_retries = self._non_negative_int(config.get("maxRetries"), 2)
         stream_usage = self._bool(config.get("streamUsage"), settings.llm_stream_include_usage)
-        extra_body = config.get("extraBody")
-        if not isinstance(extra_body, dict):
-            extra_body = None
+        extra_body = self._extra_body(config, model_name, force_tool_choice)
+        reasoning_effort = self._text(config.get("reasoningEffort")) or None
+        if force_tool_choice and self._is_deepseek_v4(model_name):
+            reasoning_effort = None
+            logger.info(
+                "DeepSeek V4结构化输出已关闭Thinking，以兼容强制工具选择，model=%s",
+                model_name,
+            )
 
         return OpenAICompatibleChatModel(
             model=model_name,
@@ -41,7 +52,7 @@ class ChatModelFactory:
             streaming=True,
             stream_usage=stream_usage,
             output_version="v1",
-            reasoning_effort=self._text(config.get("reasoningEffort")) or None,
+            reasoning_effort=reasoning_effort,
             extra_body=extra_body,
             tags=["crm-agent", (agent.scene_code or "general_assistant").lower()],
             metadata={
@@ -50,6 +61,20 @@ class ChatModelFactory:
                 "modelProvider": agent.model_provider or "",
             },
         )
+
+    def _extra_body(
+            self,
+            config: dict[str, Any],
+            model_name: str,
+            force_tool_choice: bool) -> dict[str, Any] | None:
+        value = config.get("extraBody")
+        result = dict(value) if isinstance(value, dict) else {}
+        if force_tool_choice and self._is_deepseek_v4(model_name):
+            result["thinking"] = {"type": "disabled"}
+        return result or None
+
+    def _is_deepseek_v4(self, model_name: str) -> bool:
+        return model_name.strip().lower().startswith("deepseek-v4")
 
     def _base_url(self, agent: RuntimeAgent) -> str:
         value = self._text(agent.base_url) or self._default_base_url(agent.model_provider)
