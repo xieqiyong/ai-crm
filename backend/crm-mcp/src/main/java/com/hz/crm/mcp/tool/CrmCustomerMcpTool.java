@@ -74,6 +74,8 @@ public class CrmCustomerMcpTool extends CrmMcpToolSupport {
         record.put("status", enumName(response.getStatus()));
         record.put("ownerId", id(response.getOwnerId()));
         record.put("ownerName", response.getOwnerName());
+        record.put("productId", id(response.getProductId()));
+        record.put("productName", response.getProductName());
         record.put("remark", shrink(response.getRemark(), 1500));
         record.put("aiSummary", shrink(response.getAiSummary(), 3000));
         record.put("aiAnalyzedAt", dateTime(response.getAiAnalyzedAt()));

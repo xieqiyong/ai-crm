@@ -51,6 +51,7 @@ public class ChannelSourceEntity extends BaseEntity {
 
     private Long wecomConfigId;
 
+    @Column(nullable = false)
     private Long productId;
 
     @Column(length = 128)

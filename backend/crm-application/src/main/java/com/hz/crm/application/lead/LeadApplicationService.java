@@ -28,6 +28,7 @@ import com.hz.crm.domain.customer.CustomerStatus;
 import com.hz.crm.domain.customer.mapper.CustomerMapper;
 import com.hz.crm.domain.lead.LeadEntity;
 import com.hz.crm.domain.lead.LeadConvertType;
+import com.hz.crm.domain.lead.LeadProductConflictPolicy;
 import com.hz.crm.domain.lead.LeadStatus;
 import com.hz.crm.domain.lead.mapper.LeadMapper;
 import java.math.BigDecimal;
@@ -131,6 +132,7 @@ public class LeadApplicationService {
             entity = findOne(tenantId, request.getId());
             checkDataScope(operatorId, dataScope, entity.getOwnerId());
         }
+        productReferenceResolver.requireSelectable(tenantId, request.getProductId(), entity.getProductId());
         entity.setName(leadName);
         entity.setCompanyName(companyName);
         entity.setPhone(phone);
@@ -140,9 +142,7 @@ public class LeadApplicationService {
         Long targetOwnerId = request.getOwnerId() == null ? operatorId : request.getOwnerId();
         checkOwnerScope(operatorId, dataScope, targetOwnerId);
         entity.setOwnerId(targetOwnerId);
-        if (request.getId() == null || request.getProductId() != null) {
-            entity.setProductId(request.getProductId());
-        }
+        entity.setProductId(request.getProductId());
         entity.setRemark(trimToNull(request.getRemark()));
         saveEntity(entity, request.getId() == null);
         LeadResponse response = toResponse(entity);
@@ -164,6 +164,7 @@ public class LeadApplicationService {
         if (leadName == null) {
             throw new BusinessException("LEAD_PUBLIC_POOL_002", "公海数据缺少可识别的线索名称");
         }
+        productReferenceResolver.requireEnabled(tenantId, request.getProductId());
         LeadEntity entity = new LeadEntity();
         entity.setId(snowflakeIdGenerator.nextId());
         entity.setTenantId(tenantId);
@@ -214,16 +215,22 @@ public class LeadApplicationService {
             entity.setUpdatedAt(updatedAt);
         }
         LeadResponse response = toResponse(entity);
+        fillOwnerName(tenantId, response);
         response.setOwnerName(ownerName);
         fillCustomerNames(tenantId, response);
         return response;
     }
 
     @Transactional
-    public LeadImportResult importRows(Long tenantId, Long operatorId, List<LeadImportRow> rows) {
+    public LeadImportResult importRows(
+            Long tenantId,
+            Long operatorId,
+            Long productId,
+            List<LeadImportRow> rows) {
         if (rows == null || rows.isEmpty()) {
             throw new BusinessException("LEAD_IMPORT_011", "没有可导入的线索数据");
         }
+        productReferenceResolver.requireEnabled(tenantId, productId);
         LeadImportResult result = new LeadImportResult();
         result.setTotalCount(rows.size());
         Set<String> phones = new HashSet<String>();
@@ -243,7 +250,7 @@ public class LeadApplicationService {
             }
         }
         for (LeadImportRow row : rows) {
-            importRow(tenantId, operatorId, row, phones, emails, result);
+            importRow(tenantId, operatorId, productId, row, phones, emails, result);
         }
         return result;
     }
@@ -298,7 +305,7 @@ public class LeadApplicationService {
                 : request.getConvertType();
         CustomerResponse customer;
         if (LeadConvertType.BIND_CUSTOMER == convertType) {
-            customer = bindCustomer(tenantId, operatorId, dataScope, request);
+            customer = bindCustomer(tenantId, operatorId, dataScope, entity, request);
         } else {
             customer = createCustomer(tenantId, operatorId, dataScope, entity, request);
         }
@@ -319,11 +326,36 @@ public class LeadApplicationService {
     }
 
     private CustomerResponse bindCustomer(
-            Long tenantId, Long operatorId, String dataScope, LeadConvertRequest request) {
+            Long tenantId,
+            Long operatorId,
+            String dataScope,
+            LeadEntity lead,
+            LeadConvertRequest request) {
         if (request.getCustomerId() == null) {
             throw new BusinessException("LEAD_CONVERT_003", "请选择要绑定的客户");
         }
-        return customerApplicationService.detail(tenantId, operatorId, dataScope, request.getCustomerId());
+        if (lead.getProductId() == null) {
+            throw new BusinessException("LEAD_CONVERT_010", "线索未关联意向产品，请先完善线索资料");
+        }
+        CustomerResponse customer = customerApplicationService.detail(
+                tenantId, operatorId, dataScope, request.getCustomerId());
+        if (customer.getProductId() == null) {
+            return customerApplicationService.changeIntendedProduct(
+                    tenantId, operatorId, dataScope, customer.getId(), lead.getProductId());
+        }
+        if (customer.getProductId().equals(lead.getProductId())) {
+            return customer;
+        }
+        LeadProductConflictPolicy policy = request.getProductConflictPolicy();
+        if (policy == null) {
+            throw new BusinessException("LEAD_CONVERT_011", "客户与线索的意向产品不一致，请确认保留哪一个产品");
+        }
+        if (LeadProductConflictPolicy.USE_LEAD == policy) {
+            return customerApplicationService.changeIntendedProduct(
+                    tenantId, operatorId, dataScope, customer.getId(), lead.getProductId());
+        }
+        lead.setProductId(customer.getProductId());
+        return customer;
     }
 
     private CustomerResponse createCustomer(
@@ -337,6 +369,7 @@ public class LeadApplicationService {
         customerRequest.setLevel(request.getLevel() == null ? CustomerLevel.NORMAL : request.getLevel());
         customerRequest.setStatus(request.getStatus() == null ? CustomerStatus.recommended() : request.getStatus());
         customerRequest.setOwnerId(request.getOwnerId() == null ? entity.getOwnerId() : request.getOwnerId());
+        customerRequest.setProductId(entity.getProductId());
         customerRequest.setRemark(resolveCustomerRemark(entity, request));
         return customerApplicationService.save(tenantId, operatorId, dataScope, customerRequest);
     }
@@ -455,6 +488,7 @@ public class LeadApplicationService {
     private void importRow(
             Long tenantId,
             Long operatorId,
+            Long productId,
             LeadImportRow row,
             Set<String> phones,
             Set<String> emails,
@@ -497,6 +531,7 @@ public class LeadApplicationService {
         entity.setSource(resolveImportSource(row.getSource()));
         entity.setStatus(LeadStatus.recommended());
         entity.setOwnerId(operatorId);
+        entity.setProductId(productId);
         entity.setRemark(buildImportRemark(row));
         entity.setDeleted(false);
         entity.setCreatedAt(now);

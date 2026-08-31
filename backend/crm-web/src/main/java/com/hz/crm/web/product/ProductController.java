@@ -10,6 +10,7 @@ import com.hz.crm.common.api.PageData;
 import com.hz.crm.common.audit.AuditOperation;
 import com.hz.crm.web.support.IdRequest;
 import jakarta.validation.Valid;
+import java.util.List;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.PostMapping;
@@ -37,6 +38,17 @@ public class ProductController {
             + "or hasAuthority('crm:channel:manage')")
     public ApiResult<ProductResponse> detailPost(@RequestBody IdRequest request, JwtPrincipal principal) {
         return ApiResult.ok(productApplicationService.detail(principal.getTenantId(), request.getId()));
+    }
+
+    @PostMapping("/options")
+    @PreAuthorize("hasAuthority('*') or hasAuthority('crm:product:view') "
+            + "or hasAuthority('crm:product:manage') or hasAuthority('crm:channel:manage') "
+            + "or hasAuthority('crm:lead:create') or hasAuthority('crm:lead:import') "
+            + "or hasAuthority('crm:lead:manage') or hasAuthority('crm:customer:edit') "
+            + "or hasAuthority('crm:customer:manage') or hasAuthority('crm:opportunity:create') "
+            + "or hasAuthority('crm:opportunity:manage')")
+    public ApiResult<List<ProductResponse>> options(JwtPrincipal principal) {
+        return ApiResult.ok(productApplicationService.options(principal.getTenantId()));
     }
 
     @PostMapping("/save")

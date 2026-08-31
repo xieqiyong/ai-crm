@@ -7,6 +7,7 @@ import com.hz.crm.application.customer.dto.CustomerIndustryOptionResponse;
 import com.hz.crm.application.customer.dto.CustomerQuery;
 import com.hz.crm.application.customer.dto.CustomerResponse;
 import com.hz.crm.application.customer.dto.CustomerSaveRequest;
+import com.hz.crm.application.product.ProductReferenceResolver;
 import com.hz.crm.common.api.PageData;
 import com.hz.crm.common.exception.BusinessException;
 import com.hz.crm.common.id.SnowflakeIdGenerator;
@@ -49,6 +50,9 @@ public class CustomerApplicationService {
     @Autowired
     private UserDataScopeValidator userDataScopeValidator;
 
+    @Autowired
+    private ProductReferenceResolver productReferenceResolver;
+
     @Transactional(readOnly = true)
     public PageData<CustomerResponse> page(Long tenantId, Long userId, String dataScope, CustomerQuery query) {
         CustomerQuery safeQuery = query == null ? new CustomerQuery() : query;
@@ -67,6 +71,7 @@ public class CustomerApplicationService {
             records.add(toResponse(entity));
         }
         fillOwnerNames(tenantId, records);
+        fillProductNames(tenantId, records);
         return PageData.of(total == null ? 0L : total.longValue(), pageNo, pageSize, records);
     }
 
@@ -85,6 +90,7 @@ public class CustomerApplicationService {
         checkDataScope(userId, dataScope, entity.getOwnerId());
         CustomerResponse response = toResponse(entity);
         fillOwnerName(tenantId, response);
+        fillProductName(tenantId, response);
         return response;
     }
 
@@ -103,6 +109,7 @@ public class CustomerApplicationService {
             entity = findOne(tenantId, request.getId());
             checkDataScope(operatorId, dataScope, entity.getOwnerId());
         }
+        productReferenceResolver.requireSelectable(tenantId, request.getProductId(), entity.getProductId());
         entity.setName(trimToNull(request.getName()));
         entity.setIndustry(request.getIndustry().trim());
         entity.setContactName(request.getContactName().trim());
@@ -113,6 +120,7 @@ public class CustomerApplicationService {
         Long targetOwnerId = request.getOwnerId();
         checkOwnerScope(operatorId, dataScope, targetOwnerId);
         entity.setOwnerId(targetOwnerId);
+        entity.setProductId(request.getProductId());
         entity.setRemark(trimToNull(request.getRemark()));
         entity.setUpdatedAt(DateTimes.now());
         int affected = creating ? customerMapper.insert(entity) : customerMapper.updateById(entity);
@@ -121,6 +129,37 @@ public class CustomerApplicationService {
         }
         CustomerResponse response = toResponse(entity);
         fillOwnerName(tenantId, response);
+        fillProductName(tenantId, response);
+        return response;
+    }
+
+    @Transactional
+    public CustomerResponse changeIntendedProduct(
+            Long tenantId,
+            Long operatorId,
+            String dataScope,
+            Long customerId,
+            Long productId) {
+        CustomerEntity entity = findOne(tenantId, customerId);
+        checkDataScope(operatorId, dataScope, entity.getOwnerId());
+        productReferenceResolver.require(tenantId, productId);
+        if (!productId.equals(entity.getProductId())) {
+            LocalDateTime updatedAt = DateTimes.now();
+            int updated = customerMapper.update(null, Wrappers.<CustomerEntity>lambdaUpdate()
+                    .eq(CustomerEntity::getId, customerId)
+                    .eq(CustomerEntity::getTenantId, tenantId)
+                    .eq(CustomerEntity::isDeleted, false)
+                    .set(CustomerEntity::getProductId, productId)
+                    .set(CustomerEntity::getUpdatedAt, updatedAt));
+            if (updated != 1) {
+                throw new BusinessException("CUSTOMER_015", "客户意向产品更新失败，请刷新后重试");
+            }
+            entity.setProductId(productId);
+            entity.setUpdatedAt(updatedAt);
+        }
+        CustomerResponse response = toResponse(entity);
+        fillOwnerName(tenantId, response);
+        fillProductName(tenantId, response);
         return response;
     }
 
@@ -154,6 +193,7 @@ public class CustomerApplicationService {
         }
         CustomerResponse response = toResponse(entity);
         response.setOwnerName(ownerName);
+        fillProductName(tenantId, response);
         return response;
     }
 
@@ -235,6 +275,9 @@ public class CustomerApplicationService {
         if (request.getOwnerId() == null) {
             throw new BusinessException("CUSTOMER_012", "负责人不能为空");
         }
+        if (request.getProductId() == null) {
+            throw new BusinessException("CUSTOMER_016", "意向产品不能为空");
+        }
     }
 
     private String trimToNull(String value) {
@@ -283,6 +326,7 @@ public class CustomerApplicationService {
         response.setLevel(entity.getLevel());
         response.setStatus(entity.getStatus());
         response.setOwnerId(entity.getOwnerId());
+        response.setProductId(entity.getProductId());
         response.setRemark(entity.getRemark());
         response.setAiSummary(entity.getAiSummary());
         response.setAiAnalyzedAt(entity.getAiAnalyzedAt());
@@ -314,6 +358,30 @@ public class CustomerApplicationService {
         for (CustomerResponse response : records) {
             if (response.getOwnerId() != null) {
                 response.setOwnerName(names.get(response.getOwnerId()));
+            }
+        }
+    }
+
+    private void fillProductName(Long tenantId, CustomerResponse response) {
+        List<CustomerResponse> records = new ArrayList<CustomerResponse>();
+        records.add(response);
+        fillProductNames(tenantId, records);
+    }
+
+    private void fillProductNames(Long tenantId, List<CustomerResponse> records) {
+        if (records == null || records.isEmpty()) {
+            return;
+        }
+        Set<Long> productIds = new HashSet<Long>();
+        for (CustomerResponse response : records) {
+            if (response.getProductId() != null) {
+                productIds.add(response.getProductId());
+            }
+        }
+        Map<Long, String> names = productReferenceResolver.resolveNames(tenantId, productIds);
+        for (CustomerResponse response : records) {
+            if (response.getProductId() != null) {
+                response.setProductName(names.get(response.getProductId()));
             }
         }
     }

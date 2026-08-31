@@ -18,5 +18,6 @@ export function validateCustomerForm(form, industryOptions = []) {
   if (empty(form?.level)) return '请选择客户级别'
   if (empty(form?.status)) return '请选择客户状态'
   if (empty(form?.ownerId)) return '请选择负责人'
+  if (empty(form?.productId)) return '请选择意向产品'
   return ''
 }

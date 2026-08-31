@@ -7,6 +7,24 @@ export function productOptionLabel(item) {
   return `${item.name || item.id} · ${price}${item.unit ? `/${item.unit}` : ''}`
 }
 
+export function productSelectOptions(products = [], current = null) {
+  const options = (products || []).map((item) => ({
+    value: item.id,
+    label: item.name,
+    description: item.description || item.code,
+  }))
+  const currentId = current?.productId
+  if (currentId && !options.some((item) => String(item.value) === String(currentId))) {
+    options.unshift({
+      value: currentId,
+      label: current.productName || `产品 ${currentId}`,
+      description: '历史关联产品，当前已停用',
+      disabled: true,
+    })
+  }
+  return options
+}
+
 export function useProductOptions(notify, enabled = true, canLoad = true) {
   const [options, setOptions] = useState([])
 
@@ -20,9 +38,9 @@ export function useProductOptions(notify, enabled = true, canLoad = true) {
     }
     async function load() {
       try {
-        const page = await api.product.page({ pageNo: 1, pageSize: 200, enabled })
+        const records = await api.product.options()
         if (alive) {
-          setOptions(page?.records || [])
+          setOptions(records || [])
         }
       } catch (error) {
         notify?.(error.message || '产品选项加载失败', 'info')

@@ -43,6 +43,9 @@ public class CustomerEntity extends BaseEntity {
 
     private Long ownerId;
 
+    @Column(nullable = false)
+    private Long productId;
+
     @Column(length = 512)
     private String remark;
 

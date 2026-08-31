@@ -110,12 +110,13 @@ public class ChannelSourceApplicationService {
             throw new BusinessException("CHANNEL_SOURCE_001", "渠道来源链接不能为空");
         }
         ParsedSmartSheetLink parsed = parseSmartSheetLink(request.getSourceUrl());
-        productReferenceResolver.require(tenantId, request.getProductId());
         LocalDateTime now = DateTimes.now();
         String externalKey = buildExternalKey(parsed.getDocId(), parsed.getSheetId());
         ChannelSourceEntity entity = request.getId() == null
                 ? findByExternalKey(tenantId, PROVIDER_WECOM_SMART_SHEET, externalKey)
                 : findOne(tenantId, request.getId());
+        productReferenceResolver.requireSelectable(
+                tenantId, request.getProductId(), entity == null ? null : entity.getProductId());
         if (entity == null) {
             entity = new ChannelSourceEntity();
             entity.setId(snowflakeIdGenerator.nextId());

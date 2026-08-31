@@ -24,6 +24,7 @@ import {
 import { customerOptionLabel, useCustomerOptions } from '../../hooks/useCustomerOptions'
 import { useCustomerIndustryOptions } from '../../hooks/useCustomerIndustryOptions'
 import { ownerName, ownerOptionLabel, useOwnerOptions } from '../../hooks/useOwnerOptions'
+import { productSelectOptions, useProductOptions } from '../../hooks/useProductOptions'
 import { validateCustomerForm } from '../../models/customerForm'
 import {
   customerLevelText,
@@ -51,6 +52,7 @@ const emptyForm = {
   source: '',
   status: recommendedLeadStatus,
   ownerId: '',
+  productId: '',
   remark: '',
 }
 
@@ -173,13 +175,15 @@ export function toForm(row) {
     source: row.source || '',
     status: row.status || recommendedLeadStatus,
     ownerId: row.ownerId || '',
+    productId: row.productId || '',
+    productName: row.productName || '',
     remark: row.remark || '',
   }
 }
 
 export function toPayload(form) {
   return {
-    ...form,
+    id: form.id || null,
     name: (form.name || '').trim() || null,
     companyName: (form.companyName || '').trim() || null,
     phone: form.phone || null,
@@ -187,6 +191,7 @@ export function toPayload(form) {
     source: form.source || null,
     status: form.status || recommendedLeadStatus,
     ownerId: form.ownerId || null,
+    productId: form.productId || null,
     remark: form.remark || null,
   }
 }
@@ -200,6 +205,9 @@ export function validateLeadForm(form) {
   }
   if (!String(form?.phone || '').trim()) {
     return '联系电话不能为空'
+  }
+  if (!form?.productId) {
+    return '请选择意向产品'
   }
   return ''
 }
@@ -217,16 +225,21 @@ export function toConvertForm(row) {
     level: 'NORMAL',
     status: recommendedCustomerStatus,
     ownerId: row.ownerId || '',
+    productId: row.productId || '',
+    productName: row.productName || '',
+    productConflictPolicy: 'KEEP_CUSTOMER',
     remark: row.remark || '',
   }
 }
 
 export function toConvertPayload(form) {
   return {
-    ...form,
     leadId: form.leadId,
     convertType: form.convertType || 'CREATE_CUSTOMER',
     customerId: form.convertType === 'BIND_CUSTOMER' ? form.customerId || null : null,
+    productConflictPolicy: form.convertType === 'BIND_CUSTOMER'
+      ? form.productConflictPolicy || null
+      : null,
     customerName: form.convertType === 'CREATE_CUSTOMER' ? form.customerName || null : null,
     industry: form.convertType === 'CREATE_CUSTOMER' ? form.industry || null : null,
     contactName: form.convertType === 'CREATE_CUSTOMER' ? form.contactName || null : null,
@@ -378,6 +391,7 @@ export function LeadPage({ can, notify, navigate, currentUser }) {
   const canBindCustomer = canConvert && can('crm:customer:view')
   const canAnalyze = can('crm:assistant:use') && (can('crm:lead:view') || canManage)
   const ownerOptions = useOwnerOptions(notify)
+  const productOptions = useProductOptions(notify, true, canCreate || canImport || canManage)
   const customerOptions = useCustomerOptions(notify, canBindCustomer)
   const industryOptions = useCustomerIndustryOptions(notify, canConvert)
   const { confirm, dialogProps } = useConfirmDialog()
@@ -396,6 +410,8 @@ export function LeadPage({ can, notify, navigate, currentUser }) {
   const [analyzingId, setAnalyzingId] = useState(null)
   const [aiElapsed, setAiElapsed] = useState(0)
   const [importing, setImporting] = useState(false)
+  const [pendingImportFile, setPendingImportFile] = useState(null)
+  const [importProductId, setImportProductId] = useState('')
   const [importResult, setImportResult] = useState(null)
 
   const load = async (nextQuery = query) => {
@@ -577,14 +593,26 @@ export function LeadPage({ can, notify, navigate, currentUser }) {
     setAiAnalysis(null)
   }
 
-  const importExcel = async (event) => {
+  const selectImportFile = (event) => {
     const file = event.target.files?.[0]
     event.target.value = ''
     if (!file || importing) return
+    setPendingImportFile(file)
+    setImportProductId('')
+  }
+
+  const importExcel = async () => {
+    if (!pendingImportFile || importing) return
+    if (!importProductId) {
+      notify('请选择本次导入线索的意向产品', 'info')
+      return
+    }
     setImporting(true)
     try {
-      const result = await api.lead.importExcel(file)
+      const result = await api.lead.importExcel(pendingImportFile, importProductId)
       setImportResult(result)
+      setPendingImportFile(null)
+      setImportProductId('')
       notify(`Excel 导入完成，成功 ${result?.importedCount || 0} 条`, 'success')
       load({ ...query, pageNo: 1 })
     } catch (err) {
@@ -645,7 +673,7 @@ export function LeadPage({ can, notify, navigate, currentUser }) {
                   className="lead-import-input"
                   type="file"
                   accept=".xlsx,.xls"
-                  onChange={importExcel}
+                  onChange={selectImportFile}
                 />
                 <Button
                   variant="secondary"
@@ -718,7 +746,7 @@ export function LeadPage({ can, notify, navigate, currentUser }) {
                       onClick={() => openDetail(row)}
                     >
                       <td><strong>{row.name || '-'}</strong></td>
-                      <td>{row.companyName || '-'}</td>
+                      <td><span>{row.companyName || '-'}</span><small>{row.productName || '未关联意向产品'}</small></td>
                       <td><span>{row.phone || '-'}</span><small>{row.email || '-'}</small></td>
                       <td>{leadSourceText[row.source] || row.source || '-'}</td>
                       <td><Badge dot tone={statusTone[row.status] || 'neutral'}>{statusText[row.status] || row.status || '-'}</Badge></td>
@@ -840,6 +868,7 @@ export function LeadPage({ can, notify, navigate, currentUser }) {
         open={Boolean(editing)}
         form={editing || emptyForm}
         ownerOptions={ownerOptions}
+        productOptions={productOptions}
         onChange={setEditing}
         onClose={() => setEditing(null)}
         onSave={saveLead}
@@ -879,8 +908,67 @@ export function LeadPage({ can, notify, navigate, currentUser }) {
         result={importResult}
         onClose={() => setImportResult(null)}
       />
+      <LeadImportModal
+        open={Boolean(pendingImportFile)}
+        file={pendingImportFile}
+        productId={importProductId}
+        productOptions={productOptions}
+        importing={importing}
+        onProductChange={setImportProductId}
+        onClose={() => {
+          if (!importing) {
+            setPendingImportFile(null)
+            setImportProductId('')
+          }
+        }}
+        onImport={importExcel}
+      />
       <ConfirmDialog {...dialogProps} />
     </div>
+  )
+}
+
+function LeadImportModal({
+  open,
+  file,
+  productId,
+  productOptions,
+  importing,
+  onProductChange,
+  onClose,
+  onImport,
+}) {
+  return (
+    <Modal
+      open={open}
+      title="导入 Excel 线索"
+      onClose={onClose}
+      footer={(
+        <>
+          <Button variant="secondary" disabled={importing} onClick={onClose}>取消</Button>
+          <Button icon={FileSpreadsheet} disabled={importing} onClick={onImport}>
+            {importing ? '正在导入' : '确认导入'}
+          </Button>
+        </>
+      )}
+    >
+      <div className="customer-form-grid">
+        <Field label="导入文件">
+          <input value={file?.name || ''} readOnly />
+        </Field>
+        <Field label="意向产品" required hint="本次 Excel 中的全部线索会关联到该产品">
+          <Select
+            searchable
+            value={productId || ''}
+            options={productSelectOptions(productOptions)}
+            placeholder="请选择意向产品"
+            searchPlaceholder="搜索产品名称"
+            emptyText="暂无可选产品，请先到产品管理创建"
+            onChange={onProductChange}
+          />
+        </Field>
+      </div>
+    </Modal>
   )
 }
 
@@ -1250,6 +1338,13 @@ export function LeadConvertModal({
   const update = (patch) => onChange({ ...form, ...patch })
   const hasSelectedOwner = ownerOptions.some((item) => String(item.id) === String(form?.ownerId || ''))
   const hasSelectedCustomer = customerOptions.some((item) => String(item.id) === String(form?.customerId || ''))
+  const selectedCustomer = customerOptions.find((item) => String(item.id) === String(form?.customerId || ''))
+  const productConflict = Boolean(
+    form?.convertType === 'BIND_CUSTOMER'
+    && selectedCustomer?.productId
+    && form?.productId
+    && String(selectedCustomer.productId) !== String(form.productId),
+  )
   if (!form) return null
 
   return (
@@ -1274,13 +1369,35 @@ export function LeadConvertModal({
         </Field>
 
         {form.convertType === 'BIND_CUSTOMER' ? (
-          <Field label="已有客户" required hint="列表来自真实客户接口，选择后会把线索绑定到该客户。">
-            <select value={form.customerId || ''} onChange={(event) => update({ customerId: event.target.value })}>
-              <option value="">请选择客户</option>
-              {form.customerId && !hasSelectedCustomer && <option value={form.customerId}>当前客户</option>}
-              {customerOptions.map((item) => <option value={item.id} key={item.id}>{customerOptionLabel(item)}</option>)}
-            </select>
-          </Field>
+          <>
+            <Field label="已有客户" required hint="列表来自真实客户接口，选择后会把线索绑定到该客户。">
+              <select value={form.customerId || ''} onChange={(event) => update({ customerId: event.target.value })}>
+                <option value="">请选择客户</option>
+                {form.customerId && !hasSelectedCustomer && <option value={form.customerId}>当前客户</option>}
+                {customerOptions.map((item) => <option value={item.id} key={item.id}>{customerOptionLabel(item)}</option>)}
+              </select>
+            </Field>
+            <Field label="线索意向产品">
+              <input value={form.productName || '未关联产品'} readOnly />
+            </Field>
+            {selectedCustomer && (
+              <Field label="客户意向产品">
+                <input value={selectedCustomer.productName || '未关联产品'} readOnly />
+              </Field>
+            )}
+            {productConflict && (
+              <Field label="产品冲突处理" required hint="系统不会静默覆盖，请明确选择本次绑定后的主意向产品。">
+                <Select
+                  value={form.productConflictPolicy || 'KEEP_CUSTOMER'}
+                  options={[
+                    { value: 'KEEP_CUSTOMER', label: `保留客户产品：${selectedCustomer.productName || '-'}` },
+                    { value: 'USE_LEAD', label: `使用线索产品：${form.productName || '-'}` },
+                  ]}
+                  onChange={(productConflictPolicy) => update({ productConflictPolicy })}
+                />
+              </Field>
+            )}
+          </>
         ) : (
           <>
             <div className="customer-identity-note customer-form-grid-wide">
@@ -1289,6 +1406,9 @@ export function LeadConvertModal({
             </div>
             <Field label="客户名称" required hint="企业、机构或个人客户的主体名称">
               <input value={form.customerName || ''} onChange={(event) => update({ customerName: event.target.value })} />
+            </Field>
+            <Field label="意向产品" required hint="由当前线索自动带入">
+              <input value={form.productName || '未关联产品'} readOnly />
             </Field>
             <Field label="客户级别" required>
               <select value={form.level || 'NORMAL'} onChange={(event) => update({ level: event.target.value })}>
@@ -1340,7 +1460,7 @@ export function LeadConvertModal({
   )
 }
 
-export function LeadFormModal({ open, form, ownerOptions, onChange, onClose, onSave }) {
+export function LeadFormModal({ open, form, ownerOptions, productOptions, onChange, onClose, onSave }) {
   const update = (patch) => onChange({ ...form, ...patch })
   const hasSelectedOwner = ownerOptions.some((item) => String(item.id) === String(form.ownerId || ''))
   return (
@@ -1364,6 +1484,20 @@ export function LeadFormModal({ open, form, ownerOptions, onChange, onClose, onS
         </Field>
         <Field label="联系电话" required>
           <input value={form.phone || ''} onChange={(event) => update({ phone: event.target.value })} />
+        </Field>
+        <Field label="意向产品" required>
+          <Select
+            searchable
+            value={form.productId || ''}
+            options={productSelectOptions(productOptions, form)}
+            placeholder="请选择意向产品"
+            searchPlaceholder="搜索产品名称"
+            emptyText="暂无可选产品，请先到产品管理创建"
+            onChange={(productId, product) => update({
+              productId,
+              productName: product?.label || '',
+            })}
+          />
         </Field>
         <Field label="状态">
           <select value={form.status || recommendedLeadStatus} onChange={(event) => update({ status: event.target.value })}>

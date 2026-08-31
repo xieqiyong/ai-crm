@@ -107,6 +107,8 @@ public class CustomerQueryTool extends CrmQueryToolSupport implements AgentTool 
         record.put("status", response.getStatus());
         record.put("ownerId", id(response.getOwnerId()));
         record.put("ownerName", response.getOwnerName());
+        record.put("productId", id(response.getProductId()));
+        record.put("productName", response.getProductName());
         record.put("remark", shrink(response.getRemark(), 1000));
         record.put("aiSummary", shrink(response.getAiSummary(), 1600));
         record.put("aiAnalyzedAt", dateTime(response.getAiAnalyzedAt()));

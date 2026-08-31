@@ -34,7 +34,7 @@ import {
 } from '../../components'
 import { FollowupPanel } from '../followup/FollowupPanel'
 import { ownerName, ownerOptionLabel, useOwnerOptions } from '../../hooks/useOwnerOptions'
-import { useProductOptions } from '../../hooks/useProductOptions'
+import { productSelectOptions, useProductOptions } from '../../hooks/useProductOptions'
 import { useCustomerIndustryOptions } from '../../hooks/useCustomerIndustryOptions'
 import { validateCustomerForm } from '../../models/customerForm'
 import {
@@ -65,6 +65,7 @@ const emptyForm = {
   level: 'NORMAL',
   status: recommendedCustomerStatus,
   ownerId: '',
+  productId: '',
   remark: '',
 }
 
@@ -110,13 +111,15 @@ function toForm(row) {
     level: row.level || 'NORMAL',
     status: row.status || recommendedCustomerStatus,
     ownerId: row.ownerId || '',
+    productId: row.productId || '',
+    productName: row.productName || '',
     remark: row.remark || '',
   }
 }
 
 function toPayload(form) {
   return {
-    ...form,
+    id: form.id || null,
     name: form.name.trim(),
     industry: form.industry || null,
     contactName: form.contactName || null,
@@ -125,6 +128,7 @@ function toPayload(form) {
     level: form.level || 'NORMAL',
     status: form.status || recommendedCustomerStatus,
     ownerId: form.ownerId || null,
+    productId: form.productId || null,
     remark: form.remark || null,
   }
 }
@@ -157,7 +161,11 @@ export function CustomerDetailPage({ routeParams, can, notify, navigate }) {
   const canViewProduct = can('crm:product:view') || can('crm:product:manage')
   const ownerOptions = useOwnerOptions(notify)
   const industryOptions = useCustomerIndustryOptions(notify, canWrite)
-  const productOptions = useProductOptions(notify, true, canViewProduct)
+  const productOptions = useProductOptions(
+    notify,
+    true,
+    canViewProduct || canWrite || can('crm:opportunity:create') || can('crm:opportunity:manage'),
+  )
   const { confirm, dialogProps } = useConfirmDialog()
   const [data, setData] = useState(null)
   const [loading, setLoading] = useState(true)
@@ -462,6 +470,7 @@ export function CustomerDetailPage({ routeParams, can, notify, navigate }) {
         form={editing || emptyForm}
         ownerOptions={ownerOptions}
         industryOptions={industryOptions}
+        productOptions={productOptions}
         onChange={setEditing}
         onClose={() => setEditing(null)}
         onSave={saveCustomer}
@@ -713,6 +722,7 @@ function CustomerProfileMatrix({ data }) {
       <div className="channel-detail-grid customer-detail-grid">
         <DetailItem icon={Building2} label="客户名称" value={data.name} />
         <DetailItem icon={Building2} label="行业" value={data.industry} />
+        <DetailItem icon={Target} label="意向产品" value={data.productName} />
         <DetailItem icon={UserRound} label="主联系人" value={data.contactName} />
         <DetailItem icon={Phone} label="联系电话" value={data.contactPhone} />
         <DetailItem icon={Mail} label="联系邮箱" value={data.contactEmail} />
@@ -917,7 +927,16 @@ function OpportunityFormModal({ open, form, productOptions, onChange, onClose, o
   )
 }
 
-function CustomerFormModal({ open, form, ownerOptions, industryOptions, onChange, onClose, onSave }) {
+function CustomerFormModal({
+  open,
+  form,
+  ownerOptions,
+  industryOptions,
+  productOptions,
+  onChange,
+  onClose,
+  onSave,
+}) {
   const update = (patch) => onChange({ ...form, ...patch })
   const hasSelectedOwner = ownerOptions.some((item) => String(item.id) === String(form.ownerId || ''))
   return (
@@ -939,6 +958,20 @@ function CustomerFormModal({ open, form, ownerOptions, industryOptions, onChange
       <div className="customer-form-grid">
         <Field label="客户名称" required hint="企业、机构或个人客户的主体名称">
           <input value={form.name || ''} onChange={(event) => update({ name: event.target.value })} />
+        </Field>
+        <Field label="意向产品" required>
+          <Select
+            searchable
+            value={form.productId || ''}
+            options={productSelectOptions(productOptions, form)}
+            placeholder="请选择意向产品"
+            searchPlaceholder="搜索产品名称"
+            emptyText="暂无可选产品，请先到产品管理创建"
+            onChange={(productId, product) => update({
+              productId,
+              productName: product?.label || '',
+            })}
+          />
         </Field>
         <Field label="客户级别" required>
           <select value={form.level || 'NORMAL'} onChange={(event) => update({ level: event.target.value })}>

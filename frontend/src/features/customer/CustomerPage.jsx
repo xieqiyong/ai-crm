@@ -28,6 +28,7 @@ import {
 } from '../../models/crmStatus'
 import { ownerName, ownerOptionLabel, useOwnerOptions } from '../../hooks/useOwnerOptions'
 import { useCustomerIndustryOptions } from '../../hooks/useCustomerIndustryOptions'
+import { productSelectOptions, useProductOptions } from '../../hooks/useProductOptions'
 import { validateCustomerForm } from '../../models/customerForm'
 
 const emptyPage = {
@@ -46,6 +47,7 @@ const emptyForm = {
   level: 'NORMAL',
   status: recommendedCustomerStatus,
   ownerId: '',
+  productId: '',
   remark: '',
 }
 
@@ -148,13 +150,15 @@ function toForm(row) {
     level: row.level || 'NORMAL',
     status: row.status || recommendedCustomerStatus,
     ownerId: row.ownerId || '',
+    productId: row.productId || '',
+    productName: row.productName || '',
     remark: row.remark || '',
   }
 }
 
 function toPayload(form) {
   return {
-    ...form,
+    id: form.id || null,
     name: form.name.trim(),
     industry: form.industry || null,
     contactName: form.contactName || null,
@@ -163,6 +167,7 @@ function toPayload(form) {
     level: form.level || 'NORMAL',
     status: form.status || recommendedCustomerStatus,
     ownerId: form.ownerId || null,
+    productId: form.productId || null,
     remark: form.remark || null,
   }
 }
@@ -173,6 +178,7 @@ export function CustomerPage({ can, notify, navigate, currentUser }) {
   const canDelete = can('crm:customer:manage')
   const ownerOptions = useOwnerOptions(notify)
   const industryOptions = useCustomerIndustryOptions(notify, canWrite)
+  const productOptions = useProductOptions(notify, true, canWrite)
   const { confirm, dialogProps } = useConfirmDialog()
   const lastViewedRowRef = useRef(null)
   const [query, setQuery] = useState(() => readCustomerListQuery(currentUser))
@@ -383,7 +389,7 @@ export function CustomerPage({ can, notify, navigate, currentUser }) {
                       className={isLastViewed ? 'customer-row-last-viewed' : undefined}
                       onClick={() => openFullDetail(row)}
                     >
-                      <td><strong>{row.name || '-'}</strong></td>
+                      <td><strong>{row.name || '-'}</strong><small>{row.productName || '未关联意向产品'}</small></td>
                       <td>{row.industry || '-'}</td>
                       <td>{row.contactName || '-'}</td>
                       <td>
@@ -484,6 +490,7 @@ export function CustomerPage({ can, notify, navigate, currentUser }) {
         form={editing || emptyForm}
         ownerOptions={ownerOptions}
         industryOptions={industryOptions}
+        productOptions={productOptions}
         onChange={setEditing}
         onClose={() => setEditing(null)}
         onSave={saveCustomer}
@@ -504,7 +511,16 @@ export function CustomerPage({ can, notify, navigate, currentUser }) {
   )
 }
 
-function CustomerFormModal({ open, form, ownerOptions, industryOptions, onChange, onClose, onSave }) {
+function CustomerFormModal({
+  open,
+  form,
+  ownerOptions,
+  industryOptions,
+  productOptions,
+  onChange,
+  onClose,
+  onSave,
+}) {
   const update = (patch) => onChange({ ...form, ...patch })
   const hasSelectedOwner = ownerOptions.some((item) => String(item.id) === String(form.ownerId || ''))
   return (
@@ -526,6 +542,20 @@ function CustomerFormModal({ open, form, ownerOptions, industryOptions, onChange
       <div className="customer-form-grid">
         <Field label="客户名称" required hint="企业、机构或个人客户的主体名称">
           <input value={form.name || ''} onChange={(event) => update({ name: event.target.value })} />
+        </Field>
+        <Field label="意向产品" required>
+          <Select
+            searchable
+            value={form.productId || ''}
+            options={productSelectOptions(productOptions, form)}
+            placeholder="请选择意向产品"
+            searchPlaceholder="搜索产品名称"
+            emptyText="暂无可选产品，请先到产品管理创建"
+            onChange={(productId, product) => update({
+              productId,
+              productName: product?.label || '',
+            })}
+          />
         </Field>
         <Field label="客户级别" required>
           <select value={form.level || 'NORMAL'} onChange={(event) => update({ level: event.target.value })}>

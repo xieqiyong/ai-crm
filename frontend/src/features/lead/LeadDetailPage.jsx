@@ -27,6 +27,7 @@ import {
 import { useCustomerOptions } from '../../hooks/useCustomerOptions'
 import { useCustomerIndustryOptions } from '../../hooks/useCustomerIndustryOptions'
 import { ownerName, useOwnerOptions } from '../../hooks/useOwnerOptions'
+import { useProductOptions } from '../../hooks/useProductOptions'
 import { validateCustomerForm } from '../../models/customerForm'
 import {
   leadStatusText,
@@ -59,6 +60,7 @@ export function LeadDetailPage({ routeParams, can, notify, navigate }) {
   const canViewFollowup = can('crm:followup:view')
   const canFollowup = can('crm:followup:manage') || can('crm:followup:create')
   const ownerOptions = useOwnerOptions(notify)
+  const productOptions = useProductOptions(notify, true, canManage)
   const customerOptions = useCustomerOptions(notify, canBindCustomer)
   const industryOptions = useCustomerIndustryOptions(notify, canConvert)
   const { confirm, dialogProps } = useConfirmDialog()
@@ -409,6 +411,7 @@ export function LeadDetailPage({ routeParams, can, notify, navigate }) {
         open={Boolean(editing)}
         form={editing || toForm(data)}
         ownerOptions={ownerOptions}
+        productOptions={productOptions}
         onChange={setEditing}
         onClose={() => setEditing(null)}
         onSave={saveLead}

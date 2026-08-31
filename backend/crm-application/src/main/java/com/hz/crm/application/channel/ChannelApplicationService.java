@@ -604,6 +604,9 @@ public class ChannelApplicationService {
         if (entity == null || entity.getLeadId() != null) {
             return false;
         }
+        if (entity.getProductId() == null) {
+            return false;
+        }
         if (!requiresAiAnalysis(entity)) {
             return true;
         }
@@ -614,6 +617,9 @@ public class ChannelApplicationService {
     }
 
     private String resolvePromotionBlockReason(ChannelRecordEntity entity) {
+        if (entity != null && entity.getProductId() == null) {
+            return "渠道数据未关联产品，请先在渠道场景配置中选择产品";
+        }
         if (entity != null && ChannelStatus.WAITING_TRANSCRIPTION == entity.getStatus()) {
             return "请先完成渠道材料的中文转译";
         }

@@ -47,7 +47,7 @@ Authorization: Bearer <MCP访问令牌>
 | `crm_opportunity_detail` | 查询商机详情，包含客户、金额、阶段、产品明细、负责人 |
 | `crm_opportunity_customer_followup_overview` | 按商机读取商机、关联客户、商机跟进、客户跟进，形成销售全景上下文 |
 | `crm_customer_page` | 分页查询客户列表，支持关键词和客户状态过滤 |
-| `crm_customer_detail` | 查询客户详情，包含基础信息、状态、负责人、AI总结 |
+| `crm_customer_detail` | 查询客户详情，包含基础信息、意向产品、状态、负责人、AI总结 |
 | `crm_followup_page` | 分页查询跟进记录，支持对象类型、对象编号、跟进类型、关键词过滤 |
 | `crm_followup_detail` | 查询单条跟进记录详情 |
 

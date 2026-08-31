@@ -99,10 +99,12 @@ public class LeadController {
             targetType = "LEAD",
             recordParameters = false)
     public ApiResult<LeadImportResult> importExcel(
-            @RequestParam("file") MultipartFile file, JwtPrincipal principal) {
+            @RequestParam("file") MultipartFile file,
+            @RequestParam("productId") Long productId,
+            JwtPrincipal principal) {
         List<LeadImportRow> rows = leadExcelImportParser.parse(file);
         return ApiResult.ok(leadApplicationService.importRows(
-                principal.getTenantId(), principal.getUserId(), rows));
+                principal.getTenantId(), principal.getUserId(), productId, rows));
     }
 
     @PostMapping("/convert-to-customer")

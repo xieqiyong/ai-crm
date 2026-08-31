@@ -8,6 +8,7 @@ import java.util.Collection;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 
@@ -24,6 +25,22 @@ public class ProductReferenceResolver {
         ProductEntity product = findOne(tenantId, productId);
         if (product == null) {
             throw new BusinessException("PRODUCT_REFERENCE_002", "关联产品不存在或已删除");
+        }
+        return product;
+    }
+
+    public ProductEntity requireEnabled(Long tenantId, Long productId) {
+        ProductEntity product = require(tenantId, productId);
+        if (!product.isEnabled()) {
+            throw new BusinessException("PRODUCT_REFERENCE_003", "所选产品已停用，请选择其他产品");
+        }
+        return product;
+    }
+
+    public ProductEntity requireSelectable(Long tenantId, Long productId, Long currentProductId) {
+        ProductEntity product = require(tenantId, productId);
+        if (!product.isEnabled() && !Objects.equals(productId, currentProductId)) {
+            throw new BusinessException("PRODUCT_REFERENCE_003", "所选产品已停用，请选择其他产品");
         }
         return product;
     }

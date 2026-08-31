@@ -53,6 +53,21 @@ public class ProductApplicationService {
         return toResponse(findOne(tenantId, id));
     }
 
+    @Transactional(readOnly = true)
+    public List<ProductResponse> options(Long tenantId) {
+        QueryWrapper<ProductEntity> wrapper = new QueryWrapper<ProductEntity>();
+        wrapper.eq("tenant_id", tenantId);
+        wrapper.eq("deleted", false);
+        wrapper.eq("enabled", true);
+        wrapper.orderByAsc("name").orderByAsc("id");
+        List<ProductEntity> entities = productMapper.selectList(wrapper);
+        List<ProductResponse> records = new ArrayList<ProductResponse>();
+        for (ProductEntity entity : entities) {
+            records.add(toResponse(entity));
+        }
+        return records;
+    }
+
     @Transactional
     public ProductResponse save(Long tenantId, ProductSaveRequest request) {
         if (request == null || trimToNull(request.getName()) == null) {

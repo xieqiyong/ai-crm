@@ -39,5 +39,8 @@ public class CustomerSaveRequest {
     @NotNull(message = "负责人不能为空")
     private Long ownerId;
 
+    @NotNull(message = "意向产品不能为空")
+    private Long productId;
+
     private String remark;
 }

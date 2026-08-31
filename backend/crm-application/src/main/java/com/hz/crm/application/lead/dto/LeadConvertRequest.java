@@ -3,6 +3,7 @@ package com.hz.crm.application.lead.dto;
 import com.hz.crm.domain.customer.CustomerLevel;
 import com.hz.crm.domain.customer.CustomerStatus;
 import com.hz.crm.domain.lead.LeadConvertType;
+import com.hz.crm.domain.lead.LeadProductConflictPolicy;
 import jakarta.validation.constraints.NotNull;
 import lombok.Getter;
 import lombok.Setter;
@@ -17,6 +18,8 @@ public class LeadConvertRequest {
     private LeadConvertType convertType;
 
     private Long customerId;
+
+    private LeadProductConflictPolicy productConflictPolicy;
 
     private String customerName;
 

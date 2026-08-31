@@ -129,7 +129,7 @@ export function OpportunityPage({ can, notify, navigate }) {
   const canFollowup = can('crm:followup:manage') || can('crm:followup:create')
   const ownerOptions = useOwnerOptions(notify)
   const customerOptions = useCustomerOptions(notify, canViewCustomer)
-  const productOptions = useProductOptions(notify, true, canViewProduct)
+  const productOptions = useProductOptions(notify, true, canViewProduct || canCreate)
   const { confirm, dialogProps } = useConfirmDialog()
   const [query, setQuery] = useState({ keyword: '', stage: '', pageNo: 1, pageSize: 20 })
   const [page, setPage] = useState(emptyPage)
