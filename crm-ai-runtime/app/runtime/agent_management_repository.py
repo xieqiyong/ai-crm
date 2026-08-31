@@ -1,3 +1,4 @@
+import json
 import re
 from datetime import date, datetime
 from typing import Any
@@ -39,6 +40,120 @@ class AgentManagementRepository:
     async def detail(self, tenant_id: str, agent_id: str | None) -> dict[str, Any]:
         return self._agent_response(await self._find_agent(tenant_id, agent_id))
 
+    async def scenes(self, tenant_id: str) -> list[dict[str, Any]]:
+        self._require_database()
+        managed_rows = await database_client.fetch_all(
+            """
+            select s.id, s.tenant_id, s.code, s.name, s.description, s.sort_no, s.enabled,
+                   s.deleted, s.created_at, s.updated_at, count(a.id) as agent_count
+            from agent_scene s
+            left join agents a on a.tenant_id = s.tenant_id and a.scene_code = s.code and a.deleted = false
+            where s.tenant_id = %s and s.deleted = false
+            group by s.id, s.tenant_id, s.code, s.name, s.description, s.sort_no, s.enabled,
+                     s.deleted, s.created_at, s.updated_at
+            order by s.sort_no asc, s.created_at asc
+            """,
+            (self._to_int(tenant_id),),
+        )
+        inferred_rows = await database_client.fetch_all(
+            """
+            select null as id, a.tenant_id, a.scene_code as code,
+                   coalesce(max(a.scene_name), a.scene_code) as name,
+                   null as description, 0 as sort_no, true as enabled, false as deleted,
+                   min(a.created_at) as created_at, max(a.updated_at) as updated_at,
+                   count(a.id) as agent_count
+            from agents a
+            where a.tenant_id = %s and a.deleted = false and a.scene_code is not null
+              and not exists (
+                  select 1 from agent_scene s
+                  where s.tenant_id = a.tenant_id and s.code = a.scene_code and s.deleted = false
+              )
+            group by a.tenant_id, a.scene_code
+            order by min(a.created_at) asc
+            """,
+            (self._to_int(tenant_id),),
+        )
+        return [self._scene_response(row) for row in managed_rows + inferred_rows]
+
+    async def save_scene(self, tenant_id: str, payload: dict[str, Any]) -> dict[str, Any]:
+        self._require_database()
+        name = self._trim(payload.get("name"))
+        if not name:
+            raise ValueError("场景名称不能为空")
+        now = datetime.now()
+        scene_id = self._to_int(payload.get("id"))
+        existing = await self._find_scene(tenant_id, str(scene_id), False) if scene_id else None
+        if not scene_id:
+            scene_id = id_generator.next_id()
+        code = self._trim(existing.get("code")) if existing else self._trim(payload.get("code"))
+        if not code:
+            code = "SCENE_" + str(scene_id)
+        duplicate = await database_client.fetch_one(
+            """
+            select id from agent_scene
+            where tenant_id = %s and code = %s and deleted = false and id <> %s
+            limit 1
+            """,
+            (self._to_int(tenant_id), code, scene_id),
+        )
+        if duplicate is not None:
+            raise ValueError("场景已存在")
+        values = (
+            scene_id,
+            self._to_int(tenant_id),
+            code,
+            name,
+            self._trim(payload.get("description")),
+            self._int(payload.get("sortNo") or payload.get("sort_no")),
+            self._bool(payload.get("enabled"), True),
+            False,
+            existing.get("created_at") if existing else now,
+            now,
+        )
+        await database_client.execute(
+            """
+            insert into agent_scene (
+                id, tenant_id, code, name, description, sort_no, enabled, deleted, created_at, updated_at
+            ) values (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+            on conflict (id) do update set
+                name = excluded.name,
+                description = excluded.description,
+                sort_no = excluded.sort_no,
+                enabled = excluded.enabled,
+                deleted = false,
+                updated_at = excluded.updated_at
+            """,
+            values,
+        )
+        await database_client.execute(
+            """
+            update agents set scene_name = %s, updated_at = %s
+            where tenant_id = %s and scene_code = %s and deleted = false
+            """,
+            (name, now, self._to_int(tenant_id), code),
+        )
+        return self._scene_response(await self._find_scene(tenant_id, str(scene_id), True))
+
+    async def delete_scene(self, tenant_id: str, scene_id: str | None) -> bool:
+        scene = await self._find_scene(tenant_id, scene_id, True)
+        count_row = await database_client.fetch_one(
+            """
+            select count(1) as total from agents
+            where tenant_id = %s and scene_code = %s and deleted = false
+            """,
+            (self._to_int(tenant_id), scene.get("code")),
+        )
+        if self._int(count_row.get("total") if count_row else 0) > 0:
+            raise ValueError("当前场景已关联智能体，不能删除")
+        await database_client.execute(
+            """
+            update agent_scene set deleted = true, updated_at = %s
+            where tenant_id = %s and id = %s
+            """,
+            (datetime.now(), self._to_int(tenant_id), self._to_int(scene_id)),
+        )
+        return True
+
     async def save_agent(self, tenant_id: str, payload: dict[str, Any]) -> dict[str, Any]:
         self._require_database()
         name = self._trim(payload.get("name"))
@@ -71,15 +186,24 @@ class AgentManagementRepository:
             if not api_key:
                 raise ValueError("模型密钥不能为空")
         scene_code = self._trim(payload.get("sceneCode") or payload.get("scene_code"))
+        if not scene_code:
+            raise ValueError("业务场景标识不能为空")
+        scene = await self._find_scene_by_code(tenant_id, scene_code)
+        if scene is None:
+            raise ValueError("业务场景不存在，请先创建场景")
+        if not self._bool(scene.get("enabled"), True):
+            raise ValueError("业务场景已停用")
         enabled = self._bool(payload.get("enabled"), True)
         code = self._resolve_agent_code(agent_id, existing, payload, scene_code)
-        await self._ensure_unique_scene_agent(tenant_id, agent_id, scene_code, enabled)
+        extra_config_json = self._normalize_extra_config(
+            payload.get("extraConfigJson") or payload.get("extra_config_json")
+        )
         values = (
             agent_id,
             self._to_int(tenant_id),
             code,
             scene_code,
-            self._trim(payload.get("sceneName") or payload.get("scene_name")),
+            self._trim(scene.get("name")),
             name,
             self._trim(payload.get("description")),
             self._trim(payload.get("systemPrompt") or payload.get("system_prompt")),
@@ -89,7 +213,7 @@ class AgentManagementRepository:
             base_url,
             api_key,
             self._resolve_max_iters(payload.get("maxIters") or payload.get("max_iters")),
-            self._trim(payload.get("extraConfigJson") or payload.get("extra_config_json")),
+            extra_config_json,
             self._trim(payload.get("remark")),
             enabled,
             False,
@@ -403,6 +527,60 @@ class AgentManagementRepository:
             raise ValueError("Agent不存在")
         return row
 
+    async def _find_scene(
+            self,
+            tenant_id: str,
+            scene_id: str | None,
+            required: bool) -> dict[str, Any] | None:
+        if not scene_id:
+            if required:
+                raise ValueError("场景编号不能为空")
+            return None
+        row = await database_client.fetch_one(
+            """
+            select s.id, s.tenant_id, s.code, s.name, s.description, s.sort_no, s.enabled,
+                   s.deleted, s.created_at, s.updated_at,
+                   (
+                       select count(1) from agents a
+                       where a.tenant_id = s.tenant_id and a.scene_code = s.code and a.deleted = false
+                   ) as agent_count
+            from agent_scene s
+            where s.tenant_id = %s and s.id = %s and s.deleted = false
+            limit 1
+            """,
+            (self._to_int(tenant_id), self._to_int(scene_id)),
+        )
+        if row is None and required:
+            raise ValueError("场景不存在")
+        return row
+
+    async def _find_scene_by_code(self, tenant_id: str, scene_code: str) -> dict[str, Any] | None:
+        row = await database_client.fetch_one(
+            """
+            select id, tenant_id, code, name, description, sort_no, enabled,
+                   deleted, created_at, updated_at
+            from agent_scene
+            where tenant_id = %s and code = %s and deleted = false
+            limit 1
+            """,
+            (self._to_int(tenant_id), scene_code),
+        )
+        if row is not None:
+            return row
+        return await database_client.fetch_one(
+            """
+            select null as id, tenant_id, scene_code as code,
+                   coalesce(max(scene_name), scene_code) as name,
+                   null as description, 0 as sort_no, true as enabled, false as deleted,
+                   min(created_at) as created_at, max(updated_at) as updated_at
+            from agents
+            where tenant_id = %s and scene_code = %s and deleted = false
+            group by tenant_id, scene_code
+            limit 1
+            """,
+            (self._to_int(tenant_id), scene_code),
+        )
+
     async def _find_mcp(self, tenant_id: str, item_id: str | None, required: bool) -> dict[str, Any] | None:
         if not item_id:
             if required:
@@ -439,21 +617,6 @@ class AgentManagementRepository:
         if row is None and required:
             raise ValueError("Skill配置不存在")
         return row
-
-    async def _ensure_unique_scene_agent(self, tenant_id: str, agent_id: int, scene_code: str | None, enabled: bool) -> None:
-        if not enabled or not scene_code:
-            return
-        row = await database_client.fetch_one(
-            """
-            select id
-            from agents
-            where tenant_id = %s and scene_code = %s and enabled = true and deleted = false and id <> %s
-            limit 1
-            """,
-            (self._to_int(tenant_id), scene_code, agent_id),
-        )
-        if row is not None:
-            raise ValueError("该场景已存在启用的智能体，请先停用原智能体")
 
     async def _enabled_quota(self, tenant_id: str, user_id: str) -> dict[str, Any] | None:
         return await database_client.fetch_one(
@@ -511,6 +674,21 @@ class AgentManagementRepository:
             "remark": row.get("remark"),
             "enabled": bool(row.get("enabled")),
             "deleted": bool(row.get("deleted")),
+            "createdAt": self._datetime(row.get("created_at")),
+            "updatedAt": self._datetime(row.get("updated_at")),
+        }
+
+    def _scene_response(self, row: dict[str, Any]) -> dict[str, Any]:
+        return {
+            "id": self._id(row.get("id")),
+            "tenantId": self._id(row.get("tenant_id")),
+            "code": row.get("code"),
+            "name": row.get("name"),
+            "description": row.get("description"),
+            "sortNo": self._int(row.get("sort_no")),
+            "agentCount": self._int(row.get("agent_count")),
+            "enabled": bool(row.get("enabled")),
+            "managed": row.get("id") is not None,
             "createdAt": self._datetime(row.get("created_at")),
             "updatedAt": self._datetime(row.get("updated_at")),
         }
@@ -644,8 +822,20 @@ class AgentManagementRepository:
             return self._trim(existing.get("code"))
         scene_token = self._normalize_code_token(scene_code)
         if scene_token:
-            return "agent-" + scene_token
+            return "agent-" + scene_token + "-" + str(agent_id)
         return "agent-" + str(agent_id)
+
+    def _normalize_extra_config(self, value: Any) -> str | None:
+        text = self._trim(value)
+        if not text:
+            return None
+        try:
+            parsed = json.loads(text)
+        except (TypeError, ValueError, json.JSONDecodeError) as ex:
+            raise ValueError("附加JSON格式不正确") from ex
+        if not isinstance(parsed, dict):
+            raise ValueError("附加JSON必须是对象")
+        return json.dumps(parsed, ensure_ascii=False, separators=(",", ":"))
 
     def _resolve_skill_key(
             self,

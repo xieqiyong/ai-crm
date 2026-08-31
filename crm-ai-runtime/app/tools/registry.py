@@ -1,7 +1,9 @@
+import logging
 from dataclasses import dataclass, field
 
 from langchain_core.tools import BaseTool
 
+from app.agents.models import AgentDefinition
 from app.schemas.runtime import RuntimeRunRequest
 from app.tools.builtin import (
     crm_customer_detail,
@@ -16,11 +18,12 @@ from app.tools.builtin import (
     knowledge_hybrid_search,
 )
 
+logger = logging.getLogger(__name__)
+
 
 @dataclass
 class ToolDefinition:
     tool: BaseTool
-    scene_codes: set[str] = field(default_factory=set)
     authorities: set[str] = field(default_factory=set)
 
     @property
@@ -38,16 +41,11 @@ class ToolRegistry:
         self.register(
             ToolDefinition(
                 tool=customer_web_search_tool,
-                scene_codes={"LEAD_ANALYZE", "CUSTOMER_DEEP_SUMMARY", "CHANNEL_ANALYZE"},
             )
         )
         self.register(
             ToolDefinition(
                 tool=knowledge_hybrid_search,
-                scene_codes={
-                    "GENERAL_ASSISTANT", "LEAD_ANALYZE", "CUSTOMER_DEEP_SUMMARY",
-                    "MARKETING_ASSISTANT", "CHANNEL_ANALYZE",
-                },
                 authorities={"crm:assistant:use", "crm:knowledge:manage"},
             )
         )
@@ -56,17 +54,24 @@ class ToolRegistry:
     def register(self, value: ToolDefinition) -> None:
         self._tools[value.name] = value
 
-    def resolve(self, request: RuntimeRunRequest) -> list[ToolDefinition]:
-        normalized = (request.scene_code or "").strip().upper()
+    def resolve(
+            self,
+            request: RuntimeRunRequest,
+            agent: AgentDefinition | None = None) -> list[ToolDefinition]:
         permissions = set(str(item) for item in (request.context.get("permissions") or []) if item)
-        return [
+        authorized = [
             item for item in self._tools.values()
-            if (not item.scene_codes or normalized in item.scene_codes)
-            and self._authorized(item, permissions)
+            if self._authorized(item, permissions)
         ]
+        configured_names = self._configured_names(agent)
+        if configured_names is None or "*" in configured_names:
+            return authorized
+        missing = configured_names.difference(self._tools.keys())
+        if missing:
+            logger.warning("智能体配置了不存在的内置工具 agentId=%s tools=%s", agent.id if agent else "", sorted(missing))
+        return [item for item in authorized if item.name in configured_names]
 
     def _register_crm_tools(self) -> None:
-        scenes = {"GENERAL_ASSISTANT", "MARKETING_ASSISTANT", "CUSTOMER_DEEP_SUMMARY", "LEAD_ANALYZE"}
         values = [
             (crm_lead_page, {"crm:lead:view", "crm:lead:manage"}),
             (crm_lead_detail, {"crm:lead:view", "crm:lead:manage"}),
@@ -78,7 +83,22 @@ class ToolRegistry:
             (crm_opportunity_detail, {"crm:opportunity:view", "crm:opportunity:manage"}),
         ]
         for tool, authorities in values:
-            self.register(ToolDefinition(tool=tool, scene_codes=set(scenes), authorities=authorities))
+            self.register(ToolDefinition(tool=tool, authorities=authorities))
+
+    def _configured_names(self, agent: AgentDefinition | None) -> set[str] | None:
+        if agent is None:
+            return None
+        config = agent.config
+        if "builtinTools" not in config and "builtin_tools" not in config:
+            return None
+        values = config.get("builtinTools")
+        if values is None:
+            values = config.get("builtin_tools")
+        if isinstance(values, str):
+            values = [item.strip() for item in values.split(",")]
+        if not isinstance(values, list):
+            return set()
+        return {str(item).strip() for item in values if str(item).strip()}
 
     def _authorized(self, definition: ToolDefinition, permissions: set[str]) -> bool:
         if not definition.authorities or "*" in permissions:

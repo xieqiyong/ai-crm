@@ -103,6 +103,38 @@ async def public_agent_detail(http_request: Request):
         return api_fail("AI_AGENT_002", str(ex))
 
 
+@router.post("/api/agent/scene/list")
+async def public_agent_scene_list(http_request: Request):
+    principal = require_current_principal(http_request)
+    require_any_authority(principal, "crm:agent:view", "crm:agent:manage")
+    try:
+        return api_ok(await agent_management_repository.scenes(principal.tenant_id))
+    except ValueError as ex:
+        return api_fail("AI_AGENT_SCENE_001", str(ex))
+
+
+@router.post("/api/agent/scene/save")
+async def public_agent_scene_save(http_request: Request):
+    principal = require_current_principal(http_request)
+    require_any_authority(principal, "crm:agent:manage")
+    payload = await json_body(http_request)
+    try:
+        return api_ok(await agent_management_repository.save_scene(principal.tenant_id, payload))
+    except ValueError as ex:
+        return api_fail("AI_AGENT_SCENE_002", str(ex))
+
+
+@router.post("/api/agent/scene/delete")
+async def public_agent_scene_delete(http_request: Request):
+    principal = require_current_principal(http_request)
+    require_any_authority(principal, "crm:agent:manage")
+    payload = await json_body(http_request)
+    try:
+        return api_ok(await agent_management_repository.delete_scene(principal.tenant_id, payload.get("id")))
+    except ValueError as ex:
+        return api_fail("AI_AGENT_SCENE_003", str(ex))
+
+
 @router.post("/api/agent/save")
 async def public_agent_save(http_request: Request):
     principal = require_current_principal(http_request)

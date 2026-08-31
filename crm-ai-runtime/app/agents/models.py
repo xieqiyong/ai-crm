@@ -1,6 +1,7 @@
 from dataclasses import dataclass, field
 from typing import Any
 
+from app.agents.config import parse_agent_config
 from app.schemas.runtime import RuntimeAgent, RuntimeResource
 
 
@@ -19,6 +20,10 @@ class AgentDefinition:
     api_key: str | None = None
     max_iters: int | None = None
     extra_config_json: str | None = None
+
+    @property
+    def config(self) -> dict[str, Any]:
+        return parse_agent_config(self.extra_config_json)
 
     @classmethod
     def from_runtime_agent(cls, value: RuntimeAgent | None):

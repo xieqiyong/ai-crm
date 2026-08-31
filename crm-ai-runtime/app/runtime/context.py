@@ -19,9 +19,11 @@ class RuntimeContext:
 class RuntimeContextBuilder:
     async def build(self, request: RuntimeRunRequest) -> RuntimeContext:
         agent = await agent_repository.resolve_agent(request)
+        if agent.scene_code:
+            request.scene_code = agent.scene_code
         skills = await skill_registry.resolve(request, agent)
         mcps = await mcp_registry.resolve(request, agent)
-        tools = tool_registry.resolve(request)
+        tools = tool_registry.resolve(request, agent)
         request.agent = agent.to_runtime_agent()
         request.skills = [item.to_runtime_resource() for item in skills]
         request.mcps = [item.to_runtime_resource() for item in mcps]

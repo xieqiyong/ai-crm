@@ -8,9 +8,12 @@ import {
   Eye,
   FileText,
   Gauge,
+  Layers3,
+  BrainCircuit,
   Plus,
   RefreshCw,
   ServerCog,
+  Settings2,
   Sparkles,
   Trash2,
   Users,
@@ -29,12 +32,22 @@ import {
   useConfirmDialog,
 } from '../../components'
 
-const SCENE_OPTIONS = [
-  { value: 'LEAD_ANALYZE', label: '线索分析' },
-  { value: 'CHANNEL_ANALYZE', label: '渠道内容分析' },
-  { value: 'CUSTOMER_DEEP_SUMMARY', label: 'AI客户深度总结' },
-  { value: 'OPPORTUNITY_ASSIST', label: '商机推进分析' },
-  { value: 'GENERAL_ASSISTANT', label: '通用营销助手' },
+const WORKFLOW_OPTIONS = [
+  { value: 'STANDARD_AGENT', label: '标准智能体（自由对话与工具调用）' },
+  { value: 'LEAD_ANALYSIS', label: '线索分析编排' },
+]
+
+const BUILTIN_TOOL_OPTIONS = [
+  { value: 'customer_web_search', label: '客户公开信息检索' },
+  { value: 'knowledge_hybrid_search', label: '知识库混合检索' },
+  { value: 'crm_lead_page', label: '查询线索列表' },
+  { value: 'crm_lead_detail', label: '查询线索详情' },
+  { value: 'crm_customer_page', label: '查询客户列表' },
+  { value: 'crm_customer_detail', label: '查询客户详情' },
+  { value: 'crm_followup_page', label: '查询跟进列表' },
+  { value: 'crm_followup_detail', label: '查询跟进详情' },
+  { value: 'crm_opportunity_page', label: '查询商机列表' },
+  { value: 'crm_opportunity_detail', label: '查询商机详情' },
 ]
 
 const TRANSPORT_OPTIONS = [
@@ -45,8 +58,8 @@ const TRANSPORT_OPTIONS = [
 
 const emptyAgentForm = {
   code: '',
-  sceneCode: 'LEAD_ANALYZE',
-  sceneName: '线索分析',
+  sceneCode: '',
+  sceneName: '',
   name: '',
   description: '',
   systemPrompt: '',
@@ -56,6 +69,10 @@ const emptyAgentForm = {
   baseUrl: '',
   apiKey: '',
   maxIters: 8,
+  defaultForScene: false,
+  scenePriority: 0,
+  workflowCode: 'STANDARD_AGENT',
+  builtinTools: [],
   extraConfigJson: '',
   remark: '',
   enabled: true,
@@ -91,6 +108,15 @@ const emptyQuotaForm = {
   remark: '',
 }
 
+const emptySceneForm = {
+  id: null,
+  code: '',
+  name: '',
+  description: '',
+  sortNo: 0,
+  enabled: true,
+}
+
 function sameId(first, second) {
   return String(first || '') === String(second || '')
 }
@@ -102,7 +128,7 @@ function formatDateTime(value) {
 
 function sceneLabel(row) {
   if (!row) return '-'
-  return row.sceneName || SCENE_OPTIONS.find((item) => item.value === row.sceneCode)?.label || row.sceneCode || '-'
+  return row.sceneName || row.sceneCode || '-'
 }
 
 function formatTokenLimit(value) {
@@ -119,13 +145,20 @@ function quotaScopeLabel(scope) {
   return '用户'
 }
 
-function resolveDefaultAgentForm(models) {
+function resolveDefaultAgentForm(models, scenes) {
   const defaultModel = (models || []).find((item) => item.defaultConfig) || (models || [])[0]
+  const defaultScene = (scenes || []).find((item) => item.enabled !== false)
   if (!defaultModel) {
-    return { ...emptyAgentForm }
+    return {
+      ...emptyAgentForm,
+      sceneCode: defaultScene?.code || '',
+      sceneName: defaultScene?.name || '',
+    }
   }
   return {
     ...emptyAgentForm,
+    sceneCode: defaultScene?.code || '',
+    sceneName: defaultScene?.name || '',
     modelConfigId: defaultModel.id,
     modelProvider: defaultModel.provider || 'OPENAI',
     modelName: defaultModel.modelName || '',
@@ -134,10 +167,32 @@ function resolveDefaultAgentForm(models) {
   }
 }
 
-function toAgentForm(row, models) {
-  if (!row) {
-    return resolveDefaultAgentForm(models)
+function parseAgentExtraConfig(value) {
+  if (!value?.trim()) return {}
+  try {
+    const parsed = JSON.parse(value)
+    return parsed && typeof parsed === 'object' && !Array.isArray(parsed) ? parsed : {}
+  } catch {
+    return {}
   }
+}
+
+function resolveBuiltinTools(config) {
+  const configured = config.builtinTools ?? config.builtin_tools
+  if (configured === undefined || configured === '*') {
+    return BUILTIN_TOOL_OPTIONS.map((item) => item.value)
+  }
+  if (Array.isArray(configured)) {
+    return configured.map(String)
+  }
+  return []
+}
+
+function toAgentForm(row, models, scenes) {
+  if (!row) {
+    return resolveDefaultAgentForm(models, scenes)
+  }
+  const config = parseAgentExtraConfig(row.extraConfigJson || '')
   return {
     ...emptyAgentForm,
     ...row,
@@ -146,17 +201,33 @@ function toAgentForm(row, models) {
     enabled: row.enabled !== false,
     apiKey: '',
     extraConfigJson: row.extraConfigJson || '',
+    defaultForScene: config.defaultForScene === true || config.default_for_scene === true,
+    scenePriority: Number(config.scenePriority ?? config.scene_priority ?? 0),
+    workflowCode: config.workflowCode || config.workflow_code || (row.sceneCode === 'LEAD_ANALYZE' ? 'LEAD_ANALYSIS' : 'STANDARD_AGENT'),
+    builtinTools: resolveBuiltinTools(config),
     remark: row.remark || '',
   }
 }
 
+function buildAgentExtraConfig(form) {
+  const config = parseAgentExtraConfig(form.extraConfigJson || '')
+  delete config.default_for_scene
+  delete config.scene_priority
+  delete config.workflow_code
+  delete config.builtin_tools
+  config.defaultForScene = form.defaultForScene === true
+  config.scenePriority = Number(form.scenePriority) || 0
+  config.workflowCode = form.workflowCode || 'STANDARD_AGENT'
+  config.builtinTools = Array.isArray(form.builtinTools) ? form.builtinTools : []
+  return JSON.stringify(config, null, 2)
+}
+
 function buildAgentPayload(form) {
-  const scene = SCENE_OPTIONS.find((item) => item.value === form.sceneCode)
   return {
     id: form.id || undefined,
     code: form.code || undefined,
     sceneCode: form.sceneCode || undefined,
-    sceneName: form.sceneName || scene?.label || undefined,
+    sceneName: form.sceneName || undefined,
     name: form.name,
     description: form.description || undefined,
     systemPrompt: form.systemPrompt || undefined,
@@ -166,7 +237,7 @@ function buildAgentPayload(form) {
     baseUrl: form.modelConfigId ? undefined : form.baseUrl,
     apiKey: form.modelConfigId ? undefined : form.apiKey,
     maxIters: Number(form.maxIters) || 8,
-    extraConfigJson: form.extraConfigJson || undefined,
+    extraConfigJson: buildAgentExtraConfig(form),
     remark: form.remark || undefined,
     enabled: form.enabled !== false,
   }
@@ -177,6 +248,7 @@ export function AgentConfigPage({ can, notify }) {
   const [rows, setRows] = useState([])
   const [selected, setSelected] = useState(null)
   const [models, setModels] = useState([])
+  const [scenes, setScenes] = useState([])
   const [mcps, setMcps] = useState([])
   const [skills, setSkills] = useState([])
   const [loading, setLoading] = useState(true)
@@ -189,6 +261,8 @@ export function AgentConfigPage({ can, notify }) {
   const [quotaLoading, setQuotaLoading] = useState(false)
   const [quotaOverview, setQuotaOverview] = useState(null)
   const [quotaForm, setQuotaForm] = useState(emptyQuotaForm)
+  const [sceneOpen, setSceneOpen] = useState(false)
+  const [sceneForm, setSceneForm] = useState(emptySceneForm)
   const { confirm, dialogProps } = useConfirmDialog()
 
   const enabledMcpCount = mcps.filter((item) => item.enabled).length
@@ -225,13 +299,15 @@ export function AgentConfigPage({ can, notify }) {
   const load = async (keepId) => {
     setLoading(true)
     try {
-      const [page, modelRows] = await Promise.all([
+      const [page, modelRows, sceneRows] = await Promise.all([
         api.agent.page({ pageNo: 1, pageSize: 100 }),
         api.modelConfig.list(),
+        api.agent.scenes(),
       ])
       const nextRows = page?.records || []
       setRows(nextRows)
       setModels(modelRows || [])
+      setScenes(sceneRows || [])
       const nextSelected = nextRows.find((item) => sameId(item.id, keepId || selected?.id)) || nextRows[0] || null
       setSelected(nextSelected)
       if (detailOpen) {
@@ -255,7 +331,45 @@ export function AgentConfigPage({ can, notify }) {
   }
 
   const openAgentDrawer = (row) => {
-    setAgentForm(toAgentForm(row, models))
+    setAgentForm(toAgentForm(row, models, scenes))
+  }
+
+  const saveScene = async () => {
+    if (!sceneForm.name?.trim()) {
+      notify('场景名称不能为空', 'info')
+      return
+    }
+    try {
+      const selectAfterSave = Boolean(agentForm) && !sceneForm.id && !sceneForm.code
+      const saved = await api.agent.saveScene(sceneForm)
+      const nextScenes = await api.agent.scenes()
+      setScenes(nextScenes || [])
+      setSceneForm(emptySceneForm)
+      setAgentForm((current) => {
+        if (!current || !selectAfterSave) return current
+        return { ...current, sceneCode: saved.code, sceneName: saved.name }
+      })
+      notify('场景已保存')
+    } catch (err) {
+      notify(err.message || '场景保存失败', 'info')
+    }
+  }
+
+  const removeScene = async (row) => {
+    const confirmed = await confirm({
+      title: '删除业务场景',
+      description: '只有未关联智能体的场景才能删除。',
+      target: row.name,
+      confirmText: '确认删除',
+    })
+    if (!confirmed) return
+    try {
+      await api.agent.deleteScene(row.id)
+      setScenes(await api.agent.scenes())
+      notify('场景已删除')
+    } catch (err) {
+      notify(err.message || '场景删除失败', 'info')
+    }
   }
 
   const loadTokenQuota = async () => {
@@ -283,6 +397,19 @@ export function AgentConfigPage({ can, notify }) {
     if (!agentForm?.name?.trim()) {
       notify('智能体名称不能为空', 'info')
       return
+    }
+    if (!agentForm.sceneCode?.trim()) {
+      notify('业务场景标识不能为空，可输入任意自定义标识', 'info')
+      return
+    }
+    if (agentForm.extraConfigJson?.trim()) {
+      try {
+        const value = JSON.parse(agentForm.extraConfigJson)
+        if (!value || typeof value !== 'object' || Array.isArray(value)) throw new Error('附加配置必须是对象')
+      } catch {
+        notify('附加 JSON 格式不正确', 'info')
+        return
+      }
     }
     if (!agentForm.modelConfigId && !agentForm.modelName?.trim()) {
       notify('请选择大模型配置，或填写模型标识', 'info')
@@ -453,6 +580,7 @@ export function AgentConfigPage({ can, notify }) {
           <>
             <Button variant="secondary" icon={RefreshCw} onClick={() => load(selected?.id)}>刷新</Button>
             {canManage && <Button variant="secondary" icon={Gauge} onClick={openQuotaDrawer}>Token额度</Button>}
+            {canManage && <Button variant="secondary" icon={Layers3} onClick={() => setSceneOpen(true)}>场景管理</Button>}
             {canManage && <Button icon={Plus} onClick={() => openAgentDrawer(null)}>新增智能体</Button>}
           </>
         )}
@@ -574,10 +702,34 @@ export function AgentConfigPage({ can, notify }) {
         open={Boolean(agentForm)}
         form={agentForm}
         models={models}
+        scenes={scenes}
         canManage={canManage}
         onChange={setAgentForm}
         onSave={saveAgent}
+        onManageScenes={() => setSceneOpen(true)}
         onClose={() => setAgentForm(null)}
+      />
+      <SceneManagerDrawer
+        open={sceneOpen}
+        scenes={scenes}
+        form={sceneForm}
+        canManage={canManage}
+        onChange={setSceneForm}
+        onEdit={(row) => setSceneForm({
+          id: row.id || null,
+          code: row.code || '',
+          name: row.name || '',
+          description: row.description || '',
+          sortNo: row.sortNo || 0,
+          enabled: row.enabled !== false,
+        })}
+        onReset={() => setSceneForm(emptySceneForm)}
+        onSave={saveScene}
+        onDelete={removeScene}
+        onClose={() => {
+          setSceneOpen(false)
+          setSceneForm(emptySceneForm)
+        }}
       />
       <McpDrawer
         open={Boolean(mcpForm)}
@@ -925,17 +1077,106 @@ function ResourceCard({ title, icon: Icon, rows, loading, emptyText, onAdd, canM
   )
 }
 
-function AgentDrawer({ open, form, models, canManage, onChange, onSave, onClose }) {
+function SceneManagerDrawer({ open, scenes, form, canManage, onChange, onEdit, onReset, onSave, onDelete, onClose }) {
+  return (
+    <Drawer
+      open={open}
+      size="wide"
+      title="业务场景管理"
+      onClose={onClose}
+      footer={<Button variant="secondary" onClick={onClose}>关闭</Button>}
+    >
+      <div className="agent-scene-manager">
+        <Card className="agent-scene-editor">
+          <div className="agent-section-heading">
+            <span><Layers3 size={18} /></span>
+            <div>
+              <h3>{form.id || form.code ? '编辑场景' : '新增场景'}</h3>
+              <p>场景标识由系统生成，智能体只需要选择场景。</p>
+            </div>
+          </div>
+          <Field label="场景名称" required>
+            <input value={form.name || ''} placeholder="例如：线索用户画像" onChange={(event) => onChange({ ...form, name: event.target.value })} />
+          </Field>
+          <Field label="场景说明">
+            <textarea rows="4" value={form.description || ''} placeholder="说明这个场景解决什么业务问题" onChange={(event) => onChange({ ...form, description: event.target.value })} />
+          </Field>
+          <Field label="展示顺序">
+            <input type="number" min="0" value={form.sortNo ?? 0} onChange={(event) => onChange({ ...form, sortNo: event.target.value })} />
+          </Field>
+          <div className="agent-switch-line">
+            <label>
+              <input type="checkbox" checked={form.enabled !== false} onChange={(event) => onChange({ ...form, enabled: event.target.checked })} />
+              <span>启用该场景</span>
+            </label>
+          </div>
+          <div className="agent-scene-editor-actions">
+            {(form.id || form.code) && <Button variant="secondary" onClick={onReset}>取消编辑</Button>}
+            <Button disabled={!canManage} onClick={onSave}>{form.id || form.code ? '保存修改' : '新增场景'}</Button>
+          </div>
+        </Card>
+
+        <div className="agent-scene-catalog">
+          <div className="agent-scene-catalog-head">
+            <div>
+              <h3>场景目录</h3>
+              <p>共 {scenes.length} 个场景，均来自当前租户的真实配置。</p>
+            </div>
+          </div>
+          <div className="agent-scene-grid">
+            {scenes.map((row, index) => (
+              <article className={`agent-scene-card tone-${(index % 4) + 1}`} key={row.id || row.code}>
+                <div className="agent-scene-card-top">
+                  <span className="agent-scene-mark"><Layers3 size={18} /></span>
+                  <Badge dot tone={row.enabled ? 'success' : 'danger'}>{row.enabled ? '启用' : '停用'}</Badge>
+                </div>
+                <h4>{row.name}</h4>
+                <p>{row.description || '暂未填写场景说明'}</p>
+                <div className="agent-scene-meta">
+                  <span><b>{row.agentCount || 0}</b> 个智能体</span>
+                  <span>{row.managed ? '自定义场景' : '现有场景'}</span>
+                </div>
+                <div className="agent-scene-actions">
+                  <Button variant="secondary" icon={Edit2} onClick={() => onEdit(row)}>{row.managed ? '编辑' : '纳入管理'}</Button>
+                  {row.managed && Number(row.agentCount || 0) === 0 && (
+                    <button className="icon-button danger" title="删除场景" onClick={() => onDelete(row)}><Trash2 size={16} /></button>
+                  )}
+                </div>
+              </article>
+            ))}
+            {!scenes.length && (
+              <div className="agent-scene-empty">
+                <Layers3 size={28} />
+                <b>还没有业务场景</b>
+                <span>先在左侧新增一个场景，再创建智能体。</span>
+              </div>
+            )}
+          </div>
+        </div>
+      </div>
+    </Drawer>
+  )
+}
+
+function AgentDrawer({ open, form, models, scenes, canManage, onChange, onSave, onManageScenes, onClose }) {
+  const [activeSection, setActiveSection] = useState('basic')
+
+  useEffect(() => {
+    if (open) setActiveSection('basic')
+  }, [open, form?.id])
+
   if (!form) return null
-  const selectedScene = SCENE_OPTIONS.find((item) => item.value === form.sceneCode)
 
   const changeScene = (value) => {
-    const scene = SCENE_OPTIONS.find((item) => item.value === value)
-    onChange({
-      ...form,
-      sceneCode: value,
-      sceneName: scene ? scene.label : form.sceneName,
-    })
+    const scene = scenes.find((item) => item.code === value)
+    onChange({ ...form, sceneCode: value, sceneName: scene?.name || '' })
+  }
+
+  const toggleBuiltinTool = (value) => {
+    const selected = new Set(form.builtinTools || [])
+    if (selected.has(value)) selected.delete(value)
+    else selected.add(value)
+    onChange({ ...form, builtinTools: Array.from(selected) })
   }
 
   const changeModel = (value) => {
@@ -950,110 +1191,181 @@ function AgentDrawer({ open, form, models, canManage, onChange, onSave, onClose 
     })
   }
 
+  const sections = [
+    { key: 'basic', label: '基本信息', icon: Bot },
+    { key: 'runtime', label: '模型与运行', icon: ServerCog },
+    { key: 'prompt', label: '提示词', icon: FileText },
+    { key: 'tools', label: '能力挂载', icon: Settings2 },
+  ]
+
   return (
     <Drawer
       open={open}
       size="wide"
-      title={form.id ? '编辑智能体配置' : '新增智能体配置'}
+      title={form.id ? '编辑智能体' : '新增智能体'}
       onClose={onClose}
       footer={(
         <>
           <Button variant="secondary" onClick={onClose}>取消</Button>
-          <Button disabled={!canManage} onClick={onSave}>保存</Button>
+          <Button disabled={!canManage} onClick={onSave}>保存智能体</Button>
         </>
       )}
     >
-      <div className="agent-form-layout">
-        <Card className="agent-form-basic">
-          <div className="card-heading">
-            <div>
-              <h2><Bot size={17} />基础配置</h2>
-            </div>
+      <div className="agent-builder">
+        <div className="agent-builder-hero">
+          <span className="agent-builder-logo"><BrainCircuit size={24} /></span>
+          <div>
+            <h3>{form.name || '配置一个新的业务智能体'}</h3>
+            <p>选择场景和模型，设置提示词，再按需挂载工具、Skill 与 MCP。</p>
           </div>
-          <Field label="业务场景" required>
-            <select value={form.sceneCode || ''} onChange={(event) => changeScene(event.target.value)}>
-              {form.sceneCode && !SCENE_OPTIONS.some((item) => item.value === form.sceneCode) && (
-                <option value={form.sceneCode}>{form.sceneName || form.sceneCode}</option>
-              )}
-              {SCENE_OPTIONS.map((item) => <option value={item.value} key={item.value}>{item.label}</option>)}
-            </select>
-          </Field>
-          <Field label="场景名称">
-            <input value={form.sceneName || selectedScene?.label || ''} onChange={(event) => onChange({ ...form, sceneName: event.target.value })} />
-          </Field>
-          <Field label="场景标识">
-            <input value={form.sceneCode || ''} onChange={(event) => onChange({ ...form, sceneCode: event.target.value })} />
-          </Field>
-          <Field label="智能体名称" required>
-            <input value={form.name || ''} onChange={(event) => onChange({ ...form, name: event.target.value })} />
-          </Field>
-          <Field label="说明">
-            <textarea rows="3" value={form.description || ''} onChange={(event) => onChange({ ...form, description: event.target.value })} />
-          </Field>
-          <div className="agent-switch-line">
-            <label>
-              <input type="checkbox" checked={form.enabled !== false} onChange={(event) => onChange({ ...form, enabled: event.target.checked })} />
-              <span>启用智能体</span>
-            </label>
-          </div>
-        </Card>
+          <Badge tone={form.enabled !== false ? 'success' : 'neutral'}>{form.enabled !== false ? '启用' : '停用'}</Badge>
+        </div>
 
-        <Card className="agent-form-runtime">
-          <div className="card-heading">
-            <div>
-              <h2><ServerCog size={17} />运行配置</h2>
+        <nav className="agent-builder-tabs">
+          {sections.map((section, index) => {
+            const Icon = section.icon
+            return (
+              <button className={activeSection === section.key ? 'active' : ''} key={section.key} onClick={() => setActiveSection(section.key)}>
+                <i>{index + 1}</i>
+                <Icon size={17} />
+                <span>{section.label}</span>
+              </button>
+            )
+          })}
+        </nav>
+
+        <div className="agent-builder-panel">
+          {activeSection === 'basic' && (
+            <div className="agent-builder-section">
+              <div className="agent-section-heading">
+                <span><Bot size={18} /></span>
+                <div><h3>基本信息</h3><p>定义智能体服务的业务场景和展示信息。</p></div>
+              </div>
+              <div className="agent-builder-grid">
+                <Field label="业务场景" required hint="场景来自场景管理，可随时新增，不受系统枚举限制">
+                  <div className="agent-scene-select-line">
+                    <select value={form.sceneCode || ''} onChange={(event) => changeScene(event.target.value)}>
+                      <option value="">请选择业务场景</option>
+                      {scenes.filter((item) => item.enabled !== false || item.code === form.sceneCode).map((item) => (
+                        <option value={item.code} key={item.code}>{item.name}</option>
+                      ))}
+                    </select>
+                    <Button variant="secondary" icon={Plus} onClick={onManageScenes}>新增场景</Button>
+                  </div>
+                </Field>
+                <Field label="智能体名称" required>
+                  <input value={form.name || ''} placeholder="例如：线索用户画像助手" onChange={(event) => onChange({ ...form, name: event.target.value })} />
+                </Field>
+                <Field label="功能说明" className="agent-builder-wide">
+                  <textarea rows="4" value={form.description || ''} placeholder="告诉使用者这个智能体能解决什么问题" onChange={(event) => onChange({ ...form, description: event.target.value })} />
+                </Field>
+                <div className="agent-choice-card">
+                  <label>
+                    <input type="checkbox" checked={form.enabled !== false} onChange={(event) => onChange({ ...form, enabled: event.target.checked })} />
+                    <span><b>启用智能体</b><small>启用后会出现在智能体工作台</small></span>
+                  </label>
+                </div>
+                <div className="agent-choice-card">
+                  <label>
+                    <input type="checkbox" checked={form.defaultForScene === true} onChange={(event) => onChange({ ...form, defaultForScene: event.target.checked })} />
+                    <span><b>场景默认智能体</b><small>业务入口未指定智能体时优先使用</small></span>
+                  </label>
+                </div>
+                <Field label="路由优先级" hint="同场景存在多个智能体时，数值越大优先级越高">
+                  <input type="number" value={form.scenePriority ?? 0} onChange={(event) => onChange({ ...form, scenePriority: event.target.value })} />
+                </Field>
+              </div>
             </div>
-          </div>
-          <Field label="大模型配置">
-            <select value={form.modelConfigId || ''} onChange={(event) => changeModel(event.target.value)}>
-              <option value="">不使用模型配置，手动填写</option>
-              {models.map((item) => (
-                <option value={item.id} key={item.id}>{item.name} / {item.modelName}</option>
-              ))}
-            </select>
-          </Field>
-          {!form.modelConfigId && (
-            <>
-              <Field label="模型供应商">
-                <select value={form.modelProvider || 'OPENAI'} onChange={(event) => onChange({ ...form, modelProvider: event.target.value })}>
-                  <option value="OPENAI">OpenAI 兼容</option>
-                  <option value="DASHSCOPE">通义千问</option>
-                  <option value="DEEPSEEK">DeepSeek</option>
-                  <option value="CUSTOM">自定义</option>
-                </select>
-              </Field>
-              <Field label="模型标识" required>
-                <input value={form.modelName || ''} onChange={(event) => onChange({ ...form, modelName: event.target.value })} />
-              </Field>
-              <Field label="Base URL">
-                <input value={form.baseUrl || ''} onChange={(event) => onChange({ ...form, baseUrl: event.target.value })} />
-              </Field>
-              <Field label="API Key" required hint={form.id ? '留空表示不修改原密钥' : ''}>
-                <SecretInput value={form.apiKey || ''} onChange={(event) => onChange({ ...form, apiKey: event.target.value })} />
-              </Field>
-            </>
           )}
-          <Field label="大模型最大调用轮次" hint="限制单次任务调用大模型的次数，默认8次；不影响后续新会话">
-            <input type="number" min="1" max="50" value={form.maxIters || 8} onChange={(event) => onChange({ ...form, maxIters: event.target.value })} />
-          </Field>
-          <Field label="备注">
-            <textarea rows="3" value={form.remark || ''} onChange={(event) => onChange({ ...form, remark: event.target.value })} />
-          </Field>
-        </Card>
 
-        <Card className="agent-form-prompt">
-          <div className="card-heading">
-            <div>
-              <h2><FileText size={17} />提示词与附加信息</h2>
+          {activeSection === 'runtime' && (
+            <div className="agent-builder-section">
+              <div className="agent-section-heading">
+                <span><ServerCog size={18} /></span>
+                <div><h3>模型与运行</h3><p>选择模型配置并控制单次运行边界。</p></div>
+              </div>
+              <div className="agent-builder-grid">
+                <Field label="大模型配置" className="agent-builder-wide">
+                  <select value={form.modelConfigId || ''} onChange={(event) => changeModel(event.target.value)}>
+                    <option value="">不使用模型配置，手动填写</option>
+                    {models.map((item) => <option value={item.id} key={item.id}>{item.name} / {item.modelName}</option>)}
+                  </select>
+                </Field>
+                {!form.modelConfigId && (
+                  <>
+                    <Field label="模型供应商">
+                      <select value={form.modelProvider || 'OPENAI'} onChange={(event) => onChange({ ...form, modelProvider: event.target.value })}>
+                        <option value="OPENAI">OpenAI 兼容</option>
+                        <option value="DASHSCOPE">通义千问</option>
+                        <option value="DEEPSEEK">DeepSeek</option>
+                        <option value="CUSTOM">自定义</option>
+                      </select>
+                    </Field>
+                    <Field label="模型标识" required>
+                      <input value={form.modelName || ''} onChange={(event) => onChange({ ...form, modelName: event.target.value })} />
+                    </Field>
+                    <Field label="Base URL">
+                      <input value={form.baseUrl || ''} onChange={(event) => onChange({ ...form, baseUrl: event.target.value })} />
+                    </Field>
+                    <Field label="API Key" required hint={form.id ? '留空表示不修改原密钥' : ''}>
+                      <SecretInput value={form.apiKey || ''} onChange={(event) => onChange({ ...form, apiKey: event.target.value })} />
+                    </Field>
+                  </>
+                )}
+                <Field label="最大模型调用轮次" hint="默认 8 次，防止工具循环失控">
+                  <input type="number" min="1" max="50" value={form.maxIters || 8} onChange={(event) => onChange({ ...form, maxIters: event.target.value })} />
+                </Field>
+                <Field label="运行方式">
+                  <select value={form.workflowCode || 'STANDARD_AGENT'} onChange={(event) => onChange({ ...form, workflowCode: event.target.value })}>
+                    {WORKFLOW_OPTIONS.map((item) => <option value={item.value} key={item.value}>{item.label}</option>)}
+                  </select>
+                </Field>
+                <Field label="备注" className="agent-builder-wide">
+                  <textarea rows="3" value={form.remark || ''} onChange={(event) => onChange({ ...form, remark: event.target.value })} />
+                </Field>
+              </div>
             </div>
-          </div>
-          <Field label="系统提示词">
-            <textarea rows="12" value={form.systemPrompt || ''} onChange={(event) => onChange({ ...form, systemPrompt: event.target.value })} />
-          </Field>
-          <Field label="附加 JSON">
-            <textarea rows="8" value={form.extraConfigJson || ''} onChange={(event) => onChange({ ...form, extraConfigJson: event.target.value })} />
-          </Field>
-        </Card>
+          )}
+
+          {activeSection === 'prompt' && (
+            <div className="agent-builder-section">
+              <div className="agent-section-heading">
+                <span><FileText size={18} /></span>
+                <div><h3>系统提示词</h3><p>描述身份、目标、边界和输出要求，运行时仅加载当前智能体的提示词。</p></div>
+              </div>
+              <Field label="系统提示词">
+                <textarea className="agent-prompt-editor" rows="19" value={form.systemPrompt || ''} placeholder="输入智能体系统提示词…" onChange={(event) => onChange({ ...form, systemPrompt: event.target.value })} />
+              </Field>
+              <details className="agent-advanced-config">
+                <summary>高级运行参数</summary>
+                <Field label="附加 JSON" hint="用于结构化输出 Schema 等高级配置；普通智能体可以留空">
+                  <textarea rows="8" value={form.extraConfigJson || ''} onChange={(event) => onChange({ ...form, extraConfigJson: event.target.value })} />
+                </Field>
+              </details>
+            </div>
+          )}
+
+          {activeSection === 'tools' && (
+            <div className="agent-builder-section">
+              <div className="agent-section-heading">
+                <span><Settings2 size={18} /></span>
+                <div><h3>能力挂载</h3><p>为当前智能体选择内置工具，运行时仍会校验用户权限。</p></div>
+              </div>
+              <div className="agent-tool-options polished">
+                {BUILTIN_TOOL_OPTIONS.map((item) => (
+                  <label className={(form.builtinTools || []).includes(item.value) ? 'selected' : ''} key={item.value}>
+                    <input type="checkbox" checked={(form.builtinTools || []).includes(item.value)} onChange={() => toggleBuiltinTool(item.value)} />
+                    <span>{item.label}</span>
+                  </label>
+                ))}
+              </div>
+              <div className="agent-capability-note">
+                <Wrench size={18} />
+                <div><b>Skill 与 MCP</b><span>先保存智能体，再从详情抽屉中挂载 Skill 和 MCP 服务。</span></div>
+              </div>
+            </div>
+          )}
+        </div>
       </div>
     </Drawer>
   )

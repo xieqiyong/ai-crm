@@ -12,13 +12,19 @@ from langchain_core.language_models.chat_models import BaseChatModel
 from langchain_core.outputs import ChatGeneration, ChatResult
 from langgraph.checkpoint.memory import InMemorySaver
 
+from app.agents.config import workflow_code
+from app.agents.factory import tool_calling_agent_factory
+from app.agents.models import AgentDefinition
+from app.agents.repository import AgentRepository
 from app.runtime.stream_adapter import AgentStreamAccumulator
 from app.models.chat_model_factory import chat_model_factory
 from app.models.openai_compatible import OpenAICompatibleChatModel
 from app.runtime.execution_context import AgentExecutionContext
+from app.runtime.agent_management_repository import AgentManagementRepository
 from app.schemas.lead_analysis import LeadAnalysisResult
-from app.schemas.runtime import RuntimeAgent
+from app.schemas.runtime import RuntimeAgent, RuntimeRunRequest
 from app.tools.builtin import crm_lead_page, load_skill
+from app.tools.registry import ToolRegistry
 from app.workflows.lead_analysis.nodes import lead_analysis_nodes
 from app.workflows.lead_analysis.workflow import lead_analysis_workflow_factory
 
@@ -137,6 +143,91 @@ class EndlessToolCallingFakeModel(BaseChatModel):
 
 
 class StandardAgentRuntimeTest(unittest.IsolatedAsyncioTestCase):
+    async def test_scene_catalog_merges_custom_and_existing_scenes(self):
+        managed = [{
+            "id": 1,
+            "tenant_id": 100,
+            "code": "SCENE_1",
+            "name": "自定义场景",
+            "description": "测试场景",
+            "sort_no": 1,
+            "enabled": True,
+            "agent_count": 0,
+        }]
+        inferred = [{
+            "id": None,
+            "tenant_id": 100,
+            "code": "LEAD_ANALYZE",
+            "name": "线索分析",
+            "description": None,
+            "sort_no": 0,
+            "enabled": True,
+            "agent_count": 2,
+        }]
+        with patch(
+                "app.runtime.agent_management_repository.database_client.enabled",
+                return_value=True), patch(
+                "app.runtime.agent_management_repository.database_client.fetch_all",
+                new_callable=AsyncMock,
+                side_effect=[managed, inferred]):
+            values = await AgentManagementRepository().scenes("100")
+        self.assertEqual(2, len(values))
+        self.assertTrue(values[0]["managed"])
+        self.assertFalse(values[1]["managed"])
+        self.assertEqual(2, values[1]["agentCount"])
+
+    def test_custom_scene_can_mount_builtin_tools_independently(self):
+        request = RuntimeRunRequest(
+            tenantId="100",
+            userId="200",
+            sceneCode="LEAD_PROFILE_CUSTOM",
+            context={"permissions": ["*"]},
+        )
+        agent = AgentDefinition(
+            id="300",
+            scene_code="LEAD_PROFILE_CUSTOM",
+            extra_config_json='{"builtinTools":["crm_lead_detail","knowledge_hybrid_search"]}',
+        )
+        names = [item.name for item in ToolRegistry().resolve(request, agent)]
+        self.assertEqual(["knowledge_hybrid_search", "crm_lead_detail"], names)
+
+    def test_custom_scene_can_define_json_schema_output(self):
+        request = RuntimeRunRequest(
+            tenantId="100",
+            userId="200",
+            sceneCode="LEAD_PROFILE_CUSTOM",
+            agent=RuntimeAgent(
+                id="300",
+                sceneCode="LEAD_PROFILE_CUSTOM",
+                extraConfigJson=(
+                    '{"responseFormat":{"title":"lead_profile_result","type":"object",'
+                    '"properties":{"summary":{"type":"string"}},"required":["summary"]}}'
+                ),
+            ),
+        )
+        strategy = tool_calling_agent_factory._response_format(request)
+        self.assertIsInstance(strategy, ToolStrategy)
+        self.assertEqual("lead_profile_result", strategy.schema.get("title"))
+        self.assertIn("summary", strategy.schema.get("properties"))
+
+    def test_scene_agent_selection_uses_default_and_priority(self):
+        rows = [
+            {"id": 1, "extra_config_json": '{"defaultForScene":false,"scenePriority":99}'},
+            {"id": 2, "extra_config_json": '{"defaultForScene":true,"scenePriority":10}'},
+            {"id": 3, "extra_config_json": '{"defaultForScene":true,"scenePriority":20}'},
+        ]
+        selected = AgentRepository()._select_scene_agent(rows, "CUSTOM_SCENE")
+        self.assertEqual(3, selected.get("id"))
+
+    def test_custom_scene_defaults_to_standard_agent(self):
+        agent = AgentDefinition(scene_code="CUSTOM_SCENE")
+        self.assertEqual("STANDARD_AGENT", workflow_code(agent, agent.scene_code))
+        configured = AgentDefinition(
+            scene_code="CUSTOM_SCENE",
+            extra_config_json='{"workflowCode":"LEAD_ANALYSIS"}',
+        )
+        self.assertEqual("LEAD_ANALYSIS", workflow_code(configured, configured.scene_code))
+
     async def test_agent_executes_standard_tool_loop(self):
         graph = create_agent(ToolCallingFakeModel(), [echo_value], name="test_tool_agent")
         self.assertEqual(

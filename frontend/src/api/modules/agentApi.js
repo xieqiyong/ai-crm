@@ -3,6 +3,9 @@ import { request, streamRequest } from '../httpClient'
 export const agentApi = {
   page: (payload) => request('/api/agent/page', { method: 'POST', body: JSON.stringify(payload || {}) }),
   detail: (id) => request('/api/agent/detail', { method: 'POST', body: JSON.stringify({ id }) }),
+  scenes: () => request('/api/agent/scene/list', { method: 'POST' }),
+  saveScene: (payload) => request('/api/agent/scene/save', { method: 'POST', body: JSON.stringify(payload) }),
+  deleteScene: (id) => request('/api/agent/scene/delete', { method: 'POST', body: JSON.stringify({ id }) }),
   save: (payload) => request('/api/agent/save', { method: 'POST', body: JSON.stringify(payload) }),
   mcps: (agentId) => request('/api/agent/mcp/list', { method: 'POST', body: JSON.stringify({ agentId }) }),
   saveMcp: (payload) => request('/api/agent/mcp/save', { method: 'POST', body: JSON.stringify(payload) }),

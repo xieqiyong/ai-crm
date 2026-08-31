@@ -10,7 +10,7 @@ spring:
   datasource:
     url: jdbc:postgresql://crm-postgres:5432/crm
     username: app_user
-    password: 请修改数据库密码
+    password: 7b8cf6828918a78acd9b7340fc3a7f3494c46f8cd9c0a511
     driver-class-name: org.postgresql.Driver
     druid:
       initial-size: 1
@@ -35,10 +35,10 @@ spring:
     redis:
       host: crm-redis
       port: 6379
-      password: 请修改Redis密码
+      password: 383b83b1d32abc012e9bced26fee617bff0d2a36ab50b3bf
       database: 1
   kafka:
-    bootstrap-servers: localhost:9092
+    bootstrap-servers: 192.168.50.105:9092
 
 logging:
   level:
@@ -56,7 +56,7 @@ crm:
       port: 8080
       cluster-name: DEFAULT
   jwt:
-    secret: 请修改为至少32字节随机密钥
+    secret: 7sK9pR2vG5tB8nQ4dF1jL6zX3cM0aS7hJ2bN
     ttl-seconds: 86400
   auth:
     password-reset:
@@ -79,15 +79,15 @@ crm:
     public-path: /uploads
     minio:
       enabled: false
-      endpoint: http://crm-minio:9000
+      endpoint: http://180.76.225.232:9000
       public-url:
-      access-key: minioadmin
-      secret-key: 请修改MinIO密钥
+      access-key: admin
+      secret-key: Xqy2018101992
       bucket: crm
       public-read: true
   media:
     transcription:
-      enabled: false
+      enabled: true
       max-file-size-bytes: 536870912
       dispatch-delay-ms: 30000
       initial-delay-ms: 10000
@@ -98,11 +98,11 @@ crm:
       ffmpeg-path: ffmpeg
       ffmpeg-timeout-ms: 600000
       volcengine:
-        enabled: false
+        enabled: true
         base-url: https://openspeech.bytedance.com/api/v1/auc
-        appid:
-        token:
-        cluster:
+        appid: 8286999944
+        token: Rz4tuArOiXPKuFS1k74NkqgYqPjETTOE
+        cluster: volc_auc_common
         language: zh-CN
         timeout-ms: 15000
   wecom:
@@ -153,9 +153,9 @@ crm:
       overlap-chars: 120
     embedding:
       enabled: true
-      base-url: http://host.docker.internal:11434/v1
+      base-url: http://192.168.50.233:8080/v1
       api-key:
-      model: bge-m3:latest
+      model: bge-m3
       dimensions: 0
       timeout-ms: 30000
     elasticsearch:

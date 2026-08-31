@@ -6,6 +6,7 @@ from langchain.agents.middleware import ModelCallLimitMiddleware
 from langchain.agents.structured_output import ToolStrategy
 from langchain_core.tools import BaseTool
 
+from app.agents.config import agent_config, workflow_code
 from app.agents.middleware import AgentObservabilityMiddleware
 from app.mcp.registry import McpToolBundle, mcp_registry
 from app.models.chat_model_factory import chat_model_factory
@@ -109,7 +110,7 @@ class ToolCallingAgentFactory:
             values.append(skill_catalog)
         if self._text(workflow_prompt):
             values.append(self._text(workflow_prompt))
-        if (request.scene_code or "").strip().upper() == "LEAD_ANALYZE":
+        if workflow_code(request.agent, request.scene_code) == "LEAD_ANALYSIS":
             if not workflow_prompt:
                 values.append("存在公司名称时必须先调用customer_web_search。")
             values.append(
@@ -134,8 +135,22 @@ class ToolCallingAgentFactory:
         return "\n".join(lines)
 
     def _response_format(self, request: RuntimeRunRequest):
-        scene_code = (request.scene_code or "").strip().upper()
-        if scene_code == "LEAD_ANALYZE":
+        config = agent_config(request.agent)
+        configured = config.get("responseFormat") or config.get("response_format")
+        if isinstance(configured, dict):
+            schema = configured.get("schema") if isinstance(configured.get("schema"), dict) else configured
+            if str(schema.get("type") or "").strip().lower() != "object":
+                raise RuntimeError("智能体结构化输出配置必须是JSON对象Schema")
+            if not str(schema.get("title") or "").strip():
+                schema = dict(schema)
+                schema["title"] = "agent_structured_result"
+            message = configured.get("toolMessageContent") or configured.get("tool_message_content")
+            return ToolStrategy(
+                schema,
+                tool_message_content=str(message or "结构化结果已生成。"),
+                handle_errors=True,
+            )
+        if workflow_code(request.agent, request.scene_code) == "LEAD_ANALYSIS":
             return ToolStrategy(
                 LeadAnalysisResult,
                 tool_message_content="线索结构化分析结果已生成。",

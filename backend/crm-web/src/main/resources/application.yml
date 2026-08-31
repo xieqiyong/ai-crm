@@ -184,7 +184,7 @@ crm:
       overlap-chars: ${CRM_KB_CHUNK_OVERLAP_CHARS:120}
     embedding:
       enabled: ${CRM_KB_EMBEDDING_ENABLED:true}
-      base-url: ${CRM_KB_EMBEDDING_BASE_URL:http://localhost:11434/v1}
+      base-url: ${CRM_KB_EMBEDDING_BASE_URL:http://192.168.50.233:8080/v1}
       api-key: ${CRM_KB_EMBEDDING_API_KEY:}
       model: ${CRM_KB_EMBEDDING_MODEL:bge-m3}
       dimensions: ${CRM_KB_EMBEDDING_DIMENSIONS:0}

@@ -13,7 +13,7 @@ class AgentRepository:
     async def resolve_agent(self, request: RuntimeRunRequest) -> AgentDefinition:
         if self._use_database(request):
             try:
-                agent = await self._load_agent_by_scene(request)
+                agent = await self._load_agent(request)
                 if agent.id:
                     return agent
             except ValueError:
@@ -66,13 +66,13 @@ class AgentRepository:
             logger.warning("读取数据库MCP配置失败，使用请求中的MCP配置，原因：%s", ex)
             return values
 
-    async def _load_agent_by_scene(self, request: RuntimeRunRequest) -> AgentDefinition:
+    async def _load_agent(self, request: RuntimeRunRequest) -> AgentDefinition:
         if request.agent and request.agent.id:
             row = await self._load_agent_by_id(request)
             if row is not None:
                 return self._agent_definition(row)
-            raise ValueError("当前租户和场景下不存在指定智能体，或智能体已停用")
-        row = await database_client.fetch_one(
+            raise ValueError("当前租户下不存在指定智能体，或智能体已停用")
+        rows = await database_client.fetch_all(
             """
             select a.id, a.code, a.scene_code, a.scene_name, a.name, a.description, a.system_prompt,
                    a.model_config_id,
@@ -87,36 +87,15 @@ class AgentRepository:
               on m.tenant_id = a.tenant_id and m.id = a.model_config_id and m.deleted = false
             where a.tenant_id = %s and a.scene_code = %s and a.enabled = true and a.deleted = false
             order by a.updated_at desc
-            limit 1
             """,
             (self._to_int(request.tenant_id), request.scene_code),
         )
+        row = self._select_scene_agent(rows, request.scene_code)
         if row is None:
             return AgentDefinition.from_runtime_agent(request.agent)
         return self._agent_definition(row)
 
     async def _load_agent_by_id(self, request: RuntimeRunRequest) -> dict[str, Any] | None:
-        scene_code = (request.scene_code or "").strip()
-        if scene_code:
-            return await database_client.fetch_one(
-                """
-                select a.id, a.code, a.scene_code, a.scene_name, a.name, a.description, a.system_prompt,
-                       a.model_config_id,
-                       case when a.model_config_id is null then a.model_provider else m.provider end as model_provider,
-                       case when a.model_config_id is null then a.model_name else m.model_name end as model_name,
-                       case when a.model_config_id is null then a.base_url else m.base_url end as base_url,
-                       case when a.model_config_id is null then a.api_key_env else m.api_key_env end as api_key,
-                       a.max_iters, a.extra_config_json,
-                       m.id as resolved_model_config_id, m.enabled as model_config_enabled
-                from agents a
-                left join llm_model_config m
-                  on m.tenant_id = a.tenant_id and m.id = a.model_config_id and m.deleted = false
-                where a.tenant_id = %s and a.id = %s and a.scene_code = %s
-                  and a.enabled = true and a.deleted = false
-                limit 1
-                """,
-                (self._to_int(request.tenant_id), self._to_int(request.agent.id), scene_code),
-            )
         return await database_client.fetch_one(
             """
             select a.id, a.code, a.scene_code, a.scene_name, a.name, a.description, a.system_prompt,
@@ -136,6 +115,23 @@ class AgentRepository:
             (self._to_int(request.tenant_id), self._to_int(request.agent.id)),
         )
 
+    def _select_scene_agent(
+            self,
+            rows: list[dict[str, Any]],
+            scene_code: str | None) -> dict[str, Any] | None:
+        if not rows:
+            return None
+        ranked = []
+        for index, row in enumerate(rows):
+            config = AgentDefinition.from_row(row).config
+            is_default = self._bool_value(config.get("defaultForScene") or config.get("default_for_scene"))
+            priority = self._int_value(config.get("scenePriority") or config.get("scene_priority"))
+            ranked.append((is_default, priority, -index, row))
+        defaults = [item for item in ranked if item[0]]
+        if len(defaults) > 1:
+            logger.warning("场景存在多个默认智能体，将按优先级选择 sceneCode=%s count=%s", scene_code, len(defaults))
+        return max(ranked, key=lambda item: (item[0], item[1], item[2]))[3]
+
     def _agent_definition(self, row: dict[str, Any]) -> AgentDefinition:
         if row.get("model_config_id") is not None:
             if row.get("resolved_model_config_id") is None:
@@ -145,11 +141,23 @@ class AgentRepository:
         return AgentDefinition.from_row(row)
 
     def _use_database(self, request: RuntimeRunRequest) -> bool:
+        has_agent_id = bool(request.agent and request.agent.id)
         return (
             settings.agent_config_source.strip().lower() == "database"
             and database_client.enabled()
-            and bool((request.scene_code or "").strip())
+            and (bool((request.scene_code or "").strip()) or has_agent_id)
         )
+
+    def _bool_value(self, value: Any) -> bool:
+        if isinstance(value, bool):
+            return value
+        return str(value or "").strip().lower() in {"1", "true", "yes", "on"}
+
+    def _int_value(self, value: Any) -> int:
+        try:
+            return int(value or 0)
+        except (TypeError, ValueError):
+            return 0
 
     def _to_int(self, value):
         if value is None or value == "":
