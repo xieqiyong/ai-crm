@@ -5,7 +5,7 @@ from typing import Any
 from langchain.messages import AIMessage, AIMessageChunk, ToolMessage
 from pydantic import BaseModel
 
-from app.runtime.streaming import emit_answer_delta, emit_runtime_status, emit_thought_delta
+from app.runtime.streaming import emit_answer_delta, emit_runtime_event, emit_runtime_status, emit_thought_delta
 from app.services.event_bus import runtime_event
 
 
@@ -77,6 +77,22 @@ class AgentStreamAccumulator:
             return
         content = str(data.get("content") or "").strip()
         if not content:
+            return
+        event_type = str(data.get("type") or "").strip().upper()
+        metadata = data.get("metadata") if isinstance(data.get("metadata"), dict) else {}
+        if event_type == "REPORT_READY":
+            self.events.append(runtime_event(
+                "REPORT_READY",
+                content=content,
+                tool_name=str(data.get("toolName") or "generate_report"),
+                metadata=metadata,
+            ))
+            await emit_runtime_event(
+                "REPORT_READY",
+                content,
+                "报告生成完成",
+                metadata,
+            )
             return
         if data.get("type") == "GRAPH_NODE_STATUS" and str(data.get("status") or "").upper() != "RUNNING":
             self.events.append(runtime_event(

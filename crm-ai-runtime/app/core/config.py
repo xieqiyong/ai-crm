@@ -57,6 +57,15 @@ class Settings(BaseSettings):
     token_daily_limit: int = 0
     token_reserve_output_tokens: int = 4000
 
+    report_enabled: bool = True
+    report_max_content_chars: int = 100000
+    report_local_dir: str = "./data/reports"
+    report_minio_enabled: bool = False
+    report_minio_endpoint: str = "http://localhost:9000"
+    report_minio_access_key: str = ""
+    report_minio_secret_key: str = ""
+    report_minio_bucket: str = "crm"
+
     nacos_enabled: bool = False
     nacos_server_addr: str = "localhost:8848"
     nacos_namespace: str = ""

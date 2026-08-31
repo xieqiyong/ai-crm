@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import {
-  Bot, Check, Copy, FileText, Loader2, MessageSquarePlus,
+  Bot, Check, Copy, Download, FileText, Loader2, MessageSquarePlus,
   Paperclip, RefreshCw, Send, Settings2, Sparkles, Square, Trash2, X,
 } from 'lucide-react'
 import { Badge, Button, ConfirmDialog, EmptyPermission, MarkdownText, useConfirmDialog } from '../../components'
@@ -79,6 +79,26 @@ function appendText(values, value) {
   const text = String(value || '')
   if (!text) return values || ''
   return `${values || ''}${text}`
+}
+
+function formatFileSize(value) {
+  const size = Number(value || 0)
+  if (!Number.isFinite(size) || size <= 0) return ''
+  if (size < 1024) return `${size} B`
+  if (size < 1024 * 1024) return `${(size / 1024).toFixed(1)} KB`
+  return `${(size / 1024 / 1024).toFixed(1)} MB`
+}
+
+function mergeAttachments(current, reports, pending = false) {
+  const values = [...(current || [])]
+  for (const report of reports || []) {
+    if (!report?.artifactId) continue
+    const attachment = { ...report, pending }
+    const index = values.findIndex((item) => String(item.artifactId || '') === String(report.artifactId))
+    if (index >= 0) values[index] = { ...values[index], ...attachment }
+    else values.push(attachment)
+  }
+  return values
 }
 
 export function MarketingAssistantPage({
@@ -372,6 +392,14 @@ export function MarketingAssistantPage({
             setReasoning((value) => appendText(value, content))
             return
           }
+          if (type === 'REPORT_READY') {
+            const reports = Array.isArray(payload?.metadata?.reports) ? payload.metadata.reports : []
+            setMessages((values) => updateLastAssistant(values, (message) => ({
+              attachments: mergeAttachments(message.attachments, reports, true),
+            })))
+            setProgress((values) => appendUnique(values, content || '报告文件已生成'))
+            return
+          }
           if (type === 'RUN_FINISHED') {
             const response = payload?.metadata?.response || {}
             if (response.conversationId) {
@@ -379,6 +407,9 @@ export function MarketingAssistantPage({
               setActiveConversationId(response.conversationId)
             }
             completeAnswer({}, response.reply || '')
+            setMessages((values) => updateLastAssistant(values, (message) => ({
+              attachments: (message.attachments || []).map((item) => ({ ...item, pending: false })),
+            })))
             setProgress((values) => appendUnique(values, '智能体回复完成'))
             return
           }
@@ -389,6 +420,9 @@ export function MarketingAssistantPage({
               streaming: false,
               status: 'FAILED',
             }))
+            setMessages((values) => updateLastAssistant(values, (message) => ({
+              attachments: (message.attachments || []).map((item) => ({ ...item, pending: false })),
+            })))
             setLoading(false)
             setSettling(false)
             setProgress((values) => appendUnique(values, content || '智能体运行失败'))
@@ -413,6 +447,9 @@ export function MarketingAssistantPage({
           streaming: false,
           status: 'STOPPED',
         }))
+        setMessages((values) => updateLastAssistant(values, (message) => ({
+          attachments: (message.attachments || []).map((item) => ({ ...item, pending: false })),
+        })))
         if (nextConversationId) {
           setActiveConversationId(nextConversationId)
           await loadConversations(activeAgent.id)
@@ -448,6 +485,16 @@ export function MarketingAssistantPage({
       window.setTimeout(() => setCopiedId(null), 1200)
     } catch (error) {
       notify('复制失败', 'info')
+    }
+  }
+
+  const downloadReport = async (file) => {
+    if (!file?.artifactId || file.pending) return
+    try {
+      await api.agent.assistantDownloadReport(file.artifactId, file.fileName)
+      notify('报告开始下载', 'success')
+    } catch (error) {
+      notify(error.message || '报告下载失败', 'error')
     }
   }
 
@@ -607,7 +654,22 @@ export function MarketingAssistantPage({
                         : message.streaming ? <div className="agent-typing"><i /><i /><i /></div> : null}
                       {message.attachments?.length > 0 && (
                         <div className="agent-attachment-list">
-                          {message.attachments.map((file) => (
+                          {message.attachments.map((file) => file.artifactId ? (
+                            <button
+                              type="button"
+                              className="agent-report-file"
+                              key={file.artifactId}
+                              disabled={file.pending}
+                              onClick={() => downloadReport(file)}
+                            >
+                              <FileText size={16} />
+                              <span>
+                                <b>{file.fileName}</b>
+                                <small>{file.pending ? '正在整理文件…' : `${String(file.format || '文件').toUpperCase()} ${formatFileSize(file.size)}`}</small>
+                              </span>
+                              {file.pending ? <Loader2 size={15} className="spin" /> : <Download size={15} />}
+                            </button>
+                          ) : (
                             <a key={file.storageKey || file.url} href={file.url} target="_blank" rel="noreferrer">
                               <FileText size={15} />
                               <span>{file.fileName}</span>

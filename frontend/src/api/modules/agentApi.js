@@ -1,4 +1,4 @@
-import { request, streamRequest } from '../httpClient'
+import { downloadRequest, request, streamRequest } from '../httpClient'
 
 export const agentApi = {
   page: (payload) => request('/api/agent/page', { method: 'POST', body: JSON.stringify(payload || {}) }),
@@ -30,6 +30,10 @@ export const agentApi = {
     method: 'POST',
     body: JSON.stringify({ conversationId }),
   }),
+  assistantDownloadReport: (artifactId, fileName) => downloadRequest('/api/agent-assistant/report/download', {
+    method: 'POST',
+    body: JSON.stringify({ artifactId }),
+  }, fileName || '智能分析报告'),
   assistantStopRun: (requestId) => request('/api/agent-assistant/run/stop', {
     method: 'POST',
     body: JSON.stringify({ requestId }),

@@ -12,6 +12,7 @@
 - 使用 LangGraph v2 `messages / updates / custom / values` 多模式流，直接输出模型 Token、工具状态和最终状态。
 - 使用官方 Checkpointer 保存会话图状态；生产环境通过异步 PostgreSQL 连接池复用连接。
 - 通用助手使用 `create_agent`；线索分析保留显式 `StateGraph`，并把标准结构化 Agent 作为分析子图。
+- 使用 `generate_report` 通用工具生成 Word、PDF 和 HTML，并通过受权限保护的下载接口返回文件卡片。
 
 详细设计见 [docs/architecture.md](docs/architecture.md)。
 
@@ -47,6 +48,7 @@ app/
 │  ├─ executor.py            # Checkpoint、执行、取消、持久化
 │  └─ stream_adapter.py      # LangGraph 流到前端 SSE 协议的适配
 ├─ tools/                    # 标准 LangChain 工具及权限注册
+├─ reports/                  # Markdown报告解析、文件渲染和MinIO存储
 ├─ mcp/                      # MCP 动态加载
 ├─ persistence/              # Checkpoint 与业务持久化
 └─ api/                      # FastAPI 接口
@@ -91,6 +93,36 @@ CRM_AI_DATABASE_ENABLED=true
 CRM_AI_DATABASE_URI=postgresql://用户名:密码@localhost:5432/crm
 ```
 
+## 报告生成
+
+智能体可以按需挂载 `generate_report` 工具。模型负责生成完整的 Markdown 报告内容，Python 使用确定性模板渲染文件，不让模型直接生成二进制内容。
+
+支持格式：
+
+- `docx`：适合销售继续修改。
+- `pdf`：适合归档和对外发送。
+- `html`：适合浏览器查看和二次转换。
+
+本地调试可以将文件保存到本地目录：
+
+```env
+CRM_AI_REPORT_ENABLED=true
+CRM_AI_REPORT_LOCAL_DIR=./data/reports
+CRM_AI_REPORT_MINIO_ENABLED=false
+```
+
+生产环境建议存入 MinIO：
+
+```env
+CRM_AI_REPORT_MINIO_ENABLED=true
+CRM_AI_REPORT_MINIO_ENDPOINT=http://crm-minio:9000
+CRM_AI_REPORT_MINIO_ACCESS_KEY=访问账号
+CRM_AI_REPORT_MINIO_SECRET_KEY=访问密码
+CRM_AI_REPORT_MINIO_BUCKET=crm
+```
+
+报告元数据作为 `REPORT_READY` 事件写入 `agent_events`，文件下载时同时校验租户、当前用户、会话和报告归属。聊天历史会从事件中恢复报告卡片。
+
 ## Checkpoint
 
 本地临时调试可以使用内存：
@@ -122,6 +154,7 @@ python -m app.persistence.setup_checkpoint
 
 - `POST /api/agent-assistant/run/stream`：智能体 SSE 流式会话。
 - `POST /api/agent-assistant/run/stop`：终止正在执行的回答。
+- `POST /api/agent-assistant/report/download`：下载当前用户会话中生成的报告文件。
 - `POST /api/assistant/lead/analyze`：线索结构化 AI 分析。
 - `POST /internal/ai/runtime/run`：受内部令牌保护的运行时接口。
 - `POST /health`：健康检查。

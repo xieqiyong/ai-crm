@@ -16,6 +16,8 @@ class AgentExecutionContext:
     credential_key: str | None
     trace_id: str | None
     skills: tuple[SkillDefinition, ...]
+    run_id: str = ""
+    conversation_id: str | None = None
 
     @classmethod
     def from_request(
@@ -28,6 +30,8 @@ class AgentExecutionContext:
         return cls(
             tenant_id=request.tenant_id,
             user_id=request.user_id,
+            run_id=str(request.run_id or ""),
+            conversation_id=str(request.conversation_id) if request.conversation_id else None,
             scene_code=(request.scene_code or "GENERAL_ASSISTANT").strip().upper(),
             data_scope=str(request.context.get("dataScope") or "SELF"),
             permissions=tuple(str(item) for item in permissions if item),

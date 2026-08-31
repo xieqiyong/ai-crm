@@ -1,8 +1,9 @@
 import asyncio
 import json
 import logging
+from urllib.parse import quote
 from fastapi import APIRouter, Depends, HTTPException, Request
-from fastapi.responses import StreamingResponse
+from fastapi.responses import Response, StreamingResponse
 
 from app.core.auth import CurrentPrincipal, require_any_authority, require_current_principal
 from app.core.config import settings
@@ -13,6 +14,7 @@ from app.runtime.assistant_repository import assistant_repository
 from app.runtime.business_repository import business_repository
 from app.runtime.executor import agent_runtime_executor
 from app.runtime.streaming import STREAM_END, RuntimeStream, reset_runtime_stream, set_runtime_stream
+from app.reports.service import report_service
 from app.schemas.runtime import (
     AgentIdManageRequest,
     AgentManageRequest,
@@ -285,6 +287,34 @@ async def public_assistant_messages(http_request: Request):
         ))
     except ValueError as ex:
         return api_fail("AI_ASSISTANT_001", str(ex))
+
+
+@router.post("/api/agent-assistant/report/download")
+async def public_assistant_report_download(http_request: Request):
+    principal = require_current_principal(http_request)
+    require_any_authority(principal, "crm:assistant:use", "crm:agent:manage")
+    payload = await json_body(http_request)
+    try:
+        report = await report_service.find_artifact(
+            principal.tenant_id,
+            principal.user_id,
+            payload.get("artifactId"),
+        )
+        content = await report_service.read_artifact(report)
+        file_name = str(report.get("fileName") or "智能分析报告")
+        content_type = str(report.get("contentType") or "application/octet-stream")
+        return Response(
+            content=content,
+            media_type=content_type,
+            headers={
+                "Content-Disposition": "attachment; filename*=UTF-8''" + quote(file_name),
+                "Cache-Control": "private, no-store",
+            },
+        )
+    except ValueError as ex:
+        raise HTTPException(status_code=404, detail=str(ex)) from ex
+    except RuntimeError as ex:
+        raise HTTPException(status_code=500, detail=str(ex)) from ex
 
 
 @router.post("/api/agent-assistant/conversation/delete")

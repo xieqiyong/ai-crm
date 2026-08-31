@@ -5,6 +5,7 @@ from langchain.tools import ToolRuntime, tool
 
 from app.core.credentials import runtime_credential_store
 from app.runtime.execution_context import AgentExecutionContext
+from app.reports.service import report_service
 from app.services.crm_api import crm_api_client
 from app.tools.customer_web_search import customer_web_search
 
@@ -85,6 +86,44 @@ async def load_skill(
         "description": skill.description,
         "content": skill.content,
         "config": skill.config,
+    })
+
+
+@tool
+async def generate_report(
+        runtime: ToolRuntime[AgentExecutionContext],
+        title: str,
+        content: str,
+        formats: list[str] | None = None) -> str:
+    """将完整的Markdown报告生成Word、PDF或HTML文件；仅在用户明确要求生成或下载报告时调用。"""
+    _emit(runtime, "正在生成报告文件", "generate_report")
+    reports = await report_service.generate(
+        tenant_id=runtime.context.tenant_id,
+        user_id=runtime.context.user_id,
+        run_id=runtime.context.run_id,
+        conversation_id=runtime.context.conversation_id,
+        title=title,
+        content=content,
+        formats=formats,
+    )
+    runtime.stream_writer({
+        "type": "REPORT_READY",
+        "content": "报告文件已生成",
+        "toolName": "generate_report",
+        "metadata": {"reports": reports},
+    })
+    return _json({
+        "success": True,
+        "message": "报告文件已生成，请提示用户从文件卡片下载。",
+        "reports": [
+            {
+                "artifactId": item.get("artifactId"),
+                "fileName": item.get("fileName"),
+                "format": item.get("format"),
+                "size": item.get("size"),
+            }
+            for item in reports
+        ],
     })
 
 

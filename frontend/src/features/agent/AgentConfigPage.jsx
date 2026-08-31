@@ -48,6 +48,7 @@ const BUILTIN_TOOL_OPTIONS = [
   { value: 'crm_followup_detail', label: '查询跟进详情' },
   { value: 'crm_opportunity_page', label: '查询商机列表' },
   { value: 'crm_opportunity_detail', label: '查询商机详情' },
+  { value: 'generate_report', label: '生成Word、PDF或HTML报告' },
 ]
 
 const TRANSPORT_OPTIONS = [

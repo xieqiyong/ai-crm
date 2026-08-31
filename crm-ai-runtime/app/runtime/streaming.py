@@ -69,3 +69,14 @@ async def emit_runtime_status(content: str, metadata: dict[str, Any] | None = No
     if stream is None:
         return
     await stream.emit("RUN_STATUS_CHANGED", content, "执行进度", metadata or {})
+
+
+async def emit_runtime_event(
+        event_type: str,
+        content: str = "",
+        stage: str = "运行事件",
+        metadata: dict[str, Any] | None = None) -> None:
+    stream = current_runtime_stream.get()
+    if stream is None:
+        return
+    await stream.emit(event_type, content, stage, metadata or {})

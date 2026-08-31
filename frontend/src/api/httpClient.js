@@ -103,6 +103,54 @@ export async function streamRequest(path, options = {}, handlers = {}) {
   return lastPayload
 }
 
+export async function downloadRequest(path, options = {}, fallbackName = '下载文件') {
+  const auth = getStoredAuth()
+  const headers = { ...(options.headers || {}) }
+  const hasBody = Object.prototype.hasOwnProperty.call(options, 'body')
+  if (hasBody && !(options.body instanceof FormData)) {
+    headers['Content-Type'] = headers['Content-Type'] || 'application/json'
+  }
+  if (auth?.token) headers.Authorization = `Bearer ${auth.token}`
+  const response = await fetch(appendQuery(joinUrl(path), options.params), {
+    ...options,
+    headers,
+  })
+  if (response.status === 401) {
+    clearAuth()
+    throw new Error('登录已失效，请重新登录')
+  }
+  if (!response.ok) {
+    const text = await response.text().catch(() => '')
+    const result = parseMaybeJson(text)
+    throw new Error(result?.detail || result?.message || `文件下载失败：${response.status}`)
+  }
+  const blob = await response.blob()
+  const fileName = responseFileName(response.headers.get('Content-Disposition')) || fallbackName
+  const objectUrl = window.URL.createObjectURL(blob)
+  const anchor = document.createElement('a')
+  anchor.href = objectUrl
+  anchor.download = fileName
+  document.body.appendChild(anchor)
+  anchor.click()
+  anchor.remove()
+  window.setTimeout(() => window.URL.revokeObjectURL(objectUrl), 1000)
+  return fileName
+}
+
+function responseFileName(contentDisposition) {
+  const value = String(contentDisposition || '')
+  const encoded = value.match(/filename\*=UTF-8''([^;]+)/i)
+  if (encoded?.[1]) {
+    try {
+      return decodeURIComponent(encoded[1].trim())
+    } catch {
+      return encoded[1].trim()
+    }
+  }
+  const plain = value.match(/filename="?([^";]+)"?/i)
+  return plain?.[1]?.trim() || ''
+}
+
 function dispatchStreamEvent(event, handlers) {
   const payload = event?.payload
   const name = event?.name || 'message'

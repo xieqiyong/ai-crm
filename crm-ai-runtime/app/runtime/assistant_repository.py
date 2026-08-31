@@ -3,6 +3,7 @@ from datetime import datetime
 from typing import Any
 
 from app.platform.database import database_client
+from app.reports.service import reports_from_metadata
 
 
 class AssistantRepository:
@@ -102,11 +103,30 @@ class AssistantRepository:
             """,
             (self._to_int(tenant_id), self._to_int(user_id), self._to_int(conversation_id)),
         )
+        report_rows = await database_client.fetch_all(
+            """
+            select e.run_id, e.metadata_json
+            from agent_events e
+            inner join agent_run r
+              on r.tenant_id = e.tenant_id and r.id = e.run_id and r.deleted = false
+            where e.tenant_id = %s and r.user_id = %s and e.conversation_id = %s
+              and e.event_type = 'REPORT_READY'
+            order by e.sequence_no asc
+            """,
+            (self._to_int(tenant_id), self._to_int(user_id), self._to_int(conversation_id)),
+        )
+        reports_by_run: dict[str, list[dict[str, Any]]] = {}
+        for report_row in report_rows:
+            run_id = str(report_row.get("run_id") or "")
+            reports_by_run.setdefault(run_id, []).extend(reports_from_metadata(report_row.get("metadata_json")))
         result: list[dict[str, Any]] = []
         for row in rows:
             result.append(self._user_message(row))
             if row.get("output_text") or row.get("status") in {"FAILED", "STOPPED"}:
-                result.append(self._assistant_message(row))
+                result.append(self._assistant_message(
+                    row,
+                    reports_by_run.get(str(row.get("id") or ""), []),
+                ))
         return result
 
     async def delete_conversation(self, tenant_id: str, user_id: str, conversation_id: str) -> bool:
@@ -174,7 +194,10 @@ class AssistantRepository:
             "attachments": attachments if isinstance(attachments, list) else [],
         }
 
-    def _assistant_message(self, row: dict[str, Any]) -> dict[str, Any]:
+    def _assistant_message(
+            self,
+            row: dict[str, Any],
+            reports: list[dict[str, Any]] | None = None) -> dict[str, Any]:
         status = row.get("status")
         content = row.get("output_text") or ""
         if status == "FAILED" and not content:
@@ -187,7 +210,18 @@ class AssistantRepository:
             "content": content,
             "status": status,
             "createdAt": self._datetime(row.get("finished_at") or row.get("updated_at")),
-            "attachments": [],
+            "attachments": [self._report_attachment(item) for item in reports or []],
+        }
+
+    def _report_attachment(self, report: dict[str, Any]) -> dict[str, Any]:
+        return {
+            "artifactId": report.get("artifactId"),
+            "fileName": report.get("fileName"),
+            "contentType": report.get("contentType"),
+            "format": report.get("format"),
+            "size": report.get("size"),
+            "downloadEndpoint": report.get("downloadEndpoint") or "/api/agent-assistant/report/download",
+            "createdAt": report.get("createdAt"),
         }
 
     def _parse_context(self, value: str | None) -> dict[str, Any]:

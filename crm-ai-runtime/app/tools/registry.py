@@ -15,6 +15,7 @@ from app.tools.builtin import (
     crm_opportunity_detail,
     crm_opportunity_page,
     customer_web_search_tool,
+    generate_report,
     knowledge_hybrid_search,
 )
 
@@ -47,6 +48,12 @@ class ToolRegistry:
             ToolDefinition(
                 tool=knowledge_hybrid_search,
                 authorities={"crm:assistant:use", "crm:knowledge:manage"},
+            )
+        )
+        self.register(
+            ToolDefinition(
+                tool=generate_report,
+                authorities={"crm:assistant:use", "crm:agent:manage"},
             )
         )
         self._register_crm_tools()

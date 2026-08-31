@@ -3801,6 +3801,52 @@ h1, h2, h3, p { margin-top: 0; }
   background: color-mix(in srgb, var(--surface) 92%, transparent);
 }
 
+.agent-attachment-list .agent-report-file {
+  width: 100%;
+  min-width: 0;
+  display: grid;
+  grid-template-columns: 20px minmax(0, 1fr) 20px;
+  align-items: center;
+  gap: 10px;
+  padding: 11px 13px;
+  border: 1px solid color-mix(in srgb, var(--brand) 16%, var(--line));
+  border-radius: 14px;
+  background: linear-gradient(135deg, color-mix(in srgb, var(--brand) 7%, var(--surface)), var(--surface));
+  color: var(--text);
+  text-align: left;
+  cursor: pointer;
+  transition: border-color .16s ease, transform .16s ease, box-shadow .16s ease;
+}
+
+.agent-attachment-list .agent-report-file:hover:not(:disabled) {
+  border-color: color-mix(in srgb, var(--brand) 42%, var(--line));
+  transform: translateY(-1px);
+  box-shadow: 0 8px 22px color-mix(in srgb, var(--brand) 10%, transparent);
+}
+
+.agent-attachment-list .agent-report-file:disabled {
+  cursor: wait;
+  opacity: .72;
+}
+
+.agent-attachment-list .agent-report-file > span {
+  min-width: 0;
+  display: grid;
+  gap: 2px;
+}
+
+.agent-attachment-list .agent-report-file b,
+.agent-attachment-list .agent-report-file small {
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.agent-attachment-list .agent-report-file b {
+  font-size: 13px;
+  font-weight: 650;
+}
+
 .agent-composer-wrap {
   padding: 12px max(24px, 7vw) 22px;
   border-top: 0;
