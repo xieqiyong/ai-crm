@@ -153,6 +153,7 @@ class AgentSaveManageRequest(CamelModel):
     extra_config_json: str | None = Field(default=None, alias="extraConfigJson")
     remark: str | None = None
     enabled: bool | None = None
+    frontend_visible: bool | None = Field(default=None, alias="frontendVisible")
 
 
 class AgentMcpSaveManageRequest(CamelModel):

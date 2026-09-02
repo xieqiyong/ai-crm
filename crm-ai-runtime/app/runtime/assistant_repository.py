@@ -12,7 +12,9 @@ class AssistantRepository:
             """
             select
                 a.id, a.code, a.scene_code, a.scene_name, a.name, a.description,
-                a.model_provider, a.model_name, a.max_iters, a.enabled,
+                case when a.model_config_id is null then a.model_provider else m.provider end as model_provider,
+                case when a.model_config_id is null then a.model_name else m.model_name end as model_name,
+                a.max_iters, a.enabled,
                 (
                     select count(1)
                     from conversation c
@@ -30,7 +32,10 @@ class AssistantRepository:
                       and c.deleted = false
                 ) as last_message_at
             from agents a
-            where a.tenant_id = %s and a.enabled = true and a.deleted = false
+            left join llm_model_config m
+              on m.tenant_id = a.tenant_id and m.id = a.model_config_id and m.deleted = false
+            where a.tenant_id = %s and a.enabled = true and a.frontend_visible = true
+              and a.deleted = false
             order by a.updated_at desc
             """,
             (self._to_int(user_id), self._to_int(user_id), self._to_int(tenant_id)),
@@ -40,17 +45,30 @@ class AssistantRepository:
     async def agent_runtime_payload(self, tenant_id: str, agent_id: str) -> dict[str, Any]:
         row = await database_client.fetch_one(
             """
-            select id, code, scene_code, scene_name, name, description, system_prompt,
-                   model_provider, model_name, base_url, api_key_env as api_key,
-                   max_iters, extra_config_json
-            from agents
-            where tenant_id = %s and id = %s and enabled = true and deleted = false
+            select a.id, a.code, a.scene_code, a.scene_name, a.name, a.description,
+                   a.system_prompt, a.model_config_id,
+                   case when a.model_config_id is null then a.model_provider else m.provider end as model_provider,
+                   case when a.model_config_id is null then a.model_name else m.model_name end as model_name,
+                   case when a.model_config_id is null then a.base_url else m.base_url end as base_url,
+                   case when a.model_config_id is null then a.api_key_env else m.api_key_env end as api_key,
+                   a.max_iters, a.extra_config_json,
+                   m.id as resolved_model_config_id, m.enabled as model_config_enabled
+            from agents a
+            left join llm_model_config m
+              on m.tenant_id = a.tenant_id and m.id = a.model_config_id and m.deleted = false
+            where a.tenant_id = %s and a.id = %s and a.enabled = true
+              and a.frontend_visible = true and a.deleted = false
             limit 1
             """,
             (self._to_int(tenant_id), self._to_int(agent_id)),
         )
         if row is None:
             raise ValueError("智能体不存在或已停用")
+        if row.get("model_config_id") is not None:
+            if row.get("resolved_model_config_id") is None:
+                raise ValueError("智能体关联的大模型配置不存在")
+            if not bool(row.get("model_config_enabled")):
+                raise ValueError("智能体关联的大模型配置已停用")
         return {
             "id": self._id_text(row.get("id")),
             "code": row.get("code"),
@@ -71,10 +89,15 @@ class AssistantRepository:
         if agent_id:
             rows = await database_client.fetch_all(
                 """
-                select id, agent_id, title, scene_code, status, last_message_at, created_at
-                from conversation
-                where tenant_id = %s and user_id = %s and agent_id = %s and deleted = false
-                order by last_message_at desc
+                select c.id, c.agent_id, c.title, c.scene_code, c.status,
+                       c.last_message_at, c.created_at
+                from conversation c
+                inner join agents a
+                  on a.tenant_id = c.tenant_id and a.id = c.agent_id
+                 and a.enabled = true and a.frontend_visible = true and a.deleted = false
+                where c.tenant_id = %s and c.user_id = %s and c.agent_id = %s
+                  and c.deleted = false
+                order by c.last_message_at desc
                 limit 50
                 """,
                 (self._to_int(tenant_id), self._to_int(user_id), self._to_int(agent_id)),
@@ -82,10 +105,14 @@ class AssistantRepository:
         else:
             rows = await database_client.fetch_all(
                 """
-                select id, agent_id, title, scene_code, status, last_message_at, created_at
-                from conversation
-                where tenant_id = %s and user_id = %s and deleted = false
-                order by last_message_at desc
+                select c.id, c.agent_id, c.title, c.scene_code, c.status,
+                       c.last_message_at, c.created_at
+                from conversation c
+                inner join agents a
+                  on a.tenant_id = c.tenant_id and a.id = c.agent_id
+                 and a.enabled = true and a.frontend_visible = true and a.deleted = false
+                where c.tenant_id = %s and c.user_id = %s and c.deleted = false
+                order by c.last_message_at desc
                 limit 50
                 """,
                 (self._to_int(tenant_id), self._to_int(user_id)),
@@ -144,9 +171,12 @@ class AssistantRepository:
     async def _require_conversation(self, tenant_id: str, user_id: str, conversation_id: str) -> None:
         row = await database_client.fetch_one(
             """
-            select id
-            from conversation
-            where tenant_id = %s and user_id = %s and id = %s and deleted = false
+            select c.id
+            from conversation c
+            inner join agents a
+              on a.tenant_id = c.tenant_id and a.id = c.agent_id
+             and a.enabled = true and a.frontend_visible = true and a.deleted = false
+            where c.tenant_id = %s and c.user_id = %s and c.id = %s and c.deleted = false
             limit 1
             """,
             (self._to_int(tenant_id), self._to_int(user_id), self._to_int(conversation_id)),

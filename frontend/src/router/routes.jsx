@@ -90,13 +90,6 @@ export const routeGroups = [
     label: 'AI 与知识',
     items: [
       {
-        key: 'assistant',
-        label: 'AI 智能体助手',
-        icon: Bot,
-        permission: 'menu.assistant',
-        component: MarketingAssistantPage,
-      },
-      {
         key: 'agent-config',
         label: '智能体配置',
         icon: Bot,
@@ -167,6 +160,12 @@ export const routeGroups = [
 ]
 
 export const hiddenRoutes = [
+  {
+    key: 'assistant',
+    label: 'AI 智能体助手',
+    permission: 'menu.assistant',
+    component: MarketingAssistantPage,
+  },
   {
     key: 'leads/detail',
     label: '线索详情',

@@ -1,9 +1,9 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import {
-  Bot, Check, Copy, Download, FileText, Loader2, MessageSquarePlus,
-  Paperclip, RefreshCw, Send, Settings2, Sparkles, Square, Trash2, X,
+  Bot, Check, Copy, Download, FileText, History, Loader2, MessageSquarePlus,
+  PanelRightClose, Paperclip, RefreshCw, Send, Settings2, Sparkles, Square, Trash2, X,
 } from 'lucide-react'
-import { Badge, Button, ConfirmDialog, EmptyPermission, MarkdownText, useConfirmDialog } from '../../components'
+import { Badge, Button, ConfirmDialog, EmptyPermission, MarkdownText, Select, useConfirmDialog } from '../../components'
 import { api } from '../../api'
 import { runtimeConfig } from '../../config/env'
 
@@ -105,6 +105,11 @@ export function MarketingAssistantPage({
   navigate,
   notify,
   can,
+  compact = false,
+  availableAgents,
+  preferredAgentId = null,
+  onAgentChange,
+  onClose,
 }) {
   const [agents, setAgents] = useState([])
   const [activeAgentId, setActiveAgentId] = useState(null)
@@ -119,6 +124,7 @@ export function MarketingAssistantPage({
   const [progress, setProgress] = useState([])
   const [reasoning, setReasoning] = useState('')
   const [copiedId, setCopiedId] = useState(null)
+  const [historyOpen, setHistoryOpen] = useState(false)
   const { confirm, dialogProps } = useConfirmDialog()
   const fileInputRef = useRef(null)
   const scrollRef = useRef(null)
@@ -133,9 +139,19 @@ export function MarketingAssistantPage({
     [agents, activeAgentId],
   )
   useEffect(() => {
-    if (!can('crm:assistant:use')) return
+    if (!can('crm:assistant:use') && !can('crm:agent:manage')) return
+    if (Array.isArray(availableAgents)) {
+      setAgents(availableAgents)
+      setActiveAgentId((current) => {
+        const preferred = availableAgents.find((item) => String(item.id) === String(preferredAgentId))
+        if (preferred) return preferred.id
+        if (availableAgents.some((item) => String(item.id) === String(current))) return current
+        return availableAgents[0]?.id || null
+      })
+      return
+    }
     loadAgents()
-  }, [])
+  }, [availableAgents])
 
   useEffect(() => {
     if (!activeAgentId) {
@@ -144,6 +160,14 @@ export function MarketingAssistantPage({
     }
     loadConversations(activeAgentId)
   }, [activeAgentId])
+
+  useEffect(() => {
+    if (!preferredAgentId || runActive) return
+    const preferred = agents.find((item) => String(item.id) === String(preferredAgentId))
+    if (preferred && String(preferred.id) !== String(activeAgentId)) {
+      selectAgent(preferred)
+    }
+  }, [preferredAgentId, agents, runActive])
 
   useEffect(() => {
     const element = scrollRef.current
@@ -163,7 +187,7 @@ export function MarketingAssistantPage({
     }
   }, [])
 
-  if (!can('crm:assistant:use')) {
+  if (!can('crm:assistant:use') && !can('crm:agent:manage')) {
     return <EmptyPermission onBack={() => navigate('dashboard')} />
   }
 
@@ -171,9 +195,12 @@ export function MarketingAssistantPage({
     try {
       const rows = await api.agent.assistantAgents()
       setAgents(rows || [])
-      if (!activeAgentId && rows?.length) {
-        setActiveAgentId(rows[0].id)
-      }
+      setActiveAgentId((current) => {
+        const preferred = (rows || []).find((item) => String(item.id) === String(preferredAgentId))
+        if (preferred) return preferred.id
+        if ((rows || []).some((item) => String(item.id) === String(current))) return current
+        return rows?.[0]?.id || null
+      })
     } catch (error) {
       notify(error.message || '智能体列表加载失败', 'info')
     }
@@ -209,6 +236,7 @@ export function MarketingAssistantPage({
     setReasoning('')
     setAttachments([])
     setInput('')
+    setHistoryOpen(false)
   }
 
   const selectAgent = (agent) => {
@@ -219,6 +247,8 @@ export function MarketingAssistantPage({
     setProgress([])
     setReasoning('')
     setAttachments([])
+    setHistoryOpen(false)
+    onAgentChange?.(agent)
   }
 
   const deleteConversation = async (conversation) => {
@@ -499,9 +529,9 @@ export function MarketingAssistantPage({
   }
 
   return (
-    <div className="page agent-assistant-page">
+    <div className={`page agent-assistant-page ${compact ? 'agent-assistant-compact' : ''}`}>
       <section className="agent-assistant-shell">
-        <aside className="agent-assistant-sidebar">
+        {!compact && <aside className="agent-assistant-sidebar">
           <div className="agent-assistant-side-head">
             <div>
               <span className="eyebrow">智能体工作台</span>
@@ -567,33 +597,106 @@ export function MarketingAssistantPage({
               </div>
             )}
           </div>
-        </aside>
+        </aside>}
 
         <main className="agent-chat-main">
           <header className="agent-chat-head">
             <div>
               <span className="agent-avatar"><Sparkles size={18} /></span>
               <div>
-                <strong>{activeAgent?.name || '请选择智能体'}</strong>
-                <small>{activeAgent ? `${agentScene(activeAgent)} · ${activeAgent.modelName || '未配置模型'}` : '左侧选择一个智能体开始'}</small>
+                {compact ? (
+                  <Select
+                    className="agent-compact-selector"
+                    value={activeAgentId || ''}
+                    disabled={runActive}
+                    searchable={agents.length > 6}
+                    searchPlaceholder="搜索智能体"
+                    placeholder="请选择智能体"
+                    emptyText="暂无允许前台展示的智能体"
+                    options={agents.map((agent) => ({
+                      value: agent.id,
+                      label: agent.name,
+                      description: `${agentScene(agent)} · ${agent.conversationCount || 0} 个会话`,
+                    }))}
+                    onChange={(value) => {
+                      const agent = agents.find((item) => String(item.id) === String(value))
+                      if (agent) selectAgent(agent)
+                    }}
+                  />
+                ) : <strong>{activeAgent?.name || '请选择智能体'}</strong>}
+                <small>{activeAgent ? `${agentScene(activeAgent)} · ${activeAgent.modelName || '未配置模型'}` : compact ? '请先配置允许前台展示的智能体' : '左侧选择一个智能体开始'}</small>
               </div>
             </div>
             <div className="agent-chat-actions">
-              <Badge tone={loading ? 'warning' : activeAgent ? 'success' : 'neutral'}>
-                {loading ? '正在回答' : activeAgent ? '可继续对话' : '未选择'}
-              </Badge>
+              {!compact && (
+                <Badge tone={loading ? 'warning' : activeAgent ? 'success' : 'neutral'}>
+                  {loading ? '正在回答' : activeAgent ? '可继续对话' : '未选择'}
+                </Badge>
+              )}
               {loading && (
                 <button onClick={stopGenerating}>
                   <Square size={15} /> 终止回答
                 </button>
               )}
-              {can('crm:agent:manage') && (
+              {compact && (
+                <>
+                  <button onClick={startConversation} disabled={runActive} title="新起会话">
+                    <MessageSquarePlus size={15} /> 新会话
+                  </button>
+                  <button className={historyOpen ? 'active' : ''} onClick={() => setHistoryOpen((value) => !value)} title="历史会话">
+                    <History size={15} /> 历史
+                  </button>
+                  <button onClick={onClose} title="收起 AI 助手">
+                    <PanelRightClose size={15} /> 收起
+                  </button>
+                </>
+              )}
+              {!compact && can('crm:agent:manage') && (
                 <button onClick={() => navigate('agent-config')}>
                   <Settings2 size={15} /> 配置管理
                 </button>
               )}
             </div>
           </header>
+
+          {compact && historyOpen && (
+            <aside className="agent-compact-history">
+              <div className="agent-compact-history-head">
+                <div><strong>历史会话</strong><small>{activeAgent?.name || '未选择智能体'}</small></div>
+                <button className="icon-button" onClick={() => setHistoryOpen(false)} aria-label="关闭历史会话"><X size={16} /></button>
+              </div>
+              <div className="conversation-list">
+                {conversations.map((conversation) => (
+                  <div
+                    key={conversation.id}
+                    className={`conversation-item ${String(activeConversationId) === String(conversation.id) ? 'active' : ''}`}
+                  >
+                    <button
+                      className="conversation-main"
+                      onClick={() => {
+                        loadMessages(conversation)
+                        setHistoryOpen(false)
+                      }}
+                    >
+                      <strong>{conversation.title || '未命名会话'}</strong>
+                      <small>{formatTime(conversation.lastMessageAt || conversation.createdAt)}</small>
+                    </button>
+                    <span className="conversation-actions">
+                      <button className="danger" title="删除会话" disabled={runActive} onClick={() => deleteConversation(conversation)}>
+                        <Trash2 size={13} />
+                      </button>
+                    </span>
+                  </div>
+                ))}
+                {!conversations.length && (
+                  <div className="agent-assistant-empty compact">
+                    <b>还没有历史会话</b>
+                    <small>发送第一条消息后，会话会保存在这里。</small>
+                  </div>
+                )}
+              </div>
+            </aside>
+          )}
 
           <div
             className="agent-chat-scroll"

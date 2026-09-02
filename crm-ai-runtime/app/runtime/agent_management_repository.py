@@ -20,12 +20,19 @@ class AgentManagementRepository:
         )
         rows = await database_client.fetch_all(
             """
-            select id, tenant_id, code, scene_code, scene_name, name, description, system_prompt,
-                   model_config_id, model_provider, model_name, base_url, max_iters,
-                   extra_config_json, remark, enabled, deleted, created_at, updated_at
-            from agents
-            where tenant_id = %s and deleted = false
-            order by created_at desc
+            select a.id, a.tenant_id, a.code, a.scene_code, a.scene_name, a.name,
+                   a.description, a.system_prompt, a.model_config_id,
+                   case when a.model_config_id is null then a.model_provider else m.provider end as model_provider,
+                   case when a.model_config_id is null then a.model_name else m.model_name end as model_name,
+                   case when a.model_config_id is null then a.base_url else m.base_url end as base_url,
+                   a.max_iters, a.extra_config_json, a.remark, a.enabled, a.frontend_visible,
+                   a.deleted,
+                   a.created_at, a.updated_at
+            from agents a
+            left join llm_model_config m
+              on m.tenant_id = a.tenant_id and m.id = a.model_config_id and m.deleted = false
+            where a.tenant_id = %s and a.deleted = false
+            order by a.created_at desc
             limit %s offset %s
             """,
             (self._to_int(tenant_id), safe_page_size, offset),
@@ -194,6 +201,10 @@ class AgentManagementRepository:
         if not self._bool(scene.get("enabled"), True):
             raise ValueError("业务场景已停用")
         enabled = self._bool(payload.get("enabled"), True)
+        frontend_visible = self._bool(
+            payload.get("frontendVisible") if "frontendVisible" in payload else payload.get("frontend_visible"),
+            self._bool(existing.get("frontend_visible"), True) if existing else True,
+        )
         code = self._resolve_agent_code(agent_id, existing, payload, scene_code)
         extra_config_json = self._normalize_extra_config(
             payload.get("extraConfigJson") or payload.get("extra_config_json")
@@ -216,6 +227,7 @@ class AgentManagementRepository:
             extra_config_json,
             self._trim(payload.get("remark")),
             enabled,
+            frontend_visible,
             False,
             existing.get("created_at") if existing else now,
             now,
@@ -225,8 +237,8 @@ class AgentManagementRepository:
             insert into agents (
                 id, tenant_id, code, scene_code, scene_name, name, description, system_prompt,
                 model_config_id, model_provider, model_name, base_url, api_key_env, max_iters,
-                extra_config_json, remark, enabled, deleted, created_at, updated_at
-            ) values (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                extra_config_json, remark, enabled, frontend_visible, deleted, created_at, updated_at
+            ) values (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
             on conflict (id) do update set
                 code = excluded.code,
                 scene_code = excluded.scene_code,
@@ -243,6 +255,7 @@ class AgentManagementRepository:
                 extra_config_json = excluded.extra_config_json,
                 remark = excluded.remark,
                 enabled = excluded.enabled,
+                frontend_visible = excluded.frontend_visible,
                 deleted = false,
                 updated_at = excluded.updated_at
             """,
@@ -514,11 +527,19 @@ class AgentManagementRepository:
             raise ValueError("Agent编号不能为空")
         row = await database_client.fetch_one(
             """
-            select id, tenant_id, code, scene_code, scene_name, name, description, system_prompt,
-                   model_config_id, model_provider, model_name, base_url, api_key_env as api_key,
-                   max_iters, extra_config_json, remark, enabled, deleted, created_at, updated_at
-            from agents
-            where tenant_id = %s and id = %s and deleted = false
+            select a.id, a.tenant_id, a.code, a.scene_code, a.scene_name, a.name,
+                   a.description, a.system_prompt, a.model_config_id,
+                   case when a.model_config_id is null then a.model_provider else m.provider end as model_provider,
+                   case when a.model_config_id is null then a.model_name else m.model_name end as model_name,
+                   case when a.model_config_id is null then a.base_url else m.base_url end as base_url,
+                   case when a.model_config_id is null then a.api_key_env else m.api_key_env end as api_key,
+                   a.max_iters, a.extra_config_json, a.remark, a.enabled, a.frontend_visible,
+                   a.deleted,
+                   a.created_at, a.updated_at
+            from agents a
+            left join llm_model_config m
+              on m.tenant_id = a.tenant_id and m.id = a.model_config_id and m.deleted = false
+            where a.tenant_id = %s and a.id = %s and a.deleted = false
             limit 1
             """,
             (self._to_int(tenant_id), self._to_int(agent_id)),
@@ -673,6 +694,7 @@ class AgentManagementRepository:
             "extraConfigJson": row.get("extra_config_json"),
             "remark": row.get("remark"),
             "enabled": bool(row.get("enabled")),
+            "frontendVisible": bool(row.get("frontend_visible")),
             "deleted": bool(row.get("deleted")),
             "createdAt": self._datetime(row.get("created_at")),
             "updatedAt": self._datetime(row.get("updated_at")),

@@ -77,6 +77,9 @@ public class AgentEntity {
     private boolean enabled = true;
 
     @Column(nullable = false)
+    private boolean frontendVisible = true;
+
+    @Column(nullable = false)
     private boolean deleted;
 
     @Column(nullable = false)

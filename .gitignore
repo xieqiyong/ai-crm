@@ -80,3 +80,4 @@ agent-runtime/
 skills-runtime/
 release
 .build
+crm-channel-sync-agent

@@ -669,7 +669,7 @@ export function FollowupFormModal({
         <Field label="跟进时间">
           <input type="datetime-local" value={form.followupAt || ''} onChange={(event) => update({ followupAt: event.target.value })} />
         </Field>
-        <Field label="跟进内容" required className="wide-field">
+        <Field label="跟进内容" required className="wide-field" as="div">
           <div className="followup-content-editor">
             <RichTextEditor
               value={form.content || ''}

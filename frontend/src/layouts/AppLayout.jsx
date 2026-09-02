@@ -1,9 +1,10 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import {
-  Bell, ChevronDown, HelpCircle, LogOut, Menu, PanelLeftClose, PanelLeftOpen, Search, Zap,
+  Bell, Bot, ChevronDown, HelpCircle, LogOut, Menu, PanelLeftClose, PanelLeftOpen, Search, Sparkles, Zap,
 } from 'lucide-react'
 import { Badge, BrandLogo, Button, Drawer } from '../components'
 import { api } from '../api'
+import { MarketingAssistantPage } from '../features/assistant/MarketingAssistantPage'
 
 const SIDEBAR_COLLAPSED_KEY = 'crm.sidebar.collapsed'
 const NAV_GROUPS_COLLAPSED_KEY = 'crm.sidebar.collapsedGroups'
@@ -79,10 +80,34 @@ export function AppLayout({
   const [notificationLoading, setNotificationLoading] = useState(false)
   const [unreadCount, setUnreadCount] = useState(resolveUnreadCount(currentUser))
   const [notificationPopup, setNotificationPopup] = useState(null)
+  const [assistantOpen, setAssistantOpen] = useState(false)
+  const [assistantMenuOpen, setAssistantMenuOpen] = useState(false)
+  const [assistantAgents, setAssistantAgents] = useState([])
+  const [assistantAgentId, setAssistantAgentId] = useState(null)
   const [sidebarCollapsed, setSidebarCollapsed] = useState(readSidebarCollapsed)
   const [collapsedGroups, setCollapsedGroups] = useState(readCollapsedGroups)
   const unreadCountRef = useRef(resolveUnreadCount(currentUser))
   const notificationOpenRef = useRef(false)
+  const assistantMenuRef = useRef(null)
+  const canUseAssistant = can('crm:assistant:use') || can('menu.assistant')
+
+  const refreshAssistantAgents = useCallback(async () => {
+    if (!currentUser || !canUseAssistant) {
+      setAssistantAgents([])
+      setAssistantAgentId(null)
+      return
+    }
+    try {
+      const rows = await api.agent.assistantAgents()
+      const values = rows || []
+      setAssistantAgents(values)
+      setAssistantAgentId((current) => (
+        values.some((item) => String(item.id) === String(current)) ? current : values[0]?.id || null
+      ))
+    } catch {
+      setAssistantAgents([])
+    }
+  }, [currentUser?.id, currentUser?.userId, currentUser?.username, canUseAssistant])
 
   useEffect(() => {
     try {
@@ -121,6 +146,19 @@ export function AppLayout({
       canceled = true
     }
   }, [currentUser?.id, currentUser?.userId, currentUser?.username])
+
+  useEffect(() => {
+    refreshAssistantAgents()
+  }, [refreshAssistantAgents])
+
+  useEffect(() => {
+    if (!assistantMenuOpen) return undefined
+    const closeMenu = (event) => {
+      if (!assistantMenuRef.current?.contains(event.target)) setAssistantMenuOpen(false)
+    }
+    document.addEventListener('mousedown', closeMenu)
+    return () => document.removeEventListener('mousedown', closeMenu)
+  }, [assistantMenuOpen])
 
   useEffect(() => {
     notificationOpenRef.current = notificationOpen
@@ -331,6 +369,58 @@ export function AppLayout({
           )}
           <div className="global-search"><Search size={18} /><input aria-label="全局搜索" placeholder="搜索线索、客户或商机…" /></div>
           <div className="topbar-actions">
+            {canUseAssistant && (
+              <div className="topbar-assistant" ref={assistantMenuRef}>
+                <button
+                  type="button"
+                  className={`topbar-assistant-trigger ${assistantOpen ? 'active' : ''}`}
+                  onClick={() => {
+                    if (assistantOpen) {
+                      setAssistantOpen(false)
+                      setAssistantMenuOpen(false)
+                      return
+                    }
+                    const nextOpen = !assistantMenuOpen
+                    setAssistantMenuOpen(nextOpen)
+                    if (nextOpen) refreshAssistantAgents()
+                  }}
+                  aria-expanded={assistantOpen || assistantMenuOpen}
+                  title={assistantOpen ? '收起 AI 助手' : '选择 AI 智能体'}
+                >
+                  <Sparkles size={16} />
+                  <span>AI 助手</span>
+                  <ChevronDown size={14} />
+                </button>
+                {assistantMenuOpen && (
+                  <div className="topbar-assistant-menu">
+                    <div className="topbar-assistant-menu-head">
+                      <strong>选择智能体</strong>
+                      <small>选择后在右侧继续会话</small>
+                    </div>
+                    <div className="topbar-assistant-menu-list">
+                      {assistantAgents.map((agent) => (
+                        <button
+                          type="button"
+                          className={String(agent.id) === String(assistantAgentId) ? 'active' : ''}
+                          key={agent.id}
+                          onClick={() => {
+                            setAssistantAgentId(agent.id)
+                            setAssistantOpen(true)
+                            setAssistantMenuOpen(false)
+                          }}
+                        >
+                          <span><Bot size={16} /></span>
+                          <div><strong>{agent.name}</strong><small>{agent.sceneName || agent.sceneCode || '通用场景'}</small></div>
+                        </button>
+                      ))}
+                      {!assistantAgents.length && (
+                        <div className="topbar-assistant-empty">暂无允许前台展示的智能体</div>
+                      )}
+                    </div>
+                  </div>
+                )}
+              </div>
+            )}
             <span className="usage-pill topbar-usage" title={`AI用量 ${usageText}`}>
               <Zap size={12} />
               <span className="usage-pill-label">AI用量</span>
@@ -373,6 +463,20 @@ export function AppLayout({
           openNotifications()
         }}
       />
+      {canUseAssistant && (
+        <aside className={`global-agent-drawer ${assistantOpen ? 'open' : ''}`} aria-hidden={!assistantOpen}>
+          <MarketingAssistantPage
+            compact
+            availableAgents={assistantAgents}
+            preferredAgentId={assistantAgentId}
+            onAgentChange={(agent) => setAssistantAgentId(agent?.id || null)}
+            onClose={() => setAssistantOpen(false)}
+            navigate={onNavigate}
+            notify={onNotify}
+            can={can}
+          />
+        </aside>
+      )}
     </div>
   )
 }

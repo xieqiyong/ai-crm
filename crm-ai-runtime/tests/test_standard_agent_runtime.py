@@ -21,6 +21,7 @@ from app.models.chat_model_factory import chat_model_factory
 from app.models.openai_compatible import OpenAICompatibleChatModel
 from app.runtime.execution_context import AgentExecutionContext
 from app.runtime.agent_management_repository import AgentManagementRepository
+from app.runtime.assistant_repository import AssistantRepository
 from app.schemas.lead_analysis import LeadAnalysisResult
 from app.schemas.runtime import RuntimeAgent, RuntimeRunRequest
 from app.tools.builtin import crm_lead_page, load_skill
@@ -143,6 +144,45 @@ class EndlessToolCallingFakeModel(BaseChatModel):
 
 
 class StandardAgentRuntimeTest(unittest.IsolatedAsyncioTestCase):
+    async def test_assistant_runtime_uses_current_bound_model_config(self):
+        row = {
+            "id": 300,
+            "code": "GENERAL",
+            "scene_code": "GENERAL_ASSISTANT",
+            "name": "通用助手",
+            "model_config_id": 400,
+            "model_provider": "OPENAI",
+            "model_name": "new-model",
+            "base_url": "http://model.example/v1",
+            "api_key": "test-key",
+            "resolved_model_config_id": 400,
+            "model_config_enabled": True,
+        }
+        with patch(
+                "app.runtime.assistant_repository.database_client.fetch_one",
+                new_callable=AsyncMock,
+                return_value=row) as fetch_one:
+            value = await AssistantRepository().agent_runtime_payload("100", "300")
+        query = fetch_one.await_args.args[0]
+        self.assertIn("left join llm_model_config", query)
+        self.assertIn("a.frontend_visible = true", query)
+        self.assertEqual("new-model", value["modelName"])
+        self.assertEqual("http://model.example/v1", value["baseUrl"])
+
+    async def test_assistant_runtime_rejects_disabled_bound_model_config(self):
+        row = {
+            "id": 300,
+            "model_config_id": 400,
+            "resolved_model_config_id": 400,
+            "model_config_enabled": False,
+        }
+        with patch(
+                "app.runtime.assistant_repository.database_client.fetch_one",
+                new_callable=AsyncMock,
+                return_value=row):
+            with self.assertRaisesRegex(ValueError, "大模型配置已停用"):
+                await AssistantRepository().agent_runtime_payload("100", "300")
+
     async def test_scene_catalog_merges_custom_and_existing_scenes(self):
         managed = [{
             "id": 1,

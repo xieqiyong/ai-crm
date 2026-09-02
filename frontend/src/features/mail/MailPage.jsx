@@ -234,7 +234,7 @@ export function MailPage({ can, notify }) {
               onChange={(event) => setForm({ ...form, subject: event.target.value })}
             />
           </Field>
-          <Field label="邮件正文" required>
+          <Field label="邮件正文" required as="div">
             <RichTextEditor
               value={form.bodyHtml}
               notify={notify}

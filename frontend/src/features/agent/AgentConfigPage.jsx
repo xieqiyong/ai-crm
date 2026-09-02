@@ -77,6 +77,7 @@ const emptyAgentForm = {
   extraConfigJson: '',
   remark: '',
   enabled: true,
+  frontendVisible: true,
 }
 
 const emptyMcpForm = {
@@ -200,6 +201,7 @@ function toAgentForm(row, models, scenes) {
     modelConfigId: row.modelConfigId || '',
     maxIters: row.maxIters || 8,
     enabled: row.enabled !== false,
+    frontendVisible: row.frontendVisible !== false,
     apiKey: '',
     extraConfigJson: row.extraConfigJson || '',
     defaultForScene: config.defaultForScene === true || config.default_for_scene === true,
@@ -241,6 +243,7 @@ function buildAgentPayload(form) {
     extraConfigJson: buildAgentExtraConfig(form),
     remark: form.remark || undefined,
     enabled: form.enabled !== false,
+    frontendVisible: form.frontendVisible !== false,
   }
 }
 
@@ -630,6 +633,7 @@ export function AgentConfigPage({ can, notify }) {
                     </td>
                     <td>
                       <Badge dot tone={row.enabled ? 'success' : 'danger'}>{row.enabled ? '启用' : '停用'}</Badge>
+                      <small>{row.frontendVisible !== false ? '前台展示' : '仅后台使用'}</small>
                     </td>
                     <td>{formatDateTime(row.updatedAt)}</td>
                     <td>
@@ -1263,7 +1267,13 @@ function AgentDrawer({ open, form, models, scenes, canManage, onChange, onSave, 
                 <div className="agent-choice-card">
                   <label>
                     <input type="checkbox" checked={form.enabled !== false} onChange={(event) => onChange({ ...form, enabled: event.target.checked })} />
-                    <span><b>启用智能体</b><small>启用后会出现在智能体工作台</small></span>
+                    <span><b>启用智能体</b><small>控制智能体是否允许被系统运行</small></span>
+                  </label>
+                </div>
+                <div className="agent-choice-card">
+                  <label>
+                    <input type="checkbox" checked={form.frontendVisible !== false} onChange={(event) => onChange({ ...form, frontendVisible: event.target.checked })} />
+                    <span><b>前台可见</b><small>关闭后不会出现在销售端 AI 助手中</small></span>
                   </label>
                 </div>
                 <div className="agent-choice-card">

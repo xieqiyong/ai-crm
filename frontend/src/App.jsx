@@ -59,8 +59,9 @@ export default function App() {
           setCurrentUser(nextUser)
         }
       } catch {
-        clearAuth()
-        if (mounted) setCurrentUser(null)
+        if (mounted && !getStoredAuth()?.token) {
+          setCurrentUser(null)
+        }
       } finally {
         if (mounted) setBooting(false)
       }

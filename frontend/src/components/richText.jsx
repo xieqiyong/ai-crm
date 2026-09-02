@@ -1,14 +1,22 @@
 import { useEffect, useRef, useState } from 'react'
 import {
+  AlignCenter,
+  AlignLeft,
+  AlignRight,
   Bold,
   Heading2,
+  Highlighter,
   ImagePlus,
   Italic,
   Link as LinkIcon,
   List,
   ListOrdered,
+  Palette,
   Quote,
+  Redo2,
+  RemoveFormatting,
   Underline,
+  Undo2,
 } from 'lucide-react'
 import { api } from '../api'
 import { runtimeConfig } from '../config/env'
@@ -42,6 +50,25 @@ function resolveAssetUrl(url) {
   return backendBase ? `${backendBase}${url}` : url
 }
 
+function ColorControl({ label, value, icon: Icon, onChange }) {
+  return (
+    <span
+      className="rich-editor-color-control"
+      title={label}
+      style={{ '--rich-editor-tool-color': value }}
+    >
+      <Icon size={15} />
+      <span aria-hidden="true" />
+      <input
+        type="color"
+        value={value}
+        aria-label={label}
+        onChange={(event) => onChange(event.target.value)}
+      />
+    </span>
+  )
+}
+
 export function RichTextEditor({
   value,
   onChange,
@@ -52,8 +79,11 @@ export function RichTextEditor({
 }) {
   const editorRef = useRef(null)
   const fileRef = useRef(null)
+  const selectionRef = useRef(null)
   const [focused, setFocused] = useState(false)
   const [uploading, setUploading] = useState(false)
+  const [textColor, setTextColor] = useState('#1f2937')
+  const [highlightColor, setHighlightColor] = useState('#fff3a3')
 
   useEffect(() => {
     const editor = editorRef.current
@@ -69,10 +99,44 @@ export function RichTextEditor({
     onChange(html)
   }
 
+  const rememberSelection = () => {
+    const editor = editorRef.current
+    const selection = window.getSelection()
+    if (!editor || !selection || selection.rangeCount === 0) return
+    const range = selection.getRangeAt(0)
+    if (editor === range.commonAncestorContainer || editor.contains(range.commonAncestorContainer)) {
+      selectionRef.current = range.cloneRange()
+    }
+  }
+
+  const restoreSelection = () => {
+    const range = selectionRef.current
+    if (!range) return
+    const selection = window.getSelection()
+    if (!selection) return
+    selection.removeAllRanges()
+    selection.addRange(range)
+  }
+
   const runCommand = (command, commandValue) => {
     editorRef.current?.focus()
+    restoreSelection()
+    if (['foreColor', 'hiliteColor'].includes(command)) {
+      exec('styleWithCSS', true)
+    }
     exec(command, commandValue)
+    rememberSelection()
     updateValue()
+  }
+
+  const changeTextColor = (color) => {
+    setTextColor(color)
+    runCommand('foreColor', color)
+  }
+
+  const changeHighlightColor = (color) => {
+    setHighlightColor(color)
+    runCommand('hiliteColor', color)
   }
 
   const addLink = () => {
@@ -121,7 +185,10 @@ export function RichTextEditor({
 
   return (
     <div className={`rich-editor ${stableTypography ? 'rich-editor-stable' : ''}`}>
-      <div className="rich-editor-toolbar">
+      <div className="rich-editor-toolbar" onMouseDown={rememberSelection}>
+        <ColorControl label="文字颜色" value={textColor} icon={Palette} onChange={changeTextColor} />
+        <ColorControl label="文字高亮" value={highlightColor} icon={Highlighter} onChange={changeHighlightColor} />
+        <span className="rich-editor-tool-divider" aria-hidden="true" />
         {showHeading && (
           <button type="button" onClick={() => runCommand('formatBlock', 'h3')} title="标题">
             <Heading2 size={15} />
@@ -135,6 +202,15 @@ export function RichTextEditor({
         </button>
         <button type="button" onClick={() => runCommand('underline')} title="下划线">
           <Underline size={15} />
+        </button>
+        <button type="button" onClick={() => runCommand('justifyLeft')} title="左对齐">
+          <AlignLeft size={15} />
+        </button>
+        <button type="button" onClick={() => runCommand('justifyCenter')} title="居中对齐">
+          <AlignCenter size={15} />
+        </button>
+        <button type="button" onClick={() => runCommand('justifyRight')} title="右对齐">
+          <AlignRight size={15} />
         </button>
         <button type="button" onClick={() => runCommand('insertUnorderedList')} title="无序列表">
           <List size={15} />
@@ -151,6 +227,16 @@ export function RichTextEditor({
         <button type="button" onClick={() => fileRef.current?.click()} disabled={uploading} title="上传图片">
           <ImagePlus size={15} />
         </button>
+        <span className="rich-editor-tool-divider" aria-hidden="true" />
+        <button type="button" onClick={() => runCommand('undo')} title="撤销">
+          <Undo2 size={15} />
+        </button>
+        <button type="button" onClick={() => runCommand('redo')} title="重做">
+          <Redo2 size={15} />
+        </button>
+        <button type="button" onClick={() => runCommand('removeFormat')} title="清除格式">
+          <RemoveFormatting size={15} />
+        </button>
         <span className="rich-editor-symbols">
           {symbolItems.map((item) => (
             <button type="button" key={item} onClick={() => insertSymbol(item)}>{item}</button>
@@ -165,10 +251,16 @@ export function RichTextEditor({
         data-placeholder={placeholder || '请输入内容'}
         onFocus={() => setFocused(true)}
         onBlur={() => {
+          rememberSelection()
           setFocused(false)
           updateValue()
         }}
-        onInput={updateValue}
+        onInput={() => {
+          rememberSelection()
+          updateValue()
+        }}
+        onKeyUp={rememberSelection}
+        onMouseUp={rememberSelection}
         onPaste={handlePaste}
         suppressContentEditableWarning
       />
