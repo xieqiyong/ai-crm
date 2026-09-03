@@ -14,6 +14,26 @@ public class DashboardOverviewResponse {
 
     private long customerCount;
 
+    private long todayNewCustomerCount;
+
+    private long monthNewCustomerCount;
+
+    private long monthNewLeadCount;
+
+    private long normalFollowupCustomerCount;
+
+    private long warningFollowupCustomerCount;
+
+    private long criticalFollowupCustomerCount;
+
+    private long normalFollowupLeadCount;
+
+    private long warningFollowupLeadCount;
+
+    private long criticalFollowupLeadCount;
+
+    private boolean managementView;
+
     private long opportunityCount;
 
     private long channelCount;
@@ -36,15 +56,13 @@ public class DashboardOverviewResponse {
 
     private long todayCompletedTaskCount;
 
-    private List<DashboardCountItem> leadStatusCounts = new ArrayList<DashboardCountItem>();
-
-    private List<DashboardCountItem> customerStatusCounts = new ArrayList<DashboardCountItem>();
-
-    private List<DashboardCountItem> opportunityStageCounts = new ArrayList<DashboardCountItem>();
-
-    private List<DashboardCountItem> channelStatusCounts = new ArrayList<DashboardCountItem>();
-
     private List<DashboardFollowupRankItem> todayFollowupRanking = new ArrayList<DashboardFollowupRankItem>();
 
     private List<DashboardTaskRankItem> todayTaskCompletionRanking = new ArrayList<DashboardTaskRankItem>();
+
+    private List<DashboardFollowupAttentionItem> attentionCustomers =
+            new ArrayList<DashboardFollowupAttentionItem>();
+
+    private List<DashboardFollowupAttentionItem> attentionLeads =
+            new ArrayList<DashboardFollowupAttentionItem>();
 }

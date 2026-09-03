@@ -13,25 +13,33 @@ import org.apache.ibatis.annotations.Select;
 @Mapper
 public interface FollowupRecordMapper extends BaseMapper<FollowupRecordEntity> {
 
-    @Select("select cast(u.id as varchar) as user_id, "
-            + "coalesce(nullif(trim(u.display_name), ''), u.username) as user_name, "
-            + "count(f.id) as followup_count, "
-            + "max(f.followup_at) as last_followup_at "
-            + "from sys_user u "
-            + "left join crm_followup_record f on f.tenant_id = u.tenant_id "
-            + "and f.owner_id = u.id "
-            + "and f.deleted = false "
-            + "and f.followup_at >= #{todayStart} "
-            + "and f.followup_at < #{tomorrowStart} "
-            + "where u.tenant_id = #{tenantId} "
-            + "and u.deleted = false "
-            + "and u.enabled = true "
-            + "and lower(u.username) <> 'admin' "
-            + "group by u.id, u.username, u.display_name, u.created_at "
-            + "order by count(f.id) desc, max(f.followup_at) desc nulls last, u.created_at asc "
-            + "limit #{limit}")
+    @Select({"<script>",
+            "select cast(u.id as varchar) as user_id, ",
+            "coalesce(nullif(trim(u.display_name), ''), u.username) as user_name, ",
+            "count(f.id) as followup_count, max(f.followup_at) as last_followup_at ",
+            "from sys_user u ",
+            "left join crm_followup_record f on f.tenant_id = u.tenant_id ",
+            "and f.owner_id = u.id and f.deleted = false ",
+            "and f.followup_at &gt;= #{todayStart} and f.followup_at &lt; #{tomorrowStart} ",
+            "where u.tenant_id = #{tenantId} and u.deleted = false and u.enabled = true ",
+            "and lower(u.username) &lt;&gt; 'admin' ",
+            "<if test='scopeRestricted'>",
+            "<choose>",
+            "<when test='ownerIds != null and ownerIds.size() > 0'>",
+            "and u.id in ",
+            "<foreach collection='ownerIds' item='ownerId' open='(' separator=',' close=')'>#{ownerId}</foreach>",
+            "</when>",
+            "<otherwise>and 1 = 0</otherwise>",
+            "</choose>",
+            "</if>",
+            "group by u.id, u.username, u.display_name, u.created_at ",
+            "order by count(f.id) desc, max(f.followup_at) desc nulls last, u.created_at asc ",
+            "limit #{limit}",
+            "</script>"})
     List<FollowupRankingProjection> selectTodayFollowupRanking(
             @Param("tenantId") Long tenantId,
+            @Param("scopeRestricted") boolean scopeRestricted,
+            @Param("ownerIds") List<Long> ownerIds,
             @Param("todayStart") LocalDateTime todayStart,
             @Param("tomorrowStart") LocalDateTime tomorrowStart,
             @Param("limit") int limit);
