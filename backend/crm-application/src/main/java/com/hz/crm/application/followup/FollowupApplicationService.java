@@ -1,8 +1,10 @@
 package com.hz.crm.application.followup;
 
+import com.alibaba.fastjson2.JSON;
 import com.baomidou.mybatisplus.core.conditions.query.QueryWrapper;
 import com.baomidou.mybatisplus.core.toolkit.Wrappers;
 import com.hz.crm.application.followup.dto.FollowupQuery;
+import com.hz.crm.application.followup.dto.FollowupProjectInfo;
 import com.hz.crm.application.followup.dto.FollowupResponse;
 import com.hz.crm.application.followup.dto.FollowupSaveRequest;
 import com.hz.crm.application.followup.dto.FollowupTargetOptionQuery;
@@ -198,6 +200,7 @@ public class FollowupApplicationService {
         entity.setFollowupAt(followupAt);
         entity.setContent(content);
         entity.setResult(trimToNull(request.getResult()));
+        entity.setProjectInfoJson(serializeProjectInfo(request.getProjectInfo()));
         int autoDelayMinutes = resolveAutoNextFollowupDelayMinutes(tenantId, target);
         entity.setNextPlan(resolveNextPlan(target, autoDelayMinutes, request.getNextPlan()));
         entity.setNextFollowTime(resolveNextFollowTime(followupAt, autoDelayMinutes, request.getNextFollowTime()));
@@ -662,6 +665,7 @@ public class FollowupApplicationService {
         response.setContent(entity.getContent());
         response.setResult(entity.getResult());
         response.setNextPlan(entity.getNextPlan());
+        response.setProjectInfo(parseProjectInfo(entity.getProjectInfoJson()));
         response.setNextFollowTime(entity.getNextFollowTime());
         response.setOwnerId(entity.getOwnerId());
         response.setCreatedAt(entity.getCreatedAt());
@@ -693,6 +697,35 @@ public class FollowupApplicationService {
         List<FollowupResponse> records = new ArrayList<FollowupResponse>();
         records.add(response);
         fillOwnerNames(tenantId, records);
+    }
+
+    private String serializeProjectInfo(FollowupProjectInfo projectInfo) {
+        if (projectInfo == null || isEmptyProjectInfo(projectInfo)) {
+            return null;
+        }
+        return JSON.toJSONString(projectInfo);
+    }
+
+    private FollowupProjectInfo parseProjectInfo(String projectInfoJson) {
+        if (!StringUtils.hasText(projectInfoJson)) {
+            return null;
+        }
+        return JSON.parseObject(projectInfoJson, FollowupProjectInfo.class);
+    }
+
+    private boolean isEmptyProjectInfo(FollowupProjectInfo projectInfo) {
+        return !StringUtils.hasText(projectInfo.getBackground())
+                && !StringUtils.hasText(projectInfo.getRequirements())
+                && !StringUtils.hasText(projectInfo.getCompetitors())
+                && !StringUtils.hasText(projectInfo.getExpectedPurchaseDate())
+                && isUnconfirmed(projectInfo.getProjectStage())
+                && isUnconfirmed(projectInfo.getBudgetStatus())
+                && isUnconfirmed(projectInfo.getTenderStatus())
+                && isUnconfirmed(projectInfo.getCompetitionStatus());
+    }
+
+    private boolean isUnconfirmed(String value) {
+        return !StringUtils.hasText(value) || "UNCONFIRMED".equals(value);
     }
 
     private void fillMediaTranscriptions(Long tenantId, FollowupResponse response) {

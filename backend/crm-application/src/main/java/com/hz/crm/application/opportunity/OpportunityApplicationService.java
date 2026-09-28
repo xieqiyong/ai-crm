@@ -6,10 +6,12 @@ import com.hz.crm.application.opportunity.dto.OpportunityProductResponse;
 import com.hz.crm.application.opportunity.dto.OpportunityProductSaveRequest;
 import com.hz.crm.application.opportunity.dto.OpportunityResponse;
 import com.hz.crm.application.opportunity.dto.OpportunitySaveRequest;
+import com.hz.crm.application.marketing.MarketingFunnelRuleProvider;
 import com.hz.crm.common.api.PageData;
 import com.hz.crm.common.exception.BusinessException;
 import com.hz.crm.common.id.SnowflakeIdGenerator;
 import com.hz.crm.common.time.DateTimes;
+import com.hz.crm.common.user.UserDataScopeValidator;
 import com.hz.crm.common.user.UserNameResolver;
 import com.hz.crm.domain.customer.CustomerEntity;
 import com.hz.crm.domain.customer.mapper.CustomerMapper;
@@ -54,6 +56,12 @@ public class OpportunityApplicationService {
 
     @Autowired(required = false)
     private UserNameResolver userNameResolver;
+
+    @Autowired
+    private UserDataScopeValidator userDataScopeValidator;
+
+    @Autowired
+    private MarketingFunnelRuleProvider marketingFunnelRuleProvider;
 
     @Transactional(readOnly = true)
     public PageData<OpportunityResponse> page(Long tenantId, Long userId, String dataScope, OpportunityQuery query) {
@@ -152,12 +160,11 @@ public class OpportunityApplicationService {
         QueryWrapper<OpportunityEntity> wrapper = new QueryWrapper<OpportunityEntity>();
         wrapper.eq("tenant_id", tenantId);
         wrapper.eq("deleted", false);
-        if ("SELF".equals(dataScope)) {
-            wrapper.eq("owner_id", userId);
-        }
+        applyPageOwnerScope(wrapper, tenantId, userId, dataScope);
         if (query.getStage() != null) {
             wrapper.eq("stage", query.getStage().name());
         }
+        marketingFunnelRuleProvider.applyOpportunityStage(wrapper, query.getFunnelStage());
         if (query.getCustomerId() != null) {
             wrapper.eq("customer_id", query.getCustomerId());
         }
@@ -166,6 +173,23 @@ public class OpportunityApplicationService {
             wrapper.and(value -> value.like("name", keyword).or().like("remark", keyword));
         }
         return wrapper;
+    }
+
+    private void applyPageOwnerScope(
+            QueryWrapper<OpportunityEntity> wrapper,
+            Long tenantId,
+            Long userId,
+            String dataScope) {
+        if ("ALL".equals(dataScope)) {
+            return;
+        }
+        List<Long> ownerIds = userDataScopeValidator.listAccessibleUserIds(
+                tenantId, userId, dataScope);
+        if (ownerIds == null || ownerIds.isEmpty()) {
+            wrapper.apply("1 = 0");
+        } else {
+            wrapper.in("owner_id", ownerIds);
+        }
     }
 
     private OpportunityEntity findOne(Long tenantId, Long id) {

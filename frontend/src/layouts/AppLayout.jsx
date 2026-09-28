@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import {
-  Bell, Bot, ChevronDown, HelpCircle, LogOut, Menu, PanelLeftClose, PanelLeftOpen, Search, Sparkles, Zap,
+  Bell, Bot, CalendarDays, ChevronDown, HelpCircle, LogOut, Menu, PanelLeftClose, PanelLeftOpen, Search, Sparkles, X, Zap,
 } from 'lucide-react'
 import { Badge, BrandLogo, Button, Drawer } from '../components'
 import { api } from '../api'
@@ -84,12 +84,23 @@ export function AppLayout({
   const [assistantMenuOpen, setAssistantMenuOpen] = useState(false)
   const [assistantAgents, setAssistantAgents] = useState([])
   const [assistantAgentId, setAssistantAgentId] = useState(null)
+  const [globalSearchKeyword, setGlobalSearchKeyword] = useState('')
+  const [globalSearchOpen, setGlobalSearchOpen] = useState(false)
+  const [globalSearchLoading, setGlobalSearchLoading] = useState(false)
+  const [globalSearchGroups, setGlobalSearchGroups] = useState([])
   const [sidebarCollapsed, setSidebarCollapsed] = useState(readSidebarCollapsed)
   const [collapsedGroups, setCollapsedGroups] = useState(readCollapsedGroups)
   const unreadCountRef = useRef(resolveUnreadCount(currentUser))
   const notificationOpenRef = useRef(false)
   const assistantMenuRef = useRef(null)
+  const globalSearchRef = useRef(null)
+  const globalSearchRequestRef = useRef(0)
+  const calendarReturnRouteRef = useRef('dashboard')
   const canUseAssistant = can('crm:assistant:use') || can('menu.assistant')
+  const canViewCalendar = can('crm:task:view') || can('menu.tasks')
+  const canSearchLead = can('crm:lead:view') || can('menu.leads')
+  const canSearchCustomer = can('crm:customer:view') || can('menu.customers')
+  const canSearchOpportunity = can('crm:opportunity:view') || can('menu.opportunities')
 
   const refreshAssistantAgents = useCallback(async () => {
     if (!currentUser || !canUseAssistant) {
@@ -159,6 +170,69 @@ export function AppLayout({
     document.addEventListener('mousedown', closeMenu)
     return () => document.removeEventListener('mousedown', closeMenu)
   }, [assistantMenuOpen])
+
+  useEffect(() => {
+    const closeSearch = (event) => {
+      if (!globalSearchRef.current?.contains(event.target)) setGlobalSearchOpen(false)
+    }
+    document.addEventListener('mousedown', closeSearch)
+    return () => document.removeEventListener('mousedown', closeSearch)
+  }, [])
+
+  useEffect(() => {
+    const keyword = globalSearchKeyword.trim()
+    const requestId = ++globalSearchRequestRef.current
+    if (!keyword) {
+      setGlobalSearchGroups([])
+      setGlobalSearchLoading(false)
+      return undefined
+    }
+    setGlobalSearchLoading(true)
+    const timer = window.setTimeout(async () => {
+      const searches = []
+      if (canSearchLead) {
+        searches.push({
+          type: 'LEAD',
+          label: '线索',
+          load: () => api.lead.page({ keyword, pageNo: 1, pageSize: 5 }),
+        })
+      }
+      if (canSearchCustomer) {
+        searches.push({
+          type: 'CUSTOMER',
+          label: '客户',
+          load: () => api.customer.page({ keyword, pageNo: 1, pageSize: 5 }),
+        })
+      }
+      if (canSearchOpportunity) {
+        searches.push({
+          type: 'OPPORTUNITY',
+          label: '商机',
+          load: () => api.opportunity.page({ keyword, pageNo: 1, pageSize: 5 }),
+        })
+      }
+      if (!searches.length) {
+        setGlobalSearchGroups([])
+        setGlobalSearchLoading(false)
+        return
+      }
+      const results = await Promise.allSettled(searches.map((item) => item.load()))
+      if (requestId !== globalSearchRequestRef.current) return
+      setGlobalSearchGroups(searches.map((search, index) => {
+        const result = results[index]
+        const data = result.status === 'fulfilled' ? result.value : null
+        return {
+          type: search.type,
+          label: search.label,
+          total: Number(data?.total || 0),
+          records: data?.records || [],
+        }
+      }))
+      setGlobalSearchLoading(false)
+      setGlobalSearchOpen(true)
+    }, 320)
+    return () => window.clearTimeout(timer)
+  }, [globalSearchKeyword, canSearchLead, canSearchCustomer, canSearchOpportunity])
 
   useEffect(() => {
     notificationOpenRef.current = notificationOpen
@@ -275,12 +349,38 @@ export function AppLayout({
         : [...values, label]
     ))
   }
+
+  const openGlobalSearchResult = (type, row) => {
+    setGlobalSearchOpen(false)
+    setGlobalSearchKeyword('')
+    if (type === 'LEAD') {
+      onNavigate(`leads/detail/${encodeURIComponent(row.id)}`)
+      return
+    }
+    if (type === 'CUSTOMER') {
+      onNavigate(`customers/detail/${encodeURIComponent(row.id)}`)
+      return
+    }
+    onNavigate(`opportunities?openId=${encodeURIComponent(row.id)}`)
+  }
+
+  const firstGlobalSearchResult = () => {
+    for (const group of globalSearchGroups) {
+      if (group.records?.length) return { type: group.type, row: group.records[0] }
+    }
+    return null
+  }
   const rawRouteKey = String(routeKey || '')
+  const baseRouteKey = rawRouteKey.split('?')[0]
   const activeRouteKey = rawRouteKey.startsWith('customers/detail/')
     ? 'customers'
     : rawRouteKey.startsWith('leads/detail/')
       ? 'leads'
-      : routeKey
+      : rawRouteKey.startsWith('followup-attention')
+        ? 'dashboard'
+      : rawRouteKey === 'calendar'
+        ? 'tasks'
+        : baseRouteKey
   const usageText = formatUsage(currentUser, tokenUsage)
   const unreadBadge = unreadCount > 99 ? '99+' : String(unreadCount)
 
@@ -367,8 +467,77 @@ export function AppLayout({
               <PanelLeftOpen size={20} />
             </button>
           )}
-          <div className="global-search"><Search size={18} /><input aria-label="全局搜索" placeholder="搜索线索、客户或商机…" /></div>
+          <form
+            className="global-search"
+            ref={globalSearchRef}
+            onSubmit={(event) => {
+              event.preventDefault()
+              const first = firstGlobalSearchResult()
+              if (first) openGlobalSearchResult(first.type, first.row)
+            }}
+          >
+            <Search size={18} />
+            <input
+              aria-label="全局搜索"
+              value={globalSearchKeyword}
+              placeholder="搜索线索、客户或商机…"
+              autoComplete="off"
+              onFocus={() => {
+                if (globalSearchKeyword.trim()) setGlobalSearchOpen(true)
+              }}
+              onChange={(event) => {
+                setGlobalSearchKeyword(event.target.value)
+                setGlobalSearchOpen(Boolean(event.target.value.trim()))
+              }}
+              onKeyDown={(event) => {
+                if (event.key === 'Escape') {
+                  setGlobalSearchOpen(false)
+                  event.currentTarget.blur()
+                }
+              }}
+            />
+            {globalSearchKeyword && (
+              <button
+                type="button"
+                className="global-search-clear"
+                onClick={() => {
+                  setGlobalSearchKeyword('')
+                  setGlobalSearchGroups([])
+                  setGlobalSearchOpen(false)
+                }}
+                aria-label="清空搜索"
+              ><X size={15} /></button>
+            )}
+            {globalSearchOpen && (
+              <GlobalSearchDropdown
+                keyword={globalSearchKeyword.trim()}
+                loading={globalSearchLoading}
+                groups={globalSearchGroups}
+                onOpen={openGlobalSearchResult}
+              />
+            )}
+          </form>
           <div className="topbar-actions">
+            {canViewCalendar && (
+              <button
+                type="button"
+                className={`topbar-calendar-trigger ${rawRouteKey === 'calendar' ? 'active' : ''}`}
+                onClick={() => {
+                  if (rawRouteKey === 'calendar') {
+                    onNavigate(calendarReturnRouteRef.current || 'dashboard')
+                    return
+                  }
+                  calendarReturnRouteRef.current = routeKey || 'dashboard'
+                  setAssistantOpen(false)
+                  setAssistantMenuOpen(false)
+                  onNavigate('calendar')
+                }}
+                title={rawRouteKey === 'calendar' ? '收起销售日历' : '打开销售日历'}
+              >
+                <CalendarDays size={16} />
+                <span>日历</span>
+              </button>
+            )}
             {canUseAssistant && (
               <div className="topbar-assistant" ref={assistantMenuRef}>
                 <button
@@ -479,6 +648,70 @@ export function AppLayout({
       )}
     </div>
   )
+}
+
+function GlobalSearchDropdown({ keyword, loading, groups, onOpen }) {
+  const visibleGroups = groups.filter((group) => group.records?.length)
+  return (
+    <div className="global-search-dropdown">
+      <div className="global-search-dropdown-head">
+        <strong>全局搜索</strong>
+        <span>{loading ? '正在查询…' : `“${keyword}”`}</span>
+      </div>
+      <div className="global-search-results">
+        {visibleGroups.map((group) => (
+          <section key={group.type}>
+            <div className="global-search-group-head">
+              <span>{group.label}</span>
+              <small>共 {group.total} 条</small>
+            </div>
+            {group.records.map((row) => (
+              <button type="button" key={row.id} onClick={() => onOpen(group.type, row)}>
+                <span className={`global-search-type ${group.type.toLowerCase()}`}>{group.label.slice(0, 1)}</span>
+                <div>
+                  <strong>{globalSearchTitle(group.type, row)}</strong>
+                  <small>{globalSearchDescription(group.type, row)}</small>
+                </div>
+                <em>查看</em>
+              </button>
+            ))}
+          </section>
+        ))}
+        {!loading && !visibleGroups.length && (
+          <div className="global-search-empty">
+            <Search size={23} />
+            <b>未找到匹配数据</b>
+            <span>可以尝试公司名称、联系人、手机号或商机名称</span>
+          </div>
+        )}
+        {loading && !visibleGroups.length && (
+          <div className="global-search-empty loading">
+            <Search size={23} />
+            <b>正在查询业务数据</b>
+          </div>
+        )}
+      </div>
+      <div className="global-search-dropdown-foot">按 Enter 可打开第一条搜索结果</div>
+    </div>
+  )
+}
+
+function globalSearchTitle(type, row) {
+  if (type === 'LEAD') return row.companyName || row.name || '未命名线索'
+  if (type === 'CUSTOMER') return row.name || '未命名客户'
+  return row.name || '未命名商机'
+}
+
+function globalSearchDescription(type, row) {
+  let values
+  if (type === 'LEAD') {
+    values = [row.name, row.phone, row.productName]
+  } else if (type === 'CUSTOMER') {
+    values = [row.contactName, row.contactPhone, row.productName]
+  } else {
+    values = [row.customerName, row.ownerName]
+  }
+  return values.filter(Boolean).join(' · ') || '暂无补充信息'
 }
 
 function NotificationPopup({ item, onRead, onOpen }) {

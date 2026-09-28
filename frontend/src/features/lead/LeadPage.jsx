@@ -6,6 +6,7 @@ import {
   Search,
   Sparkles,
   UserPlus,
+  X,
 } from 'lucide-react'
 import { api } from '../../api'
 import {
@@ -36,6 +37,7 @@ import {
   recommendedLeadStatus,
 } from '../../models/crmStatus'
 import { leadSourceOptions, leadSourceText } from '../../models/crmSource'
+import { readRouteQueryParam } from '../../router/routeQuery'
 
 const emptyPage = {
   total: 0,
@@ -90,6 +92,7 @@ function compactQuery(query) {
     pageSize: query.pageSize || 10,
     keyword: query.keyword || undefined,
     status: query.status || undefined,
+    funnelStage: query.funnelStage || undefined,
   }
 }
 
@@ -134,6 +137,15 @@ function readLeadListQuery(currentUser) {
   } catch {
     return defaultQuery
   }
+}
+
+function readLeadRouteQuery(currentUser, routeKey) {
+  const query = readLeadListQuery(currentUser)
+  const funnelStage = readRouteQueryParam(routeKey, 'funnelStage')
+  if (funnelStage !== 'ACTIVE_LEAD') {
+    return { ...query, funnelStage: '' }
+  }
+  return { ...query, keyword: '', status: '', funnelStage, pageNo: 1 }
 }
 
 function readLastViewedLeadId(currentUser) {
@@ -381,7 +393,7 @@ function resolveConvertAdvice(analysis) {
   }
 }
 
-export function LeadPage({ can, notify, navigate, currentUser }) {
+export function LeadPage({ can, notify, navigate, currentUser, routeKey }) {
   const canManage = can('crm:lead:manage')
   const canAssign = can('crm:lead:assign')
   const canCreate = canManage || can('crm:lead:create')
@@ -397,7 +409,7 @@ export function LeadPage({ can, notify, navigate, currentUser }) {
   const { confirm, dialogProps } = useConfirmDialog()
   const importInputRef = useRef(null)
   const lastViewedRowRef = useRef(null)
-  const [query, setQuery] = useState(() => readLeadListQuery(currentUser))
+  const [query, setQuery] = useState(() => readLeadRouteQuery(currentUser, routeKey))
   const [page, setPage] = useState(emptyPage)
   const [jumpPage, setJumpPage] = useState('')
   const [lastViewedLeadId, setLastViewedLeadId] = useState(() => readLastViewedLeadId(currentUser))
@@ -690,6 +702,18 @@ export function LeadPage({ can, notify, navigate, currentUser }) {
         )}
       />
 
+      {query.funnelStage === 'ACTIVE_LEAD' && (
+        <div className="funnel-filter-chip">
+          <span>营销漏斗</span>
+          <b>尚未转化的有效线索</b>
+          <button
+            type="button"
+            aria-label="清除营销漏斗筛选"
+            onClick={() => load({ ...query, funnelStage: '', pageNo: 1 })}
+          ><X size={14} /></button>
+        </div>
+      )}
+
       <form className="filter-card customer-filter-card list-filter-card" onSubmit={search}>
         <div className="filter-search">
           <Search size={17} />
@@ -701,7 +725,14 @@ export function LeadPage({ can, notify, navigate, currentUser }) {
         </div>
         <label>
           <span>状态</span>
-          <select value={query.status} onChange={(event) => setQuery({ ...query, status: event.target.value })}>
+          <select
+            value={query.status}
+            onChange={(event) => setQuery({
+              ...query,
+              status: event.target.value,
+              funnelStage: '',
+            })}
+          >
             <option value="">全部状态</option>
             {leadStatusOptions.map((item) => <option value={item.value} key={item.value}>{item.label}</option>)}
           </select>

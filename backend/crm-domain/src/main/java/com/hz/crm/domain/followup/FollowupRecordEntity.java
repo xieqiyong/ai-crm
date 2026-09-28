@@ -44,6 +44,9 @@ public class FollowupRecordEntity extends BaseEntity {
     @Column(columnDefinition = "text")
     private String nextPlan;
 
+    @Column(columnDefinition = "text")
+    private String projectInfoJson;
+
     private LocalDateTime nextFollowTime;
 
     private Long ownerId;

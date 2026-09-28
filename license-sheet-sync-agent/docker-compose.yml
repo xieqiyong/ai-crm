@@ -1,0 +1,25 @@
+services:
+  license-sheet-sync:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: license-sheet-sync-agent:latest
+    container_name: license-sheet-sync-agent
+    restart: unless-stopped
+    shm_size: 1gb
+    environment:
+      DISPLAY: ${DISPLAY:-:99}
+      VNC_PASSWORD: ${VNC_PASSWORD}
+      LICENSE_INTERNAL_TOKEN: ${LICENSE_INTERNAL_TOKEN:-}
+      LICENSE_API_ENABLED: ${LICENSE_API_ENABLED:-false}
+      LICENSE_API_BASE_URL: ${LICENSE_API_BASE_URL:-}
+      LICENSE_API_APPLY_PATH: ${LICENSE_API_APPLY_PATH:-/internal/license/openocta/applications}
+      LICENSE_API_TIMEOUT_MS: ${LICENSE_API_TIMEOUT_MS:-30000}
+      TZ: Asia/Shanghai
+    ports:
+      - "127.0.0.1:6080:6080"
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    volumes:
+      - ./config.json:/app/config.json:ro
+      - ./data:/app/data

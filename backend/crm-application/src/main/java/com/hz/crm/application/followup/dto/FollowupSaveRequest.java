@@ -4,6 +4,7 @@ import com.hz.crm.domain.followup.FollowupTargetType;
 import com.hz.crm.domain.followup.FollowupType;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.NotNull;
+import jakarta.validation.Valid;
 import java.time.LocalDateTime;
 import lombok.Getter;
 import lombok.Setter;
@@ -30,6 +31,9 @@ public class FollowupSaveRequest {
     private String result;
 
     private String nextPlan;
+
+    @Valid
+    private FollowupProjectInfo projectInfo;
 
     private LocalDateTime nextFollowTime;
 

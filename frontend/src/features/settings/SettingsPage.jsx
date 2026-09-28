@@ -11,6 +11,7 @@ import {
   Settings2,
   ShieldCheck,
   Upload,
+  Webhook,
 } from 'lucide-react'
 import { api } from '../../api'
 import { APP_NAME } from '../../config/appConfig'
@@ -88,6 +89,7 @@ export function SettingsPage({
           <button className={activeTab === 'appearance' ? 'active' : ''} onClick={() => setActiveTab('appearance')}><Palette size={17} />品牌与外观</button>
           <button className={activeTab === 'security' ? 'active' : ''} onClick={() => setActiveTab('security')}><ShieldCheck size={17} />登录与安全</button>
           <button className={activeTab === 'notifications' ? 'active' : ''} onClick={() => setActiveTab('notifications')}><Bell size={17} />消息通知</button>
+          <button className={activeTab === 'message' ? 'active' : ''} onClick={() => setActiveTab('message')}><Webhook size={17} />消息设置</button>
           <button className={activeTab === 'system' ? 'active' : ''} onClick={() => setActiveTab('system')}><Settings2 size={17} />系统参数</button>
         </aside>
 
@@ -114,6 +116,12 @@ export function SettingsPage({
               notify={notify}
             />
           )}
+          {activeTab === 'message' && (
+            <MessageWebhookSettings
+              notify={notify}
+              canManage={can('crm:settings:manage')}
+            />
+          )}
           {activeTab === 'system' && (
             <SystemSettings
               currentUser={currentUser}
@@ -124,6 +132,159 @@ export function SettingsPage({
         </div>
       </div>
     </div>
+  )
+}
+
+function MessageWebhookSettings({ notify, canManage }) {
+  const [loading, setLoading] = useState(true)
+  const [saving, setSaving] = useState(false)
+  const [testing, setTesting] = useState(false)
+  const [form, setForm] = useState({
+    enabled: false,
+    platform: 'DINGTALK',
+    webhookUrl: '',
+    notifyPublicPool: true,
+  })
+
+  useEffect(() => {
+    let canceled = false
+    setLoading(true)
+    api.settings.messageWebhookDetail()
+      .then((data) => {
+        if (!canceled) {
+          setForm({
+            enabled: Boolean(data?.enabled),
+            platform: data?.platform || 'DINGTALK',
+            webhookUrl: data?.webhookUrl || '',
+            notifyPublicPool: data?.notifyPublicPool !== false,
+          })
+        }
+      })
+      .catch((error) => {
+        if (!canceled) notify?.(error.message || '消息设置加载失败', 'danger')
+      })
+      .finally(() => {
+        if (!canceled) setLoading(false)
+      })
+    return () => {
+      canceled = true
+    }
+  }, [notify])
+
+  const update = (field, value) => setForm((current) => ({ ...current, [field]: value }))
+
+  const save = async () => {
+    if (form.enabled && !form.webhookUrl.trim()) {
+      notify?.('启用机器人通知前请填写Webhook地址', 'info')
+      return
+    }
+    setSaving(true)
+    try {
+      const data = await api.settings.saveMessageWebhook({
+        ...form,
+        webhookUrl: form.webhookUrl.trim(),
+      })
+      setForm({
+        enabled: Boolean(data?.enabled),
+        platform: data?.platform || 'DINGTALK',
+        webhookUrl: data?.webhookUrl || '',
+        notifyPublicPool: data?.notifyPublicPool !== false,
+      })
+      notify?.('消息Webhook设置已保存')
+    } catch (error) {
+      notify?.(error.message || '消息设置保存失败', 'danger')
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  const test = async () => {
+    if (!form.webhookUrl.trim()) {
+      notify?.('请先填写并保存Webhook地址', 'info')
+      return
+    }
+    setTesting(true)
+    try {
+      await api.settings.saveMessageWebhook({
+        ...form,
+        webhookUrl: form.webhookUrl.trim(),
+      })
+      await api.settings.testMessageWebhook()
+      notify?.('设置已保存，测试消息已发送，请到群聊中确认', 'success')
+    } catch (error) {
+      notify?.(error.message || '测试消息发送失败', 'danger')
+    } finally {
+      setTesting(false)
+    }
+  }
+
+  return (
+    <Card className="settings-section message-webhook-settings">
+      <div className="settings-section-head">
+        <div>
+          <h2>群机器人通知</h2>
+          <p>将重要业务变化推送到钉钉或飞书群，让销售无需一直盯着系统。</p>
+        </div>
+        <Badge tone={form.enabled ? 'success' : 'neutral'}>{form.enabled ? '已启用' : '未启用'}</Badge>
+      </div>
+
+      <label className="message-setting-switch">
+        <input
+          type="checkbox"
+          checked={form.enabled}
+          disabled={!canManage || loading}
+          onChange={(event) => update('enabled', event.target.checked)}
+        />
+        <span><b>启用外部消息通知</b><small>关闭后保留已有配置，但不会向群机器人发送消息。</small></span>
+      </label>
+
+      <div className="customer-form-grid message-webhook-form">
+        <Field label="通知平台" required>
+          <Select
+            value={form.platform}
+            disabled={!canManage || loading}
+            options={[
+              { value: 'DINGTALK', label: '钉钉机器人', description: '使用钉钉群自定义机器人Webhook' },
+              { value: 'FEISHU', label: '飞书机器人', description: '使用飞书群自定义机器人Webhook' },
+            ]}
+            onChange={(platform) => update('platform', platform)}
+          />
+        </Field>
+        <Field label="机器人Webhook" required hint="地址包含访问凭证，系统会以密钥输入框展示">
+          <SecretInput
+            value={form.webhookUrl}
+            disabled={!canManage || loading}
+            placeholder={form.platform === 'FEISHU' ? 'https://open.feishu.cn/open-apis/bot/v2/hook/...' : 'https://oapi.dingtalk.com/robot/send?access_token=...'}
+            onChange={(event) => update('webhookUrl', event.target.value)}
+          />
+        </Field>
+      </div>
+
+      <div className="message-event-list">
+        <div>
+          <span><Bell size={17} /></span>
+          <div><b>公海池新增提醒</b><small>渠道同步产生新的待分配数据时，按一次同步任务汇总通知，避免逐条刷屏。</small></div>
+          <input
+            type="checkbox"
+            checked={form.notifyPublicPool}
+            disabled={!canManage || loading}
+            onChange={(event) => update('notifyPublicPool', event.target.checked)}
+          />
+        </div>
+      </div>
+
+      <div className="settings-save-bar message-webhook-actions">
+        <span><CheckCircle2 size={15} />Webhook只用于服务端发送，不会下发给普通销售。</span>
+        <div>
+          <Button variant="secondary" disabled={!canManage || loading || testing} onClick={test}>
+            {testing ? '发送中' : '发送测试'}
+          </Button>
+          <Button icon={Check} disabled={!canManage || loading || saving} onClick={save}>
+            {saving ? '保存中' : canManage ? '保存设置' : '无保存权限'}
+          </Button>
+        </div>
+      </div>
+    </Card>
   )
 }
 

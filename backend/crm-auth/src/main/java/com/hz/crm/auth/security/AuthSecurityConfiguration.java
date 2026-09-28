@@ -28,6 +28,9 @@ public class AuthSecurityConfiguration {
     @Autowired
     private JwtAuthenticationFilter jwtAuthenticationFilter;
 
+    @Autowired
+    private ChannelSyncInternalTokenFilter channelSyncInternalTokenFilter;
+
     @Bean
     public PasswordEncoder passwordEncoder() {
         return new BCryptPasswordEncoder();
@@ -49,11 +52,13 @@ public class AuthSecurityConfiguration {
                                 "/api/auth/reset-password",
                                 "/api/install/**",
                                 "/api/public/marketing-form/**",
+                                "/api/internal/channel/source/import-excel",
                                 "/uploads/**",
                                 "/actuator/health")
                         .permitAll()
                         .anyRequest()
                         .authenticated())
+                .addFilterBefore(channelSyncInternalTokenFilter, JwtAuthenticationFilter.class)
                 .addFilterBefore(jwtAuthenticationFilter, UsernamePasswordAuthenticationFilter.class);
         return http.build();
     }

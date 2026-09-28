@@ -90,6 +90,10 @@ crm:
       retry-delay-seconds: ${CRM_TASK_REMINDER_RETRY_DELAY_SECONDS:60}
   channel:
     upload-dir: ${CRM_CHANNEL_UPLOAD_DIR:./uploads/channel}
+    sync:
+      internal-token: ${CRM_CHANNEL_SYNC_INTERNAL_TOKEN:}
+      tenant-id: ${CRM_CHANNEL_SYNC_TENANT_ID:0}
+      operator-id: ${CRM_CHANNEL_SYNC_OPERATOR_ID:0}
   media:
     transcription:
       enabled: ${CRM_MEDIA_TRANSCRIPTION_ENABLED:true}

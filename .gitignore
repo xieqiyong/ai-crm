@@ -80,4 +80,11 @@ agent-runtime/
 skills-runtime/
 release
 .build
-crm-channel-sync-agent
+crm-channel-sync-agent/.env
+crm-channel-sync-agent/config.json
+crm-channel-sync-agent/data/
+crm-channel-sync-agent/browser-profile/
+crm-channel-sync-agent/downloads/
+crm-channel-sync-agent/state.json
+crm-channel-sync-agent/runs.log
+crm-channel-sync-agent/error-*.png

@@ -4,7 +4,9 @@ import {
   ArrowUpRight,
   Building2,
   CalendarDays,
+  Check,
   Edit2,
+  GitBranch,
   Mail,
   Phone,
   RefreshCw,
@@ -324,6 +326,13 @@ export function LeadDetailPage({ routeParams, can, notify, navigate }) {
         </div>
       </Card>
 
+      <LeadLifecycle
+        lead={data}
+        onOpenCustomer={data.customerId
+          ? () => navigate(`customers/detail/${encodeURIComponent(data.customerId)}`)
+          : null}
+      />
+
       <Card className="lead-detail-overview">
         <div className="card-heading">
           <div>
@@ -448,6 +457,78 @@ export function LeadDetailPage({ routeParams, can, notify, navigate }) {
       />
       <ConfirmDialog {...dialogProps} />
     </div>
+  )
+}
+
+const leadLifecycleStages = [
+  { key: 'POOL', title: '进入线索池', description: '线索已进入销售视野' },
+  { key: 'CONTACTED', title: '首次联系', description: '已与联系人建立联系' },
+  { key: 'FOLLOWING', title: '持续跟进', description: '需求正在沟通和培育' },
+  { key: 'QUALIFIED', title: '有效线索', description: '需求与意向已初步确认' },
+  { key: 'CONVERTED', title: '转为客户', description: '完成客户关系沉淀' },
+  { key: 'OPPORTUNITY', title: '商机推进', description: '方案、预算与商务推进' },
+  { key: 'CONTRACT', title: '合同用户', description: '完成签约进入合作阶段' },
+]
+
+const leadLifecycleStatusIndex = {
+  NEW: 0,
+  CONTACTED: 1,
+  FOLLOWING: 2,
+  NURTURING: 2,
+  QUALIFIED: 3,
+  CONVERTED: 4,
+}
+
+const terminalLeadStatuses = new Set(['INVALID', 'DUPLICATE', 'CLOSED'])
+
+function LeadLifecycle({ lead, onOpenCustomer }) {
+  const terminal = terminalLeadStatuses.has(lead.status)
+  const currentIndex = lead.customerId
+    ? 4
+    : (leadLifecycleStatusIndex[lead.status] ?? 0)
+  const currentStatus = leadStatusText[lead.status] || lead.status || '新线索'
+
+  return (
+    <Card className={`lead-lifecycle-card ${terminal ? 'terminal' : ''}`}>
+      <div className="lead-lifecycle-head">
+        <div>
+          <span><GitBranch size={18} /></span>
+          <div>
+            <h2>线索全生命周期</h2>
+            <p>{terminal ? `当前线索已标记为“${currentStatus}”，主推进流程已停止。` : '从进入线索池到签约合作，当前阶段由真实业务状态点亮。'}</p>
+          </div>
+        </div>
+        <Badge tone={terminal ? 'danger' : 'info'}>当前：{currentStatus}</Badge>
+      </div>
+      <div className="lead-lifecycle-flow">
+        {leadLifecycleStages.map((stage, index) => {
+          const reached = !terminal && index <= currentIndex
+          const active = !terminal && index === currentIndex
+          const customerLink = stage.key === 'CONVERTED' && reached && onOpenCustomer
+          const Component = customerLink ? 'button' : 'div'
+          return (
+            <Component
+              type={customerLink ? 'button' : undefined}
+              className={`${reached ? 'reached' : ''} ${active ? 'active' : ''}`}
+              key={stage.key}
+              onClick={customerLink || undefined}
+            >
+              <span>{reached && !active ? <Check size={14} /> : index + 1}</span>
+              <div>
+                <strong>{stage.title}</strong>
+                <small>{stage.description}</small>
+              </div>
+            </Component>
+          )
+        })}
+      </div>
+      {!terminal && currentIndex < 4 && (
+        <div className="lead-lifecycle-next">
+          下一阶段：<b>{leadLifecycleStages[currentIndex + 1]?.title}</b>
+          <span>完成有效沟通后，状态变化会同步更新这里。</span>
+        </div>
+      )}
+    </Card>
   )
 }
 

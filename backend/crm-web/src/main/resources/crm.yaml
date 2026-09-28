@@ -92,6 +92,10 @@ crm:
       retry-delay-seconds: 60
   channel:
     upload-dir: ./uploads/channel
+    sync:
+      internal-token:
+      tenant-id: 0
+      operator-id: 0
   media:
     transcription:
       enabled: true

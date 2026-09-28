@@ -1,0 +1,9 @@
+.env
+config.json
+data/
+browser-profile/
+downloads/
+state.json
+runs.log
+error-*.png
+node_modules/

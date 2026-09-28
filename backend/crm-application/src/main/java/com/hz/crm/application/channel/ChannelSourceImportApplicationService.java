@@ -7,6 +7,7 @@ import com.hz.crm.application.channel.dto.ChannelSourceSyncResult;
 import com.hz.crm.application.channel.dto.ExternalChannelSyncRequest;
 import com.hz.crm.application.channel.dto.ExternalChannelSyncResult;
 import com.hz.crm.common.exception.BusinessException;
+import com.hz.crm.application.system.MessageWebhookApplicationService;
 import com.hz.crm.domain.channel.ChannelSyncLogEntity;
 import com.hz.crm.domain.channel.ChannelSyncTrigger;
 import java.nio.charset.StandardCharsets;
@@ -32,6 +33,9 @@ public class ChannelSourceImportApplicationService {
 
     @Autowired
     private ChannelApplicationService channelApplicationService;
+
+    @Autowired
+    private MessageWebhookApplicationService messageWebhookApplicationService;
 
     public ChannelSourceSyncResult importRows(
             Long tenantId,
@@ -68,8 +72,11 @@ public class ChannelSourceImportApplicationService {
                         source.getId(), Integer.valueOf(row.getRowNumber()), ex);
             }
         }
-        return channelSourceApplicationService.completeLog(
+        ChannelSourceSyncResult completed = channelSourceApplicationService.completeLog(
                 tenantId, source.getId(), syncLog.getId(), result, buildFieldSnapshot(rows));
+        messageWebhookApplicationService.notifyPublicPoolCreated(
+                tenantId, completed.getCreatedCount(), source.getName());
+        return completed;
     }
 
     private ExternalChannelSyncRequest buildSyncRequest(

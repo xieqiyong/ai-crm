@@ -15,6 +15,7 @@ import com.hz.crm.application.lead.LeadApplicationService;
 import com.hz.crm.application.lead.dto.LeadResponse;
 import com.hz.crm.application.lead.dto.LeadSaveRequest;
 import com.hz.crm.application.product.ProductReferenceResolver;
+import com.hz.crm.application.system.MessageWebhookApplicationService;
 import com.hz.crm.common.api.PageData;
 import com.hz.crm.common.exception.BusinessException;
 import com.hz.crm.common.id.SnowflakeIdGenerator;
@@ -40,6 +41,8 @@ import java.util.Set;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.transaction.support.TransactionSynchronization;
+import org.springframework.transaction.support.TransactionSynchronizationManager;
 import org.springframework.util.StringUtils;
 
 @Service
@@ -62,6 +65,9 @@ public class ChannelApplicationService {
 
     @Autowired
     private ProductReferenceResolver productReferenceResolver;
+
+    @Autowired
+    private MessageWebhookApplicationService messageWebhookApplicationService;
 
     @Transactional(readOnly = true)
     public PageData<ChannelResponse> page(Long tenantId, Long userId, String dataScope, ChannelQuery query) {
@@ -163,6 +169,7 @@ public class ChannelApplicationService {
         }
         if (request.getId() == null) {
             channelRecordMapper.insert(entity);
+            notifyPublicPoolAfterCommit(tenantId, entity.getTitle());
         } else {
             channelRecordMapper.updateById(entity);
         }
@@ -252,6 +259,7 @@ public class ChannelApplicationService {
         entity.setMediaStorageKey(trimToNull(request.getMediaStorageKey()));
         entity.setRemark(null);
         channelRecordMapper.insert(entity);
+        notifyPublicPoolAfterCommit(tenantId, entity.getTitle());
         ChannelResponse response = toResponse(entity);
         fillOwnerName(tenantId, response);
         return response;
@@ -293,6 +301,7 @@ public class ChannelApplicationService {
         entity.setAiAnalyzedAt(null);
         entity.setRemark(null);
         channelRecordMapper.insert(entity);
+        notifyPublicPoolAfterCommit(tenantId, entity.getTitle());
         ChannelResponse response = toResponse(entity);
         fillOwnerName(tenantId, response);
         return response;
@@ -1017,5 +1026,18 @@ public class ChannelApplicationService {
             this.email = email;
         }
 
+    }
+
+    private void notifyPublicPoolAfterCommit(final Long tenantId, final String sourceName) {
+        if (!TransactionSynchronizationManager.isSynchronizationActive()) {
+            messageWebhookApplicationService.notifyPublicPoolCreated(tenantId, 1, sourceName);
+            return;
+        }
+        TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {
+            @Override
+            public void afterCommit() {
+                messageWebhookApplicationService.notifyPublicPoolCreated(tenantId, 1, sourceName);
+            }
+        });
     }
 }

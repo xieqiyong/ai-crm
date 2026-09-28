@@ -7,6 +7,7 @@ import com.hz.crm.application.customer.dto.CustomerIndustryOptionResponse;
 import com.hz.crm.application.customer.dto.CustomerQuery;
 import com.hz.crm.application.customer.dto.CustomerResponse;
 import com.hz.crm.application.customer.dto.CustomerSaveRequest;
+import com.hz.crm.application.marketing.MarketingFunnelRuleProvider;
 import com.hz.crm.application.product.ProductReferenceResolver;
 import com.hz.crm.common.api.PageData;
 import com.hz.crm.common.exception.BusinessException;
@@ -52,6 +53,9 @@ public class CustomerApplicationService {
 
     @Autowired
     private ProductReferenceResolver productReferenceResolver;
+
+    @Autowired
+    private MarketingFunnelRuleProvider marketingFunnelRuleProvider;
 
     @Transactional(readOnly = true)
     public PageData<CustomerResponse> page(Long tenantId, Long userId, String dataScope, CustomerQuery query) {
@@ -292,12 +296,14 @@ public class CustomerApplicationService {
         LambdaQueryWrapper<CustomerEntity> wrapper = Wrappers.<CustomerEntity>lambdaQuery()
                 .eq(CustomerEntity::getTenantId, tenantId)
                 .eq(CustomerEntity::isDeleted, false);
-        if ("SELF".equals(dataScope)) {
-            wrapper.eq(CustomerEntity::getOwnerId, userId);
-        }
+        applyPageOwnerScope(wrapper, tenantId, userId, dataScope);
         if (query.getStatus() != null) {
             wrapper.eq(CustomerEntity::getStatus, query.getStatus());
         }
+        if (query.getLevels() != null && !query.getLevels().isEmpty()) {
+            wrapper.in(CustomerEntity::getLevel, query.getLevels());
+        }
+        marketingFunnelRuleProvider.applyCustomerStage(wrapper, query.getFunnelStage());
         String keyword = trimToNull(query.getKeyword());
         if (keyword != null) {
             wrapper.and(nested -> nested
@@ -312,6 +318,23 @@ public class CustomerApplicationService {
                     .like(CustomerEntity::getContactEmail, keyword));
         }
         return wrapper;
+    }
+
+    private void applyPageOwnerScope(
+            LambdaQueryWrapper<CustomerEntity> wrapper,
+            Long tenantId,
+            Long userId,
+            String dataScope) {
+        if ("ALL".equals(dataScope)) {
+            return;
+        }
+        List<Long> ownerIds = userDataScopeValidator.listAccessibleUserIds(
+                tenantId, userId, dataScope);
+        if (ownerIds == null || ownerIds.isEmpty()) {
+            wrapper.apply("1 = 0");
+        } else {
+            wrapper.in(CustomerEntity::getOwnerId, ownerIds);
+        }
     }
 
     private CustomerResponse toResponse(CustomerEntity entity) {

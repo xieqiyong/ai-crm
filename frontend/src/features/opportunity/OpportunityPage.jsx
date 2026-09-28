@@ -18,6 +18,7 @@ import { customerOptionLabel, useCustomerOptions } from '../../hooks/useCustomer
 import { FollowupPanel } from '../followup/FollowupPanel'
 import { ownerName, ownerOptionLabel, useOwnerOptions } from '../../hooks/useOwnerOptions'
 import { useProductOptions } from '../../hooks/useProductOptions'
+import { readRouteQueryParam } from '../../router/routeQuery'
 import {
   buildOpportunityStagePatch,
   getRecommendedOpportunityProbability,
@@ -86,6 +87,7 @@ function compactQuery(query) {
     keyword: query.keyword || undefined,
     stage: query.stage || undefined,
     customerId: query.customerId || undefined,
+    funnelStage: query.funnelStage || undefined,
   }
 }
 
@@ -119,7 +121,7 @@ function toPayload(form) {
   }
 }
 
-export function OpportunityPage({ can, notify, navigate }) {
+export function OpportunityPage({ can, notify, navigate, routeKey }) {
   const canManage = can('crm:opportunity:manage')
   const canCreate = canManage || can('crm:opportunity:create')
   const canDelete = can('crm:opportunity:manage')
@@ -131,7 +133,16 @@ export function OpportunityPage({ can, notify, navigate }) {
   const customerOptions = useCustomerOptions(notify, canViewCustomer)
   const productOptions = useProductOptions(notify, true, canViewProduct || canCreate)
   const { confirm, dialogProps } = useConfirmDialog()
-  const [query, setQuery] = useState({ keyword: '', stage: '', pageNo: 1, pageSize: 20 })
+  const routeOpenId = readRouteQueryParam(routeKey, 'openId')
+  const [query, setQuery] = useState(() => ({
+    keyword: '',
+    stage: '',
+    funnelStage: readRouteQueryParam(routeKey, 'funnelStage') === 'ACTIVE_OPPORTUNITY'
+      ? 'ACTIVE_OPPORTUNITY'
+      : '',
+    pageNo: 1,
+    pageSize: 20,
+  }))
   const [page, setPage] = useState(emptyPage)
   const [loading, setLoading] = useState(true)
   const [selected, setSelected] = useState(null)
@@ -176,6 +187,10 @@ export function OpportunityPage({ can, notify, navigate }) {
       notify(err.message || '商机详情加载失败', 'info')
     }
   }
+
+  useEffect(() => {
+    if (routeOpenId) openDetail({ id: routeOpenId })
+  }, [routeOpenId])
 
   const openCustomerDetail = (customerId) => {
     if (!customerId || !canViewCustomer) return
@@ -236,6 +251,18 @@ export function OpportunityPage({ can, notify, navigate }) {
         )}
       />
 
+      {query.funnelStage === 'ACTIVE_OPPORTUNITY' && (
+        <div className="funnel-filter-chip">
+          <span>营销漏斗</span>
+          <b>正在推进且尚未结束的商机</b>
+          <button
+            type="button"
+            aria-label="清除营销漏斗筛选"
+            onClick={() => load({ ...query, funnelStage: '', pageNo: 1 })}
+          ><X size={14} /></button>
+        </div>
+      )}
+
       <div className="module-stats opportunity-stage-stats">
         {stageSummary.map((item) => (
           <Card key={item.stage}>
@@ -257,7 +284,14 @@ export function OpportunityPage({ can, notify, navigate }) {
         </div>
         <label>
           <span>阶段</span>
-          <select value={query.stage} onChange={(event) => setQuery({ ...query, stage: event.target.value })}>
+          <select
+            value={query.stage}
+            onChange={(event) => setQuery({
+              ...query,
+              stage: event.target.value,
+              funnelStage: '',
+            })}
+          >
             <option value="">全部阶段</option>
             {Object.entries(stageText).map(([value, label]) => <option value={value} key={value}>{label}</option>)}
           </select>
@@ -355,7 +389,10 @@ export function OpportunityPage({ can, notify, navigate }) {
           onOpenCustomer={canViewCustomer ? () => openCustomerDetail(selected?.customerId) : null}
           onEdit={() => setEditing(toForm(selected))}
           onDelete={() => deleteOpportunity(selected)}
-          onClose={() => setSelected(null)}
+          onClose={() => {
+            setSelected(null)
+            if (routeOpenId) navigate('opportunities')
+          }}
         />
       </div>
 

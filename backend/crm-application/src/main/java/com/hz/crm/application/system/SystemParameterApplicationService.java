@@ -3,6 +3,8 @@ package com.hz.crm.application.system;
 import com.baomidou.mybatisplus.core.conditions.query.QueryWrapper;
 import com.hz.crm.application.system.dto.FollowupTaskSettingsResponse;
 import com.hz.crm.application.system.dto.FollowupTaskSettingsSaveRequest;
+import com.hz.crm.application.system.dto.MessageWebhookSettingsResponse;
+import com.hz.crm.application.system.dto.MessageWebhookSettingsSaveRequest;
 import com.hz.crm.common.exception.BusinessException;
 import com.hz.crm.common.id.SnowflakeIdGenerator;
 import com.hz.crm.common.time.DateTimes;
@@ -24,9 +26,23 @@ public class SystemParameterApplicationService {
     public static final String KEY_FOLLOWUP_SECOND_DELAY_MINUTES =
             "sales.followup.inactivity.secondDelayMinutes";
 
+    public static final String KEY_MESSAGE_WEBHOOK_ENABLED = "message.webhook.enabled";
+
+    public static final String KEY_MESSAGE_WEBHOOK_PLATFORM = "message.webhook.platform";
+
+    public static final String KEY_MESSAGE_WEBHOOK_URL = "message.webhook.url";
+
+    public static final String KEY_MESSAGE_WEBHOOK_PUBLIC_POOL = "message.webhook.publicPool.enabled";
+
     private static final String GROUP_SALES_TASK = "SALES_TASK";
 
+    private static final String GROUP_MESSAGE = "MESSAGE";
+
     private static final String VALUE_TYPE_NUMBER = "NUMBER";
+
+    private static final String VALUE_TYPE_STRING = "STRING";
+
+    private static final String VALUE_TYPE_BOOLEAN = "BOOLEAN";
 
     @Autowired
     private SystemParameterMapper systemParameterMapper;
@@ -97,6 +113,48 @@ public class SystemParameterApplicationService {
     }
 
     @Transactional(readOnly = true)
+    public MessageWebhookSettingsResponse messageWebhookSettings(Long tenantId) {
+        MessageWebhookSettingsResponse response = new MessageWebhookSettingsResponse();
+        response.setEnabled(booleanValue(tenantId, KEY_MESSAGE_WEBHOOK_ENABLED, false));
+        response.setPlatform(stringValue(tenantId, KEY_MESSAGE_WEBHOOK_PLATFORM, "DINGTALK"));
+        response.setWebhookUrl(stringValue(tenantId, KEY_MESSAGE_WEBHOOK_URL, ""));
+        response.setNotifyPublicPool(booleanValue(tenantId, KEY_MESSAGE_WEBHOOK_PUBLIC_POOL, true));
+        return response;
+    }
+
+    @Transactional
+    public MessageWebhookSettingsResponse saveMessageWebhookSettings(
+            Long tenantId, Long operatorId, MessageWebhookSettingsSaveRequest request) {
+        if (request == null) {
+            throw new BusinessException("SYSTEM_PARAMETER_003", "消息Webhook设置不能为空");
+        }
+        String platform = StringUtils.hasText(request.getPlatform())
+                ? request.getPlatform().trim().toUpperCase()
+                : "DINGTALK";
+        if (!"DINGTALK".equals(platform) && !"FEISHU".equals(platform)) {
+            throw new BusinessException("SYSTEM_PARAMETER_004", "消息平台只支持钉钉或飞书");
+        }
+        String webhookUrl = request.getWebhookUrl() == null ? "" : request.getWebhookUrl().trim();
+        if (request.isEnabled() && !StringUtils.hasText(webhookUrl)) {
+            throw new BusinessException("SYSTEM_PARAMETER_005", "启用消息Webhook前请填写机器人地址");
+        }
+        saveParameter(tenantId, KEY_MESSAGE_WEBHOOK_ENABLED, String.valueOf(request.isEnabled()),
+                "消息Webhook开关", "是否启用外部机器人通知", GROUP_MESSAGE,
+                VALUE_TYPE_BOOLEAN, Integer.valueOf(10), operatorId);
+        saveParameter(tenantId, KEY_MESSAGE_WEBHOOK_PLATFORM, platform,
+                "消息Webhook平台", "外部机器人平台", GROUP_MESSAGE,
+                VALUE_TYPE_STRING, Integer.valueOf(20), operatorId);
+        saveParameter(tenantId, KEY_MESSAGE_WEBHOOK_URL, webhookUrl,
+                "消息Webhook地址", "钉钉或飞书群机器人的Webhook地址", GROUP_MESSAGE,
+                VALUE_TYPE_STRING, Integer.valueOf(30), operatorId);
+        saveParameter(tenantId, KEY_MESSAGE_WEBHOOK_PUBLIC_POOL,
+                String.valueOf(request.isNotifyPublicPool()),
+                "公海池新增通知", "公海池新增数据时通知销售关注", GROUP_MESSAGE,
+                VALUE_TYPE_BOOLEAN, Integer.valueOf(40), operatorId);
+        return messageWebhookSettings(tenantId);
+    }
+
+    @Transactional(readOnly = true)
     public int intValue(Long tenantId, String paramKey, int defaultValue) {
         SystemParameterEntity entity = findOne(tenantId, paramKey);
         if (entity == null || !StringUtils.hasText(entity.getParamValue())) {
@@ -107,6 +165,24 @@ public class SystemParameterApplicationService {
         } catch (NumberFormatException ex) {
             return defaultValue;
         }
+    }
+
+    @Transactional(readOnly = true)
+    public String stringValue(Long tenantId, String paramKey, String defaultValue) {
+        SystemParameterEntity entity = findOne(tenantId, paramKey);
+        if (entity == null || entity.getParamValue() == null) {
+            return defaultValue;
+        }
+        return entity.getParamValue();
+    }
+
+    @Transactional(readOnly = true)
+    public boolean booleanValue(Long tenantId, String paramKey, boolean defaultValue) {
+        String value = stringValue(tenantId, paramKey, null);
+        if (!StringUtils.hasText(value)) {
+            return defaultValue;
+        }
+        return Boolean.parseBoolean(value.trim());
     }
 
     private void saveParameter(

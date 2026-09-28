@@ -225,6 +225,7 @@ public class AuditOperationAspect {
                 || normalized.contains("apikey")
                 || normalized.contains("accesstoken")
                 || normalized.contains("refreshtoken")
+                || normalized.contains("webhookurl")
                 || normalized.contains("authorization")
                 || normalized.contains("credential");
     }

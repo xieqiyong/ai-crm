@@ -11,6 +11,7 @@ import { ChannelPage } from '../features/channel/ChannelPage'
 import { CustomerDetailPage } from '../features/customer/CustomerDetailPage'
 import { CustomerPage } from '../features/customer/CustomerPage'
 import { DashboardPage } from '../features/dashboard/DashboardPage'
+import { FollowupAttentionPage } from '../features/dashboard/FollowupAttentionPage'
 import { FollowupPage } from '../features/followup/FollowupPage'
 import { KnowledgePage } from '../features/knowledge/KnowledgePage'
 import { LeadDetailPage } from '../features/lead/LeadDetailPage'
@@ -21,6 +22,7 @@ import { PublicPoolPage } from '../features/channel/PublicPoolPage'
 import { SettingsPage } from '../features/settings/SettingsPage'
 import { MailPage } from '../features/mail/MailPage'
 import { SalesTaskPage } from '../features/task/SalesTaskPage'
+import { SalesCalendarPage } from '../features/calendar/SalesCalendarPage'
 
 export const DEFAULT_ROUTE = 'dashboard'
 
@@ -160,6 +162,20 @@ export const routeGroups = [
 ]
 
 export const hiddenRoutes = [
+  {
+    key: 'followup-attention',
+    label: '重点跟进列表',
+    permission: 'menu.dashboard',
+    component: FollowupAttentionPage,
+    navKey: 'dashboard',
+  },
+  {
+    key: 'calendar',
+    label: '销售日历',
+    permission: 'menu.tasks',
+    component: SalesCalendarPage,
+    navKey: 'tasks',
+  },
   {
     key: 'assistant',
     label: 'AI 智能体助手',

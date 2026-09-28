@@ -14,6 +14,7 @@ import com.hz.crm.application.lead.dto.LeadImportRow;
 import com.hz.crm.application.lead.dto.LeadQuery;
 import com.hz.crm.application.lead.dto.LeadResponse;
 import com.hz.crm.application.lead.dto.LeadSaveRequest;
+import com.hz.crm.application.marketing.MarketingFunnelRuleProvider;
 import com.hz.crm.application.product.ProductReferenceResolver;
 import com.hz.crm.common.api.PageData;
 import com.hz.crm.common.exception.BusinessException;
@@ -72,6 +73,9 @@ public class LeadApplicationService {
 
     @Autowired
     private ProductReferenceResolver productReferenceResolver;
+
+    @Autowired
+    private MarketingFunnelRuleProvider marketingFunnelRuleProvider;
 
     @Transactional(readOnly = true)
     public PageData<LeadResponse> page(Long tenantId, Long userId, String dataScope, LeadQuery query) {
@@ -418,9 +422,7 @@ public class LeadApplicationService {
         LambdaQueryWrapper<LeadEntity> wrapper = Wrappers.<LeadEntity>lambdaQuery()
                 .eq(LeadEntity::getTenantId, tenantId)
                 .eq(LeadEntity::isDeleted, false);
-        if ("SELF".equals(dataScope)) {
-            wrapper.eq(LeadEntity::getOwnerId, userId);
-        }
+        applyPageOwnerScope(wrapper, tenantId, userId, dataScope);
         String keyword = trimToNull(query.getKeyword());
         if (keyword != null) {
             wrapper.and(item -> item
@@ -437,7 +439,25 @@ public class LeadApplicationService {
         if (query.getStatus() != null) {
             wrapper.eq(LeadEntity::getStatus, query.getStatus());
         }
+        marketingFunnelRuleProvider.applyLeadStage(wrapper, query.getFunnelStage());
         return wrapper;
+    }
+
+    private void applyPageOwnerScope(
+            LambdaQueryWrapper<LeadEntity> wrapper,
+            Long tenantId,
+            Long userId,
+            String dataScope) {
+        if ("ALL".equals(dataScope)) {
+            return;
+        }
+        List<Long> ownerIds = userDataScopeValidator.listAccessibleUserIds(
+                tenantId, userId, dataScope);
+        if (ownerIds == null || ownerIds.isEmpty()) {
+            wrapper.apply("1 = 0");
+        } else {
+            wrapper.in(LeadEntity::getOwnerId, ownerIds);
+        }
     }
 
     private void saveEntity(LeadEntity entity, boolean newRecord) {

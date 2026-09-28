@@ -1,5 +1,20 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
-import { CalendarDays, Edit2, FileAudio2, FileVideo2, MessageCircleMore, Paperclip, Plus, RefreshCw, X } from 'lucide-react'
+import {
+  BriefcaseBusiness,
+  CalendarDays,
+  Edit2,
+  FileAudio2,
+  FileText,
+  FileVideo2,
+  ListChecks,
+  MessageCircleMore,
+  Paperclip,
+  Plus,
+  RefreshCw,
+  Sparkles,
+  TriangleAlert,
+  X,
+} from 'lucide-react'
 import { api } from '../../api'
 import {
   Button,
@@ -64,6 +79,7 @@ export const emptyFollowupForm = {
   nextFollowTime: '',
   ownerId: '',
   mediaFiles: [],
+  projectInfo: createProjectInfoDraft(),
 }
 
 export function formatDateTime(value) {
@@ -175,6 +191,7 @@ export function toFollowupForm(row) {
     nextFollowTime: toDateTimeInput(row.nextFollowTime),
     ownerId: row.ownerId || '',
     mediaFiles: [],
+    projectInfo: normalizeProjectInfo(row.projectInfo),
   }
 }
 
@@ -190,6 +207,7 @@ export function toFollowupPayload(form) {
     nextPlan: form.nextPlan || null,
     nextFollowTime: form.nextFollowTime || null,
     ownerId: form.ownerId || null,
+    projectInfo: normalizeProjectInfo(form.projectInfo),
   }
 }
 
@@ -467,6 +485,7 @@ export function FollowupTimeline({ records = [], loading, compact = false, onEdi
             {row.result && <em>结果：{row.result}</em>}
             {row.nextPlan && <em>下次计划：{row.nextPlan}</em>}
             {row.nextFollowTime && <em>下次跟进：{formatDateTime(row.nextFollowTime)}</em>}
+            {hasProjectInfo(row.projectInfo) && <em>项目附加信息：已补充</em>}
             <FollowupMediaTranscriptions items={row.mediaTranscriptions} />
             <div className="followup-meta">
               <small>{targetTypeText[row.targetType] || row.targetType}：{row.targetName || row.targetId}</small>
@@ -504,38 +523,111 @@ export function FollowupMediaTranscriptions({ items = [], compact = false }) {
   if (!records.length) return null
   return (
     <div className={`followup-media-results ${compact ? 'compact' : ''}`}>
-      {records.map((item) => {
-        const success = item.status === 'SUCCESS'
-        const failed = item.status === 'FAILED'
-        const uploading = uploadingTranscriptionStatuses.has(item.status)
-        const running = runningTranscriptionStatuses.has(item.status)
-          || pendingTranscriptionStatuses.has(item.status)
-          || uploading
-        const Icon = isVideoFile({ type: item.contentType, name: item.fileName }) ? FileVideo2 : FileAudio2
-        return (
-          <div
-            className={`followup-media-result ${success ? 'success' : ''} ${failed ? 'failed' : ''} ${uploading ? 'uploading' : ''}`}
-            key={item.id}
-          >
-            <div className="followup-media-result-head">
-              <span><Icon size={15} />{item.fileName || '音视频文件'}</span>
-              <small>{transcriptionStatusText[item.status] || item.status || '待处理'}</small>
-            </div>
-            {running && (
-              <div className="followup-media-progress">
-                <i style={{ width: `${Math.max(5, Number(item.progress || 0))}%` }} />
-              </div>
-            )}
-            {failed && item.errorMessage && <p className="followup-media-error">{item.errorMessage}</p>}
-            {success && item.transcriptText && !compact && (
-              <div className="followup-media-text">
-                <b>转写文本</b>
-                <p>{item.transcriptText}</p>
-              </div>
-            )}
+      {records.map((item) => (
+        <FollowupMediaTranscriptionItem item={item} compact={compact} key={item.id} />
+      ))}
+    </div>
+  )
+}
+
+function FollowupMediaTranscriptionItem({ item, compact }) {
+  const [activeTab, setActiveTab] = useState('INSIGHT')
+  const success = item.status === 'SUCCESS'
+  const failed = item.status === 'FAILED'
+  const uploading = uploadingTranscriptionStatuses.has(item.status)
+  const running = runningTranscriptionStatuses.has(item.status)
+    || pendingTranscriptionStatuses.has(item.status)
+    || uploading
+  const Icon = isVideoFile({ type: item.contentType, name: item.fileName }) ? FileVideo2 : FileAudio2
+  return (
+    <div
+      className={`followup-media-result ${success ? 'success' : ''} ${failed ? 'failed' : ''} ${uploading ? 'uploading' : ''}`}
+    >
+      <div className="followup-media-result-head">
+        <span><Icon size={15} />{item.fileName || '音视频文件'}</span>
+        <small>{transcriptionStatusText[item.status] || item.status || '待处理'}</small>
+      </div>
+      {running && (
+        <div className="followup-media-progress">
+          <i style={{ width: `${Math.max(5, Number(item.progress || 0))}%` }} />
+        </div>
+      )}
+      {failed && item.errorMessage && <p className="followup-media-error">{item.errorMessage}</p>}
+      {success && item.transcriptText && !compact && (
+        <div className="followup-media-insight-shell">
+          <div className="followup-media-tabs" role="tablist" aria-label="音视频分析结果">
+            <button
+              type="button"
+              role="tab"
+              aria-selected={activeTab === 'INSIGHT'}
+              className={activeTab === 'INSIGHT' ? 'active' : ''}
+              onClick={() => setActiveTab('INSIGHT')}
+            >
+              <Sparkles size={15} />AI 沟通纪要
+            </button>
+            <button
+              type="button"
+              role="tab"
+              aria-selected={activeTab === 'TRANSCRIPT'}
+              className={activeTab === 'TRANSCRIPT' ? 'active' : ''}
+              onClick={() => setActiveTab('TRANSCRIPT')}
+            >
+              <FileText size={15} />原始转写
+            </button>
           </div>
-        )
-      })}
+          {activeTab === 'INSIGHT' ? (
+            <MediaInsightPreview />
+          ) : (
+            <div className="followup-media-text">
+              <div className="followup-media-text-head">
+                <b>原始转写文本</b>
+                <small>未经删改，用于核对沟通事实</small>
+              </div>
+              <p>{item.transcriptText}</p>
+            </div>
+          )}
+        </div>
+      )}
+    </div>
+  )
+}
+
+function MediaInsightPreview() {
+  const sections = [
+    { icon: ListChecks, title: '客户核心需求', description: '生成后展示客户明确表达的需求与目标' },
+    { icon: BriefcaseBusiness, title: '项目推进信息', description: '生成后展示立项、预算、招投标和竞争情况' },
+    { icon: TriangleAlert, title: '风险与异议', description: '生成后展示客户顾虑、阻塞点和潜在风险' },
+    { icon: CalendarDays, title: '下一步行动', description: '生成后展示建议动作与下次跟进安排' },
+  ]
+  return (
+    <div className="media-insight-preview">
+      <div className="media-insight-empty">
+        <span><Sparkles size={20} /></span>
+        <div>
+          <b>原始转写已就绪</b>
+          <p>接入后将自动过滤噪声、口头语和重复内容，生成销售可直接使用的沟通纪要。</p>
+        </div>
+        <Button icon={Sparkles} disabled>生成沟通纪要</Button>
+      </div>
+      <div className="media-insight-summary-preview">
+        <span>沟通摘要</span>
+        <p>生成后将在这里展示本次沟通的核心结论，不会覆盖原始转写内容。</p>
+      </div>
+      <div className="media-insight-grid">
+        {sections.map(({ icon: SectionIcon, title, description }) => (
+          <div key={title}>
+            <span><SectionIcon size={16} /></span>
+            <section><b>{title}</b><small>{description}</small></section>
+          </div>
+        ))}
+      </div>
+      <div className="media-insight-actions">
+        <small>生成完成并由销售确认后，才能回填业务数据。</small>
+        <div>
+          <Button variant="secondary" disabled>填入附加信息</Button>
+          <Button disabled>写入跟进内容</Button>
+        </div>
+      </div>
     </div>
   )
 }
@@ -551,6 +643,12 @@ export function FollowupFormModal({
 }) {
   const [targetOptions, setTargetOptions] = useState([])
   const [targetLoading, setTargetLoading] = useState(false)
+  const [followupTab, setFollowupTab] = useState('BASIC')
+
+  useEffect(() => {
+    if (!open) return
+    setFollowupTab('BASIC')
+  }, [open, form?.id, form?.targetId])
 
   useEffect(() => {
     if (!open || !form || fixedTarget) {
@@ -625,11 +723,14 @@ export function FollowupFormModal({
   const removeMediaFile = (index) => {
     update({ mediaFiles: mediaFiles.filter((_, itemIndex) => itemIndex !== index) })
   }
+  const projectInfo = normalizeProjectInfo(form.projectInfo)
+  const updateProjectInfo = (patch) => update({ projectInfo: { ...projectInfo, ...patch } })
   return (
     <Modal
       open={open}
       title={form.id ? '编辑跟进记录' : '写跟进记录'}
       onClose={onClose}
+      size="lg"
       footer={(
         <>
           <Button variant="secondary" onClick={onClose}>取消</Button>
@@ -637,7 +738,30 @@ export function FollowupFormModal({
         </>
       )}
     >
-      <div className="customer-form-grid followup-form-grid">
+      <div className="followup-form-tabs" role="tablist" aria-label="跟进记录内容">
+        <button
+          type="button"
+          role="tab"
+          aria-selected={followupTab === 'BASIC'}
+          className={followupTab === 'BASIC' ? 'active' : ''}
+          onClick={() => setFollowupTab('BASIC')}
+        >
+          <MessageCircleMore size={16} />
+          <span><b>跟进信息</b><small>沟通内容与下次计划</small></span>
+        </button>
+        <button
+          type="button"
+          role="tab"
+          aria-selected={followupTab === 'ADDITIONAL'}
+          className={followupTab === 'ADDITIONAL' ? 'active' : ''}
+          onClick={() => setFollowupTab('ADDITIONAL')}
+        >
+          <BriefcaseBusiness size={16} />
+          <span><b>附加信息</b><small>项目背景、预算与竞争情况（选填）</small></span>
+        </button>
+      </div>
+      {followupTab === 'BASIC' ? (
+        <div className="customer-form-grid followup-form-grid">
         {!fixedTarget && (
           <>
             <Field label="关联对象类型" required>
@@ -717,7 +841,144 @@ export function FollowupFormModal({
             onChange={(event) => update({ nextFollowTime: event.target.value })}
           />
         </Field>
-      </div>
+        </div>
+      ) : (
+        <section className="followup-project-section">
+          <div className="followup-project-head">
+            <span className="followup-project-icon"><BriefcaseBusiness size={18} /></span>
+            <div>
+              <strong>项目推进附加信息</strong>
+              <small>本页全部选填，只记录本次沟通中已经确认的信息</small>
+            </div>
+            <em>选填</em>
+          </div>
+          <div className="followup-project-body">
+            <div className="followup-project-tip">
+              <b>不确定的信息可以保留“未确认”</b>
+              <span>避免凭经验补齐，让后续销售和管理人员看到可信的项目事实。</span>
+            </div>
+            <div className="followup-project-grid">
+                <Field label="项目阶段">
+                  <select
+                    value={projectInfo.projectStage}
+                    onChange={(event) => updateProjectInfo({ projectStage: event.target.value })}
+                  >
+                    <option value="UNCONFIRMED">未确认</option>
+                    <option value="DISCOVERY">需求调研</option>
+                    <option value="SOLUTION">方案交流</option>
+                    <option value="PREPARING">准备立项</option>
+                    <option value="APPROVED">已立项</option>
+                    <option value="PROCUREMENT">采购准备</option>
+                    <option value="BIDDING">招投标</option>
+                    <option value="NEGOTIATION">商务谈判</option>
+                    <option value="IMPLEMENTING">实施中</option>
+                    <option value="PAUSED">项目暂停</option>
+                  </select>
+                </Field>
+                <Field label="预算状态">
+                  <select
+                    value={projectInfo.budgetStatus}
+                    onChange={(event) => updateProjectInfo({ budgetStatus: event.target.value })}
+                  >
+                    <option value="UNCONFIRMED">未确认</option>
+                    <option value="NOT_APPLIED">未申请</option>
+                    <option value="APPLYING">申请中</option>
+                    <option value="APPROVED">已批准</option>
+                    <option value="INSUFFICIENT">预算不足</option>
+                    <option value="NONE">暂无预算</option>
+                  </select>
+                </Field>
+                <Field label="招投标状态">
+                  <select
+                    value={projectInfo.tenderStatus}
+                    onChange={(event) => updateProjectInfo({ tenderStatus: event.target.value })}
+                  >
+                    <option value="UNCONFIRMED">未确认</option>
+                    <option value="NOT_REQUIRED">不需要</option>
+                    <option value="POSSIBLE">可能需要</option>
+                    <option value="REQUIRED">确定需要</option>
+                    <option value="IN_PROGRESS">进行中</option>
+                    <option value="FINISHED">已结束</option>
+                  </select>
+                </Field>
+                <Field label="竞争情况">
+                  <select
+                    value={projectInfo.competitionStatus}
+                    onChange={(event) => updateProjectInfo({ competitionStatus: event.target.value })}
+                  >
+                    <option value="UNCONFIRMED">未确认</option>
+                    <option value="NONE">暂无竞争对手</option>
+                    <option value="EXISTS">存在竞争对手</option>
+                  </select>
+                </Field>
+                <Field label="项目背景" className="wide-field">
+                  <textarea
+                    rows="3"
+                    value={projectInfo.background}
+                    placeholder="例如：客户现有系统、当前痛点、项目发起原因"
+                    onChange={(event) => updateProjectInfo({ background: event.target.value })}
+                  />
+                </Field>
+                <Field label="核心需求" className="wide-field">
+                  <textarea
+                    rows="3"
+                    value={projectInfo.requirements}
+                    placeholder="记录客户要解决的问题、关注能力与验收目标"
+                    onChange={(event) => updateProjectInfo({ requirements: event.target.value })}
+                  />
+                </Field>
+                <Field label="竞争对手" hint="存在多家时用顿号或逗号分隔">
+                  <input
+                    value={projectInfo.competitors}
+                    placeholder="例如：A公司、B产品"
+                    onChange={(event) => updateProjectInfo({ competitors: event.target.value })}
+                  />
+                </Field>
+                <Field label="预计采购时间">
+                  <input
+                    type="date"
+                    value={projectInfo.expectedPurchaseDate}
+                    onChange={(event) => updateProjectInfo({ expectedPurchaseDate: event.target.value })}
+                  />
+                </Field>
+            </div>
+          </div>
+        </section>
+      )}
     </Modal>
+  )
+}
+
+function createProjectInfoDraft() {
+  return {
+    background: '',
+    requirements: '',
+    projectStage: 'UNCONFIRMED',
+    budgetStatus: 'UNCONFIRMED',
+    tenderStatus: 'UNCONFIRMED',
+    competitionStatus: 'UNCONFIRMED',
+    competitors: '',
+    expectedPurchaseDate: '',
+  }
+}
+
+function normalizeProjectInfo(value) {
+  return {
+    ...createProjectInfoDraft(),
+    ...(value || {}),
+  }
+}
+
+function hasProjectInfo(value) {
+  const projectInfo = normalizeProjectInfo(value)
+  return Boolean(
+    projectInfo.background
+    || projectInfo.requirements
+    || projectInfo.competitors
+    || projectInfo.expectedPurchaseDate
+    || projectInfo.projectStage !== 'UNCONFIRMED'
+    || projectInfo.budgetStatus !== 'UNCONFIRMED'
+    || projectInfo.tenderStatus !== 'UNCONFIRMED'
+    || projectInfo.competitionStatus !== 'UNCONFIRMED',
   )
 }

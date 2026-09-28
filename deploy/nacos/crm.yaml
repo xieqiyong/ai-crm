@@ -74,11 +74,15 @@ crm:
       retry-delay-seconds: 60
   channel:
     upload-dir: /app/uploads/channel
+    sync:
+      internal-token:
+      tenant-id: 0
+      operator-id: 0
   storage:
     upload-dir: /app/uploads
     public-path: /uploads
     minio:
-      enabled: false
+      enabled: true
       endpoint: http://180.76.225.232:9000
       public-url:
       access-key: admin
@@ -94,7 +98,7 @@ crm:
       batch-size: 10
       max-retry: 3
       retry-delay-seconds: 60
-      public-url:
+      public-url: http://180.76.225.232:9000
       ffmpeg-path: ffmpeg
       ffmpeg-timeout-ms: 600000
       volcengine:

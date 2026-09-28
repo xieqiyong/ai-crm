@@ -8,7 +8,6 @@ import {
   Edit2,
   FileText,
   Mail,
-  Network,
   Phone,
   RefreshCw,
   Sparkles,
@@ -516,24 +515,7 @@ function CustomerOverview({
     <div className="customer-layout">
       <div className="customer-main">
         <div className="customer-top-grid">
-          <Card className="relation-card">
-            <div className="card-heading">
-              <div>
-                <h2><Network size={18} />客户联系人与决策链</h2>
-                <p>当前仅展示客户主联系人字段，后续接入联系人模块后展示完整关系。</p>
-              </div>
-            </div>
-            {data.contactName ? (
-              <div className="relation-map">
-                <span className="person ceo">
-                  <b>{data.contactName.slice(0, 4)}</b>
-                  <small>主联系人</small>
-                </span>
-              </div>
-            ) : (
-              <EmptyFeature icon={Users} title="暂无联系人数据" description="当前客户未填写主联系人，也尚未接入联系人列表接口。" />
-            )}
-          </Card>
+          <CustomerLifecycleCard data={data} opportunities={opportunities} />
 
           <Card className="profile-card">
             <div className="card-heading">
@@ -641,6 +623,58 @@ function CustomerOverview({
         </Card>
       </aside>
     </div>
+  )
+}
+
+function CustomerLifecycleCard({ data, opportunities = [] }) {
+  const activeOpportunities = opportunities.filter((item) => item.stage !== 'LOST')
+  const wonCount = activeOpportunities.filter((item) => item.stage === 'WON').length
+  let currentIndex = 0
+  if (data.status === 'COOPERATED') {
+    currentIndex = 4
+  } else if (wonCount > 0) {
+    currentIndex = 3
+  } else if (data.status === 'DEALING' || activeOpportunities.length > 0) {
+    currentIndex = 2
+  } else if (data.status === 'ACTIVE') {
+    currentIndex = 1
+  }
+  const stages = [
+    { title: '客户建档', description: data.createdAt ? formatDateTime(data.createdAt) : '已建立客户档案' },
+    { title: '需求确认', description: currentIndex >= 1 ? '已进入有效经营' : '等待确认需求' },
+    { title: '商机推进', description: activeOpportunities.length ? `${activeOpportunities.length} 个关联商机` : '尚未创建商机' },
+    { title: '商务成交', description: wonCount ? `${wonCount} 个商机已成交` : '等待商务成交' },
+    { title: '合作客户', description: data.status === 'COOPERATED' ? '已进入合作阶段' : '等待正式合作' },
+  ]
+  const isPaused = ['SLEEPING', 'CHURNED', 'BLACKLIST'].includes(data.status)
+  return (
+    <Card className="customer-lifecycle-card">
+      <div className="card-heading customer-lifecycle-heading">
+        <div>
+          <h2><Target size={18} />客户生命周期</h2>
+          <p>结合客户状态和真实商机，展示当前推进位置。</p>
+        </div>
+        <Badge tone={customerStatusTone[data.status] || 'neutral'}>
+          {customerStatusText[data.status] || data.status || '未设置状态'}
+        </Badge>
+      </div>
+      <div className="customer-lifecycle-flow">
+        {stages.map((stage, index) => {
+          const state = index < currentIndex ? 'completed' : index === currentIndex ? 'current' : 'pending'
+          return (
+            <div className={`customer-lifecycle-stage ${state}`} key={stage.title}>
+              <span>{index < currentIndex ? <CheckCircle2 size={14} /> : index + 1}</span>
+              <div><b>{stage.title}</b><small>{stage.description}</small></div>
+            </div>
+          )
+        })}
+      </div>
+      {isPaused && (
+        <div className="customer-lifecycle-alert">
+          当前客户处于“{customerStatusText[data.status]}”状态，生命周期暂不继续向后推定。
+        </div>
+      )}
+    </Card>
   )
 }
 

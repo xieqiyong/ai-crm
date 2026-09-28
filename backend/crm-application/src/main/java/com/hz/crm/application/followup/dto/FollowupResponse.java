@@ -33,6 +33,8 @@ public class FollowupResponse {
 
     private String nextPlan;
 
+    private FollowupProjectInfo projectInfo;
+
     private LocalDateTime nextFollowTime;
 
     private Long ownerId;

@@ -554,7 +554,7 @@ export function SalesTaskPage({ can, notify, navigate, currentUser }) {
   )
 }
 
-function SalesTaskFormModal({ open, form, ownerOptions, onChange, onClose, onSave }) {
+export function SalesTaskFormModal({ open, form, ownerOptions, onChange, onClose, onSave }) {
   const [targetKeyword, setTargetKeyword] = useState('')
   const [targetOptions, setTargetOptions] = useState([])
   const [targetLoading, setTargetLoading] = useState(false)

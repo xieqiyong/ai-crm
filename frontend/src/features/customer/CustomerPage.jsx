@@ -4,6 +4,7 @@ import {
   Plus,
   RefreshCw,
   Search,
+  X,
 } from 'lucide-react'
 import { api } from '../../api'
 import {
@@ -30,6 +31,7 @@ import { ownerName, ownerOptionLabel, useOwnerOptions } from '../../hooks/useOwn
 import { useCustomerIndustryOptions } from '../../hooks/useCustomerIndustryOptions'
 import { productSelectOptions, useProductOptions } from '../../hooks/useProductOptions'
 import { validateCustomerForm } from '../../models/customerForm'
+import { readRouteQueryParam } from '../../router/routeQuery'
 
 const emptyPage = {
   total: 0,
@@ -64,6 +66,8 @@ function compactQuery(query) {
     pageSize: query.pageSize || 10,
     keyword: query.keyword || undefined,
     status: query.status || undefined,
+    levels: query.levels?.length ? query.levels : undefined,
+    funnelStage: query.funnelStage || undefined,
   }
 }
 
@@ -107,6 +111,27 @@ function readCustomerListQuery(currentUser) {
     }
   } catch {
     return defaultQuery
+  }
+}
+
+function readCustomerRouteQuery(currentUser, routeKey) {
+  const query = readCustomerListQuery(currentUser)
+  const funnelStage = readRouteQueryParam(routeKey, 'funnelStage')
+  if (!['CUSTOMER', 'TARGET_CUSTOMER', 'CONTRACT_CUSTOMER'].includes(funnelStage)) {
+    return { ...query, levels: [], funnelStage: '' }
+  }
+  const routeLevels = readRouteQueryParam(routeKey, 'levels')
+    .split(',')
+    .filter((level) => ['IMPORTANT', 'STRATEGIC'].includes(level))
+  return {
+    ...query,
+    keyword: '',
+    status: '',
+    levels: funnelStage === 'TARGET_CUSTOMER'
+      ? routeLevels.length ? routeLevels : ['IMPORTANT', 'STRATEGIC']
+      : [],
+    funnelStage,
+    pageNo: 1,
   }
 }
 
@@ -172,7 +197,7 @@ function toPayload(form) {
   }
 }
 
-export function CustomerPage({ can, notify, navigate, currentUser }) {
+export function CustomerPage({ can, notify, navigate, currentUser, routeKey }) {
   const canWrite = can('crm:customer:manage') || can('crm:customer:edit')
   const canAssign = can('crm:customer:assign')
   const canDelete = can('crm:customer:manage')
@@ -181,7 +206,7 @@ export function CustomerPage({ can, notify, navigate, currentUser }) {
   const productOptions = useProductOptions(notify, true, canWrite)
   const { confirm, dialogProps } = useConfirmDialog()
   const lastViewedRowRef = useRef(null)
-  const [query, setQuery] = useState(() => readCustomerListQuery(currentUser))
+  const [query, setQuery] = useState(() => readCustomerRouteQuery(currentUser, routeKey))
   const [page, setPage] = useState(emptyPage)
   const [jumpPage, setJumpPage] = useState('')
   const [lastViewedCustomerId, setLastViewedCustomerId] = useState(() => readLastViewedCustomerId(currentUser))
@@ -332,6 +357,22 @@ export function CustomerPage({ can, notify, navigate, currentUser }) {
         )}
       />
 
+      {query.funnelStage && (
+        <div className="funnel-filter-chip">
+          <span>营销漏斗</span>
+          <b>{query.funnelStage === 'TARGET_CUSTOMER'
+            ? '重点客户与战略客户'
+            : query.funnelStage === 'CONTRACT_CUSTOMER'
+              ? '已合作客户'
+              : '全部客户'}</b>
+          <button
+            type="button"
+            aria-label="清除营销漏斗筛选"
+            onClick={() => load({ ...query, levels: [], funnelStage: '', pageNo: 1 })}
+          ><X size={14} /></button>
+        </div>
+      )}
+
       <form className="filter-card customer-filter-card list-filter-card" onSubmit={search}>
         <div className="filter-search">
           <Search size={17} />
@@ -343,7 +384,15 @@ export function CustomerPage({ can, notify, navigate, currentUser }) {
         </div>
         <label>
           <span>状态</span>
-          <select value={query.status} onChange={(event) => setQuery({ ...query, status: event.target.value })}>
+          <select
+            value={query.status}
+            onChange={(event) => setQuery({
+              ...query,
+              status: event.target.value,
+              levels: [],
+              funnelStage: '',
+            })}
+          >
             <option value="">全部状态</option>
             {customerStatusOptions.map((item) => <option value={item.value} key={item.value}>{item.label}</option>)}
           </select>

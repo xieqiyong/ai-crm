@@ -1,0 +1,30 @@
+{
+  "name": "license-sheet-sync-agent",
+  "version": "1.0.0",
+  "private": true,
+  "description": "企微智能表格到License平台的独立增量同步服务",
+  "type": "commonjs",
+  "engines": {
+    "node": ">=22"
+  },
+  "scripts": {
+    "migrate": "node src/main.js migrate",
+    "login": "node src/main.js login",
+    "run": "node src/main.js run",
+    "start": "node src/main.js start",
+    "retry": "node src/main.js retry",
+    "baseline": "node src/main.js baseline",
+    "validate": "node src/main.js validate",
+    "doctor": "node src/main.js doctor",
+    "test": "node --test"
+  },
+  "dependencies": {
+    "better-sqlite3": "13.0.3",
+    "exceljs": "4.4.0",
+    "node-cron": "4.6.0",
+    "playwright": "1.63.0"
+  },
+  "overrides": {
+    "uuid": "11.1.1"
+  }
+}

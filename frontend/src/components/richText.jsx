@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
+import { createPortal } from 'react-dom'
 import {
   AlignCenter,
   AlignLeft,
@@ -11,12 +12,16 @@ import {
   Link as LinkIcon,
   List,
   ListOrdered,
+  Minus,
   Palette,
+  Plus,
   Quote,
   Redo2,
   RemoveFormatting,
   Underline,
   Undo2,
+  X,
+  ZoomIn,
 } from 'lucide-react'
 import { api } from '../api'
 import { runtimeConfig } from '../config/env'
@@ -271,10 +276,86 @@ export function RichTextEditor({
 export function RichTextViewer({ value, empty = '暂无内容' }) {
   const html = sanitizeHtml(value)
   const hasImage = /<img[\s>]/i.test(html)
+  const [preview, setPreview] = useState(null)
+  const [previewScale, setPreviewScale] = useState(1)
+
+  useEffect(() => {
+    if (!preview) return undefined
+    const originalOverflow = document.body.style.overflow
+    const closeByKeyboard = (event) => {
+      if (event.key === 'Escape') setPreview(null)
+    }
+    document.body.style.overflow = 'hidden'
+    window.addEventListener('keydown', closeByKeyboard)
+    return () => {
+      document.body.style.overflow = originalOverflow
+      window.removeEventListener('keydown', closeByKeyboard)
+    }
+  }, [preview])
+
   if (!html || (!hasImage && html.replace(/<[^>]*>/g, '').trim().length === 0)) {
     return <p>{empty}</p>
   }
-  return <div className="rich-viewer" dangerouslySetInnerHTML={{ __html: html }} />
+  const openImage = (event) => {
+    const image = event.target?.closest?.('img')
+    if (!image || !event.currentTarget.contains(image)) return
+    event.preventDefault()
+    event.stopPropagation()
+    setPreviewScale(1)
+    setPreview({
+      src: image.currentSrc || image.src,
+      alt: image.alt || '跟进记录图片',
+    })
+  }
+  const changePreviewScale = (offset) => {
+    setPreviewScale((current) => Math.min(4, Math.max(1, Number((current + offset).toFixed(2)))))
+  }
+  const closePreview = () => {
+    setPreview(null)
+    setPreviewScale(1)
+  }
+  return (
+    <>
+      <div className="rich-viewer" onClick={openImage} dangerouslySetInnerHTML={{ __html: html }} />
+      {preview && createPortal(
+        <div className="rich-image-preview" role="dialog" aria-modal="true" aria-label="图片预览" onMouseDown={closePreview}>
+          <div className="rich-image-preview-toolbar" onMouseDown={(event) => event.stopPropagation()}>
+            <button type="button" disabled={previewScale <= 1} onClick={() => changePreviewScale(-0.25)} aria-label="缩小图片">
+              <Minus size={18} />
+            </button>
+            <button type="button" className="rich-image-preview-scale" onClick={() => setPreviewScale(1)} title="恢复原始预览比例">
+              {Math.round(previewScale * 100)}%
+            </button>
+            <button type="button" disabled={previewScale >= 4} onClick={() => changePreviewScale(0.25)} aria-label="放大图片">
+              <Plus size={18} />
+            </button>
+          </div>
+          <button type="button" className="rich-image-preview-close" onClick={closePreview} aria-label="关闭图片预览">
+            <X size={22} />
+          </button>
+          <div className="rich-image-preview-content" onMouseDown={(event) => event.stopPropagation()}>
+            <div
+              className={`rich-image-preview-stage ${previewScale > 1 ? 'zoomed' : ''}`}
+              onWheel={(event) => {
+                if (!event.ctrlKey) return
+                event.preventDefault()
+                changePreviewScale(event.deltaY > 0 ? -0.25 : 0.25)
+              }}
+            >
+              <img
+                src={preview.src}
+                alt={preview.alt}
+                style={{ transform: `scale(${previewScale})` }}
+                onDoubleClick={() => setPreviewScale((current) => current > 1 ? 1 : 2)}
+              />
+            </div>
+            <span><ZoomIn size={14} />双击快速放大，按住 Ctrl 滚动鼠标滚轮可连续缩放</span>
+          </div>
+        </div>,
+        document.body,
+      )}
+    </>
+  )
 }
 
 export function CollapsibleRichText({

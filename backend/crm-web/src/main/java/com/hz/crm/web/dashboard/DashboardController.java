@@ -1,13 +1,17 @@
 package com.hz.crm.web.dashboard;
 
 import com.hz.crm.application.dashboard.DashboardApplicationService;
+import com.hz.crm.application.dashboard.dto.DashboardFollowupAttentionItem;
+import com.hz.crm.application.dashboard.dto.DashboardFollowupAttentionQuery;
 import com.hz.crm.application.dashboard.dto.DashboardOverviewResponse;
 import com.hz.crm.auth.security.JwtPrincipal;
 import com.hz.crm.common.api.ApiResult;
+import com.hz.crm.common.api.PageData;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RestController;
 
 @RestController
@@ -21,6 +25,24 @@ public class DashboardController {
     @PreAuthorize("hasAuthority('*') or hasAuthority('crm:dashboard:view')")
     public ApiResult<DashboardOverviewResponse> overviewPost(JwtPrincipal principal) {
         return ApiResult.ok(
-                dashboardApplicationService.overview(principal.getTenantId(), principal.getUserId(), principal.getDataScope()));
+                dashboardApplicationService.overview(
+                        principal.getTenantId(),
+                        principal.getUserId(),
+                        principal.getDataScope(),
+                        principal.getPermissions(),
+                        principal.getMenuPermissions()));
+    }
+
+    @PostMapping("/followup-attention/page")
+    @PreAuthorize("hasAuthority('*') or hasAuthority('crm:dashboard:view')")
+    public ApiResult<PageData<DashboardFollowupAttentionItem>> followupAttentionPagePost(
+            @RequestBody(required = false) DashboardFollowupAttentionQuery query,
+            JwtPrincipal principal) {
+        return ApiResult.ok(
+                dashboardApplicationService.followupAttentionPage(
+                        principal.getTenantId(),
+                        principal.getUserId(),
+                        principal.getDataScope(),
+                        query));
     }
 }

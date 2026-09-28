@@ -1,0 +1,41 @@
+{
+  "dataDir": "./data",
+  "headless": false,
+  "runOnStart": false,
+  "schedules": [
+    "30 8 * * *",
+    "59 23 * * *"
+  ],
+  "timezone": "Asia/Shanghai",
+  "export": {
+    "pageReadyDelayMs": 5000,
+    "downloadTimeoutMs": 90000,
+    "maxAttempts": 3,
+    "retryDelayMs": 1500,
+    "maxRunMinutes": 30
+  },
+  "crmApi": {
+    "enabled": true,
+    "baseUrl": "http://host.docker.internal:8088",
+    "importPath": "/api/internal/channel/source/import-excel",
+    "tokenEnv": "CRM_CHANNEL_SYNC_INTERNAL_TOKEN",
+    "tokenHeader": "X-CRM-Channel-Sync-Token",
+    "timeoutMs": 120000,
+    "maxAttempts": 3,
+    "retryDelayMs": 3000
+  },
+  "sources": [
+    {
+      "id": "wecom-sheet-product-a",
+      "name": "产品A咨询表",
+      "enabled": true,
+      "url": "https://doc.weixin.qq.com/smartsheet/请替换文档标识?tab=请替换子表标识"
+    },
+    {
+      "id": "wecom-sheet-product-b",
+      "name": "产品B咨询表",
+      "enabled": true,
+      "url": "https://doc.weixin.qq.com/smartsheet/请替换文档标识?tab=请替换子表标识"
+    }
+  ]
+}

@@ -3,6 +3,7 @@ package com.hz.crm.application.dashboard.dto;
 import java.math.BigDecimal;
 import java.util.ArrayList;
 import java.util.List;
+import com.hz.crm.application.marketing.dto.MarketingFunnelItem;
 import lombok.Getter;
 import lombok.Setter;
 
@@ -59,6 +60,8 @@ public class DashboardOverviewResponse {
     private List<DashboardFollowupRankItem> todayFollowupRanking = new ArrayList<DashboardFollowupRankItem>();
 
     private List<DashboardTaskRankItem> todayTaskCompletionRanking = new ArrayList<DashboardTaskRankItem>();
+
+    private List<MarketingFunnelItem> marketingFunnel = new ArrayList<MarketingFunnelItem>();
 
     private List<DashboardFollowupAttentionItem> attentionCustomers =
             new ArrayList<DashboardFollowupAttentionItem>();

@@ -1,6 +1,7 @@
 package com.hz.crm.application.lead.dto;
 
 import com.hz.crm.common.api.PageQuery;
+import com.hz.crm.application.marketing.MarketingFunnelStage;
 import com.hz.crm.domain.lead.LeadStatus;
 import lombok.Getter;
 import lombok.Setter;
@@ -12,4 +13,6 @@ public class LeadQuery extends PageQuery {
     private String keyword;
 
     private LeadStatus status;
+
+    private MarketingFunnelStage funnelStage;
 }

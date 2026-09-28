@@ -6,4 +6,10 @@ export const settingsApi = {
     method: 'POST',
     body: JSON.stringify(payload || {}),
   }),
+  messageWebhookDetail: () => request('/api/settings/message-webhook/detail', { method: 'POST' }),
+  saveMessageWebhook: (payload) => request('/api/settings/message-webhook/save', {
+    method: 'POST',
+    body: JSON.stringify(payload || {}),
+  }),
+  testMessageWebhook: () => request('/api/settings/message-webhook/test', { method: 'POST' }),
 }

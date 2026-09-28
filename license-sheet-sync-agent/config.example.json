@@ -1,0 +1,105 @@
+{
+  "dataDir": "./data",
+  "headless": false,
+  "runOnStart": false,
+  "schedule": "0 9,14 * * *",
+  "timezone": "Asia/Shanghai",
+  "source": {
+    "id": "wecom-license-application",
+    "name": "AMC许可申请表单",
+    "url": "https://doc.weixin.qq.com/smartsheet/请替换为真实文档标识?tab=请替换为真实子表标识"
+  },
+  "export": {
+    "pageReadyDelayMs": 5000,
+    "downloadTimeoutMs": 90000,
+    "maxAttempts": 3,
+    "retryDelayMs": 1500,
+    "maxRunMinutes": 30
+  },
+  "excel": {
+    "sheetName": "AMC用户信息收集表单",
+    "headerScanRows": 20,
+    "identitySelectors": [
+      ["填写时间", "提交时间", "创建时间", "收集时间"],
+      ["手机号-手机号", "手机号", "手机号码", "联系电话", "电话"],
+      ["App Id", "App ID", "机器码"]
+    ],
+    "minimumIdentityMatches": 3,
+    "requiredSelectors": [
+      ["公司名称", "企业名称"],
+      ["姓名", "联系人"],
+      ["手机号-手机号", "手机号", "手机号码", "联系电话", "电话"],
+      ["企业邮箱-电子邮箱", "企业邮箱", "电子邮箱", "联系邮箱", "邮箱"],
+      ["App Id", "App ID", "机器码"],
+      ["版本号", "产品版本"]
+    ],
+    "validationRules": [
+      {
+        "selector": ["手机号-手机号", "手机号", "手机号码", "联系电话", "电话"],
+        "pattern": "^1\\d{10}$",
+        "message": "手机号格式不正确"
+      },
+      {
+        "selector": ["企业邮箱-电子邮箱", "企业邮箱", "电子邮箱", "联系邮箱", "邮箱"],
+        "pattern": "^[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\\.[A-Za-z]{2,}$",
+        "message": "邮箱格式不正确"
+      },
+      {
+        "selector": ["App Id", "App ID", "机器码"],
+        "pattern": "^[A-Fa-f0-9]{32}$",
+        "message": "App Id必须是32位十六进制字符串"
+      },
+      {
+        "selector": ["版本号", "产品版本"],
+        "pattern": "^v?\\d+(?:\\.\\d+){1,3}$",
+        "message": "版本号格式不正确"
+      }
+    ],
+    "requestFieldMapping": {
+      "company": ["公司名称", "企业名称"],
+      "name": ["姓名", "联系人"],
+      "phone": ["手机号-手机号", "手机号", "手机号码", "联系电话", "电话"],
+      "email": ["企业邮箱-电子邮箱", "企业邮箱", "电子邮箱", "联系邮箱", "邮箱"],
+      "machineCode": ["App Id", "App ID", "机器码"],
+      "productVersion": ["版本号", "产品版本"],
+      "usage": ["申请类型"]
+    },
+    "requestStaticFields": {
+      "productName": "OpenOcta",
+      "channelCode": "000",
+      "authType": "正式"
+    },
+    "requestJsonFields": {
+      "baseInfo": {
+        "constants": {
+          "source": "wecom-smart-sheet",
+          "sheetName": "AMC用户信息收集表单"
+        },
+        "mapping": {
+          "formSubmitter": ["填写人"],
+          "department": ["所在部门"],
+          "submittedAt": ["填写时间"],
+          "userType": ["用户类型"],
+          "applyType": ["申请类型"]
+        }
+      }
+    }
+  },
+  "licenseApi": {
+    "enabled": false,
+    "baseUrl": "http://host.docker.internal:8089",
+    "applyPath": "/internal/license/openocta/applications",
+    "method": "POST",
+    "tokenEnv": "LICENSE_INTERNAL_TOKEN",
+    "tokenHeader": "X-License-Internal-Token",
+    "authScheme": "",
+    "idempotencyHeader": "Idempotency-Key",
+    "externalRequestIdField": "externalRequestId",
+    "applicationNoPath": "data.applyId",
+    "successField": "status",
+    "successValues": [200, "200"],
+    "timeoutMs": 30000,
+    "submittingStaleMinutes": 10,
+    "maxAttempts": 6
+  }
+}

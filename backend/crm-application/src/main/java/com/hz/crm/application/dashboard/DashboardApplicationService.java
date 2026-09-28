@@ -2,12 +2,15 @@ package com.hz.crm.application.dashboard;
 
 import com.baomidou.mybatisplus.core.conditions.query.QueryWrapper;
 import com.hz.crm.application.dashboard.dto.DashboardFollowupAttentionItem;
+import com.hz.crm.application.dashboard.dto.DashboardFollowupAttentionQuery;
 import com.hz.crm.application.dashboard.dto.DashboardFollowupRankItem;
 import com.hz.crm.application.dashboard.dto.DashboardOverviewResponse;
 import com.hz.crm.application.dashboard.dto.DashboardTaskRankItem;
+import com.hz.crm.application.marketing.MarketingFunnelApplicationService;
 import com.hz.crm.application.system.SystemParameterApplicationService;
 import com.hz.crm.application.system.dto.FollowupTaskSettingsResponse;
 import com.hz.crm.common.time.DateTimes;
+import com.hz.crm.common.api.PageData;
 import com.hz.crm.common.user.UserDataScopeValidator;
 import com.hz.crm.domain.channel.ChannelRecordEntity;
 import com.hz.crm.domain.channel.mapper.ChannelRecordMapper;
@@ -34,6 +37,7 @@ import java.util.ArrayList;
 import java.util.Collections;
 import java.util.Comparator;
 import java.util.List;
+import java.util.Locale;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -65,8 +69,16 @@ public class DashboardApplicationService {
     @Autowired
     private UserDataScopeValidator userDataScopeValidator;
 
+    @Autowired
+    private MarketingFunnelApplicationService marketingFunnelApplicationService;
+
     @Transactional(readOnly = true)
-    public DashboardOverviewResponse overview(Long tenantId, Long userId, String dataScope) {
+    public DashboardOverviewResponse overview(
+            Long tenantId,
+            Long userId,
+            String dataScope,
+            List<String> permissions,
+            List<String> menuPermissions) {
         boolean scopeRestricted = !"ALL".equals(dataScope);
         List<Long> ownerIds = scopeRestricted
                 ? userDataScopeValidator.listAccessibleUserIds(tenantId, userId, dataScope)
@@ -76,6 +88,8 @@ public class DashboardApplicationService {
         LocalDateTime tomorrowStart = todayStart.plusDays(1);
         LocalDateTime monthStart = now.toLocalDate().withDayOfMonth(1).atStartOfDay();
         DashboardOverviewResponse response = new DashboardOverviewResponse();
+        response.setMarketingFunnel(marketingFunnelApplicationService.overview(
+                tenantId, userId, dataScope, permissions, menuPermissions));
         response.setManagementView(!"SELF".equals(dataScope));
         response.setLeadCount(count(leadMapper.selectCount(leadBase(tenantId, scopeRestricted, ownerIds))));
         response.setCustomerCount(count(customerMapper.selectCount(customerBase(tenantId, scopeRestricted, ownerIds))));
@@ -117,6 +131,158 @@ public class DashboardApplicationService {
         fillLeadFollowupHealth(
                 response, tenantId, scopeRestricted, ownerIds, now, followupSettings);
         return response;
+    }
+
+    @Transactional(readOnly = true)
+    public PageData<DashboardFollowupAttentionItem> followupAttentionPage(
+            Long tenantId,
+            Long userId,
+            String dataScope,
+            DashboardFollowupAttentionQuery query) {
+        DashboardFollowupAttentionQuery safeQuery = query == null
+                ? new DashboardFollowupAttentionQuery()
+                : query;
+        boolean scopeRestricted = !"ALL".equals(dataScope);
+        List<Long> ownerIds = scopeRestricted
+                ? userDataScopeValidator.listAccessibleUserIds(tenantId, userId, dataScope)
+                : new ArrayList<Long>();
+        FollowupTaskSettingsResponse followupSettings =
+                systemParameterApplicationService.followupTaskSettings(tenantId);
+        String followupHealth = normalizeFollowupHealth(safeQuery.getFollowupHealth());
+        String targetType = normalizeTargetType(safeQuery.getTargetType());
+        String keyword = trimToNull(safeQuery.getKeyword());
+        List<DashboardFollowupAttentionItem> items = new ArrayList<DashboardFollowupAttentionItem>();
+        if (!"LEAD".equals(targetType)) {
+            appendCustomerAttentionItems(
+                    items,
+                    tenantId,
+                    scopeRestricted,
+                    ownerIds,
+                    followupHealth,
+                    keyword,
+                    followupSettings);
+        }
+        if (!"CUSTOMER".equals(targetType)) {
+            appendLeadAttentionItems(
+                    items,
+                    tenantId,
+                    scopeRestricted,
+                    ownerIds,
+                    followupHealth,
+                    keyword,
+                    followupSettings);
+        }
+        sortAttentionItems(items);
+        int pageNo = safeQuery.safePageNo();
+        int pageSize = safeQuery.safePageSize();
+        int start = Math.min((pageNo - 1) * pageSize, items.size());
+        int end = Math.min(start + pageSize, items.size());
+        return PageData.of(
+                items.size(),
+                pageNo,
+                pageSize,
+                new ArrayList<DashboardFollowupAttentionItem>(items.subList(start, end)));
+    }
+
+    private void appendCustomerAttentionItems(
+            List<DashboardFollowupAttentionItem> items,
+            Long tenantId,
+            boolean scopeRestricted,
+            List<Long> ownerIds,
+            String followupHealth,
+            String keyword,
+            FollowupTaskSettingsResponse followupSettings) {
+        LocalDateTime now = DateTimes.now();
+        int firstDelayMinutes = followupSettings.getFirstDelayMinutes();
+        int secondDelayMinutes = Math.max(firstDelayMinutes + 1, followupSettings.getSecondDelayMinutes());
+        int overdueGraceMinutes = secondDelayMinutes - firstDelayMinutes;
+        List<CustomerFollowupProjection> records =
+                customerMapper.selectFollowupCustomers(tenantId, scopeRestricted, ownerIds);
+        for (CustomerFollowupProjection record : records) {
+            DashboardFollowupAttentionItem item = buildCustomerAttentionItem(record);
+            applyFollowupHealth(
+                    item,
+                    now,
+                    record.getCreatedAt(),
+                    record.getLastFollowupAt(),
+                    record.getNextFollowTime(),
+                    firstDelayMinutes,
+                    secondDelayMinutes,
+                    overdueGraceMinutes,
+                    "客户");
+            if (followupHealth.equals(item.getFollowupHealth()) && matchesAttentionKeyword(item, keyword)) {
+                items.add(item);
+            }
+        }
+    }
+
+    private void appendLeadAttentionItems(
+            List<DashboardFollowupAttentionItem> items,
+            Long tenantId,
+            boolean scopeRestricted,
+            List<Long> ownerIds,
+            String followupHealth,
+            String keyword,
+            FollowupTaskSettingsResponse followupSettings) {
+        LocalDateTime now = DateTimes.now();
+        int firstDelayMinutes = followupSettings.getFirstDelayMinutes();
+        int secondDelayMinutes = Math.max(firstDelayMinutes + 1, followupSettings.getSecondDelayMinutes());
+        int overdueGraceMinutes = secondDelayMinutes - firstDelayMinutes;
+        List<LeadFollowupProjection> records =
+                leadMapper.selectFollowupLeads(tenantId, scopeRestricted, ownerIds);
+        for (LeadFollowupProjection record : records) {
+            DashboardFollowupAttentionItem item = buildLeadAttentionItem(record);
+            applyFollowupHealth(
+                    item,
+                    now,
+                    record.getCreatedAt(),
+                    record.getLastFollowupAt(),
+                    record.getNextFollowTime(),
+                    firstDelayMinutes,
+                    secondDelayMinutes,
+                    overdueGraceMinutes,
+                    "线索");
+            if (followupHealth.equals(item.getFollowupHealth()) && matchesAttentionKeyword(item, keyword)) {
+                items.add(item);
+            }
+        }
+    }
+
+    private boolean matchesAttentionKeyword(DashboardFollowupAttentionItem item, String keyword) {
+        if (keyword == null) {
+            return true;
+        }
+        String normalized = keyword.toLowerCase(Locale.ROOT);
+        return containsIgnoreCase(item.getTargetName(), normalized)
+                || containsIgnoreCase(item.getCompanyName(), normalized)
+                || containsIgnoreCase(item.getContactName(), normalized)
+                || containsIgnoreCase(item.getContactPhone(), normalized)
+                || containsIgnoreCase(item.getProductName(), normalized)
+                || containsIgnoreCase(item.getOwnerName(), normalized);
+    }
+
+    private boolean containsIgnoreCase(String value, String normalizedKeyword) {
+        return value != null && value.toLowerCase(Locale.ROOT).contains(normalizedKeyword);
+    }
+
+    private String normalizeFollowupHealth(String value) {
+        String normalized = trimToNull(value);
+        if (normalized != null && "CRITICAL".equals(normalized.toUpperCase(Locale.ROOT))) {
+            return "CRITICAL";
+        }
+        return "WARNING";
+    }
+
+    private String normalizeTargetType(String value) {
+        String normalized = trimToNull(value);
+        if (normalized == null) {
+            return "ALL";
+        }
+        String upperValue = normalized.toUpperCase(Locale.ROOT);
+        if ("LEAD".equals(upperValue) || "CUSTOMER".equals(upperValue)) {
+            return upperValue;
+        }
+        return "ALL";
     }
 
     private List<DashboardTaskRankItem> buildTodayTaskCompletionRanking(
@@ -476,6 +642,14 @@ public class DashboardApplicationService {
 
     private List<DashboardFollowupAttentionItem> sortAndLimitAttentionItems(
             List<DashboardFollowupAttentionItem> attentionItems) {
+        sortAttentionItems(attentionItems);
+        if (attentionItems.size() > 10) {
+            return new ArrayList<DashboardFollowupAttentionItem>(attentionItems.subList(0, 10));
+        }
+        return attentionItems;
+    }
+
+    private void sortAttentionItems(List<DashboardFollowupAttentionItem> attentionItems) {
         Collections.sort(attentionItems, new Comparator<DashboardFollowupAttentionItem>() {
             @Override
             public int compare(DashboardFollowupAttentionItem left, DashboardFollowupAttentionItem right) {
@@ -486,10 +660,6 @@ public class DashboardApplicationService {
                 return compareDateTime(left.getWarningAt(), right.getWarningAt());
             }
         });
-        if (attentionItems.size() > 10) {
-            return new ArrayList<DashboardFollowupAttentionItem>(attentionItems.subList(0, 10));
-        }
-        return attentionItems;
     }
 
     private int healthWeight(DashboardFollowupAttentionItem item) {
@@ -577,6 +747,14 @@ public class DashboardApplicationService {
 
     private long count(Long value) {
         return value == null ? 0L : value.longValue();
+    }
+
+    private String trimToNull(String value) {
+        if (value == null) {
+            return null;
+        }
+        String trimmed = value.trim();
+        return trimmed.isEmpty() ? null : trimmed;
     }
 
 }
