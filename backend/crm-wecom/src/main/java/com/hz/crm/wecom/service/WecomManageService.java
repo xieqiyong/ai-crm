@@ -189,6 +189,21 @@ public class WecomManageService {
         return configMapper.selectOne(wrapper);
     }
 
+    public String findWecomUserIdByCrmUserId(Long tenantId, Long configId, Long crmUserId) {
+        if (configId == null || crmUserId == null) {
+            return null;
+        }
+        QueryWrapper<WecomUserBindingEntity> wrapper = new QueryWrapper<WecomUserBindingEntity>();
+        wrapper.eq("tenant_id", tenantId);
+        wrapper.eq("config_id", configId);
+        wrapper.eq("crm_user_id", crmUserId);
+        wrapper.eq("enabled", true);
+        wrapper.eq("deleted", false);
+        wrapper.orderByAsc("created_at").last("limit 1");
+        WecomUserBindingEntity binding = bindingMapper.selectOne(wrapper);
+        return binding == null ? null : binding.getWecomUserId();
+    }
+
     private WecomUserBindingEntity findBinding(Long tenantId, Long configId, String wecomUserId) {
         QueryWrapper<WecomUserBindingEntity> wrapper = new QueryWrapper<WecomUserBindingEntity>();
         wrapper.eq("tenant_id", tenantId);

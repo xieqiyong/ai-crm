@@ -100,4 +100,12 @@ export const channelSourceApi = {
   save: (payload) => request('/api/channel/source/save', { method: 'POST', body: JSON.stringify(payload || {}) }),
   delete: (id) => request('/api/channel/source/delete', { method: 'POST', body: JSON.stringify({ id }) }),
   logs: (id) => request('/api/channel/source/logs', { method: 'POST', body: JSON.stringify({ id }) }),
+  managedSheetCreate: (payload) => request('/api/channel/source/managed-sheet/create', {
+    method: 'POST',
+    body: JSON.stringify(payload || {}),
+  }),
+  managedSheetSync: (id) => request('/api/channel/source/managed-sheet/sync', {
+    method: 'POST',
+    body: JSON.stringify({ id }),
+  }),
 }

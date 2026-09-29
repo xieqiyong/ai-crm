@@ -2,6 +2,7 @@ package com.hz.crm.web.channel;
 
 import com.hz.crm.application.channel.ChannelSourceApplicationService;
 import com.hz.crm.application.channel.ChannelSourceImportApplicationService;
+import com.hz.crm.application.channel.ManagedChannelSheetApplicationService;
 import com.hz.crm.application.channel.dto.ChannelSourceQuery;
 import com.hz.crm.application.channel.dto.ChannelSourceImportRow;
 import com.hz.crm.application.channel.dto.ChannelSourceResponse;
@@ -9,6 +10,8 @@ import com.hz.crm.application.channel.dto.ChannelSourceSaveRequest;
 import com.hz.crm.application.channel.dto.ChannelSourceSyncRequest;
 import com.hz.crm.application.channel.dto.ChannelSourceSyncResult;
 import com.hz.crm.application.channel.dto.ChannelSyncLogResponse;
+import com.hz.crm.application.channel.dto.ManagedChannelSheetCreateRequest;
+import com.hz.crm.application.channel.dto.ManagedChannelSheetSyncRequest;
 import com.hz.crm.auth.security.JwtPrincipal;
 import com.hz.crm.common.api.ApiResult;
 import com.hz.crm.common.audit.AuditOperation;
@@ -37,6 +40,9 @@ public class ChannelSourceController {
 
     @Autowired
     private ChannelSourceExcelImportParser channelSourceExcelImportParser;
+
+    @Autowired
+    private ManagedChannelSheetApplicationService managedChannelSheetApplicationService;
 
     @PostMapping("/list")
     @PreAuthorize("hasAuthority('*') or hasAuthority('crm:channel:view')")
@@ -98,5 +104,35 @@ public class ChannelSourceController {
     @PreAuthorize("hasAuthority('*') or hasAuthority('crm:channel:view')")
     public ApiResult<List<ChannelSyncLogResponse>> logs(@RequestBody ChannelSourceSyncRequest request, JwtPrincipal principal) {
         return ApiResult.ok(channelSourceApplicationService.latestLogs(principal.getTenantId(), request.getId(), 10));
+    }
+
+    @PostMapping("/managed-sheet/create")
+    @PreAuthorize("hasAuthority('*') or hasAuthority('crm:channel:manage')")
+    @AuditOperation(
+            module = "CHANNEL_SOURCE",
+            action = "MANAGED_SHEET_CREATE",
+            description = "创建渠道自建表格",
+            targetType = "CHANNEL_SOURCE",
+            recordParameters = false)
+    public ApiResult<ChannelSourceResponse> createManagedSheet(
+            @Valid @RequestBody ManagedChannelSheetCreateRequest request,
+            JwtPrincipal principal) {
+        return ApiResult.ok(managedChannelSheetApplicationService.create(
+                principal.getTenantId(), principal.getUserId(), request));
+    }
+
+    @PostMapping("/managed-sheet/sync")
+    @PreAuthorize("hasAuthority('*') or hasAuthority('crm:channel:manage')")
+    @AuditOperation(
+            module = "CHANNEL_SOURCE",
+            action = "MANAGED_SHEET_SYNC",
+            description = "拉取渠道自建表格数据",
+            targetType = "CHANNEL_SOURCE",
+            targetIdField = "id")
+    public ApiResult<ChannelSourceSyncResult> syncManagedSheet(
+            @Valid @RequestBody ManagedChannelSheetSyncRequest request,
+            JwtPrincipal principal) {
+        return ApiResult.ok(managedChannelSheetApplicationService.sync(
+                principal.getTenantId(), principal.getUserId(), request.getId()));
     }
 }

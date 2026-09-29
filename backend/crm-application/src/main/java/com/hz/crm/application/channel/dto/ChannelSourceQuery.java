@@ -14,4 +14,9 @@ public class ChannelSourceQuery {
     private ChannelSourceKind sourceType;
 
     private ChannelSourceStatus status;
+
+    /**
+     * 是否只查询由平台接口创建的智能表格渠道。
+     */
+    private Boolean managed;
 }

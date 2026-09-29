@@ -31,6 +31,7 @@ import {
 import { ownerName } from '../../hooks/useOwnerOptions'
 import { leadSourceOptions as sourceOptions, leadSourceText as sourceText } from '../../models/crmSource'
 import { ChannelSourceBoard } from './ChannelSourceBoard'
+import { ManagedSheetBoard } from './ManagedSheetBoard'
 
 const typeOptions = [
   { value: '', label: '全部类型' },
@@ -312,6 +313,7 @@ export function ChannelPage({ can, notify }) {
   const [marketingFormEditing, setMarketingFormEditing] = useState(null)
   const [analyzingId, setAnalyzingId] = useState(null)
   const [rawPoolOpen, setRawPoolOpen] = useState(false)
+  const [channelTab, setChannelTab] = useState('sources')
 
   const load = async (nextQuery = query) => {
     setLoading(true)
@@ -479,10 +481,35 @@ export function ChannelPage({ can, notify }) {
         actions={headerActions}
       />
 
-      <ChannelSourceBoard
-        canManage={canManage}
-        notify={notify}
-      />
+      <div className="channel-management-tabs" role="tablist" aria-label="渠道管理分类">
+        <button
+          type="button"
+          className={channelTab === 'sources' ? 'active' : ''}
+          onClick={() => setChannelTab('sources')}
+        >
+          渠道场景
+        </button>
+        <button
+          type="button"
+          className={channelTab === 'managed-sheets' ? 'active' : ''}
+          onClick={() => setChannelTab('managed-sheets')}
+        >
+          自建表格
+        </button>
+      </div>
+
+      {channelTab === 'sources' && (
+        <ChannelSourceBoard
+          canManage={canManage}
+          notify={notify}
+        />
+      )}
+      {channelTab === 'managed-sheets' && (
+        <ManagedSheetBoard
+          canManage={canManage}
+          notify={notify}
+        />
+      )}
 
       <ChannelEditModal
         open={Boolean(editing)}

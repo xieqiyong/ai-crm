@@ -6,6 +6,7 @@ import com.hz.crm.application.channel.dto.ChannelSourceResponse;
 import com.hz.crm.application.channel.dto.ChannelSourceSaveRequest;
 import com.hz.crm.application.channel.dto.ChannelSourceSyncResult;
 import com.hz.crm.application.channel.dto.ChannelSyncLogResponse;
+import com.hz.crm.application.channel.sheet.ChannelSheetDocument;
 import com.hz.crm.application.product.ProductReferenceResolver;
 import com.hz.crm.common.exception.BusinessException;
 import com.hz.crm.common.id.SnowflakeIdGenerator;
@@ -45,6 +46,8 @@ public class ChannelSourceApplicationService {
     private static final String PROVIDER_WECOM_SMART_SHEET = "WECOM_SMART_SHEET";
 
     private static final String PROVIDER_WECOM_SMART_SHEET_EXPORT = "WECOM_SMART_SHEET_EXPORT";
+
+    private static final String MANAGED_PROVIDER_SUFFIX = "_SMART_SHEET_API";
 
     @Autowired
     private ChannelSourceMapper channelSourceMapper;
@@ -154,6 +157,62 @@ public class ChannelSourceApplicationService {
         }
         if (!Objects.equals(previousProductId, entity.getProductId())) {
             updatePendingRecordProduct(entity);
+        }
+        ChannelSourceResponse response = toResponse(refreshStatistics(entity));
+        fillOwnerName(tenantId, response);
+        return response;
+    }
+
+    @Transactional
+    public ChannelSourceResponse registerManagedSheet(
+            Long tenantId,
+            Long operatorId,
+            String name,
+            Long productId,
+            String fieldMappingJson,
+            ChannelSheetDocument document) {
+        if (document == null
+                || !StringUtils.hasText(document.getPlatform())
+                || !StringUtils.hasText(document.getDocId())
+                || !StringUtils.hasText(document.getSheetId())
+                || !StringUtils.hasText(document.getSourceUrl())) {
+            throw new BusinessException("CHANNEL_MANAGED_SHEET_001", "平台未返回完整的智能表格信息");
+        }
+        productReferenceResolver.requireSelectable(tenantId, productId, null);
+        LocalDateTime now = DateTimes.now();
+        String provider = document.getPlatform().trim().toUpperCase(Locale.ROOT) + MANAGED_PROVIDER_SUFFIX;
+        String externalKey = buildExternalKey(document.getDocId(), document.getSheetId());
+        ChannelSourceEntity entity = findByExternalKey(tenantId, provider, externalKey);
+        if (entity == null) {
+            entity = new ChannelSourceEntity();
+            entity.setId(snowflakeIdGenerator.nextId());
+            entity.setTenantId(tenantId);
+            entity.setDeleted(false);
+            entity.setCreatedAt(now);
+        }
+        entity.setName(StringUtils.hasText(name) ? name.trim() : "自建获客表格");
+        entity.setSourceType(ChannelSourceKind.WECOM_SMART_SHEET);
+        entity.setStatus(ChannelSourceStatus.ACTIVE);
+        entity.setSyncMode(ChannelSyncMode.MANUAL);
+        entity.setSourceUrl(document.getSourceUrl().trim());
+        entity.setExternalProvider(provider);
+        entity.setExternalKey(externalKey);
+        entity.setWecomConfigId(document.getConfigId());
+        entity.setProductId(productId);
+        entity.setDocId(document.getDocId().trim());
+        entity.setSheetId(document.getSheetId().trim());
+        entity.setViewId(null);
+        entity.setFieldMappingJson(trimToNull(fieldMappingJson));
+        entity.setSyncIntervalMinutes(1440);
+        entity.setAutoSync(false);
+        entity.setAutoAnalyze(false);
+        entity.setOwnerId(operatorId);
+        entity.setLastError(null);
+        entity.setUpdatedAt(now);
+        if (channelSourceMapper.selectById(entity.getId()) == null) {
+            channelSourceMapper.insert(entity);
+        } else {
+            channelSourceMapper.updateById(entity);
         }
         ChannelSourceResponse response = toResponse(refreshStatistics(entity));
         fillOwnerName(tenantId, response);
@@ -274,6 +333,23 @@ public class ChannelSourceApplicationService {
         if (safeQuery.getStatus() != null) {
             wrapper.eq("status", safeQuery.getStatus().name());
         }
+        if (Boolean.TRUE.equals(safeQuery.getManaged())) {
+            wrapper.and(value -> value
+                    .eq("external_provider", "WECOM_SMART_SHEET_API")
+                    .or()
+                    .eq("external_provider", "DINGTALK_SMART_SHEET_API")
+                    .or()
+                    .eq("external_provider", "FEISHU_SMART_SHEET_API"));
+        } else if (Boolean.FALSE.equals(safeQuery.getManaged())) {
+            wrapper.and(value -> value
+                    .isNull("external_provider")
+                    .or()
+                    .notIn(
+                            "external_provider",
+                            "WECOM_SMART_SHEET_API",
+                            "DINGTALK_SMART_SHEET_API",
+                            "FEISHU_SMART_SHEET_API"));
+        }
         String keyword = trimToNull(safeQuery.getKeyword());
         if (keyword != null) {
             String like = "%" + keyword.toLowerCase(Locale.ROOT) + "%";
@@ -310,6 +386,12 @@ public class ChannelSourceApplicationService {
         QueryWrapper<ChannelRecordEntity> wrapper = new QueryWrapper<ChannelRecordEntity>();
         wrapper.eq("tenant_id", source.getTenantId());
         wrapper.eq("deleted", false);
+        if (StringUtils.hasText(source.getExternalProvider())
+                && source.getExternalProvider().endsWith(MANAGED_PROVIDER_SUFFIX)) {
+            wrapper.eq("external_provider", source.getExternalProvider());
+            wrapper.likeRight("external_key", source.getId() + ":");
+            return wrapper;
+        }
         wrapper.and(condition -> condition
                 .nested(direct -> direct
                         .eq("external_provider", PROVIDER_WECOM_SMART_SHEET)

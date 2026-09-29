@@ -201,6 +201,43 @@ public class WecomApiClient {
                 body);
     }
 
+    public JSONObject createSmartSheet(String accessToken, String name, List<String> adminUsers) {
+        JSONObject body = new JSONObject();
+        body.put("doc_type", 10);
+        body.put("doc_name", name);
+        if (adminUsers != null && !adminUsers.isEmpty()) {
+            body.put("admin_users", adminUsers);
+        }
+        return execute(
+                "POST",
+                "/cgi-bin/wedoc/create_doc?access_token=" + encode(accessToken),
+                body);
+    }
+
+    public JSONObject getSmartSheetSheets(String accessToken, String docId) {
+        JSONObject body = new JSONObject();
+        body.put("docid", docId);
+        return execute(
+                "POST",
+                "/cgi-bin/wedoc/smartsheet/get_sheet?access_token=" + encode(accessToken),
+                body);
+    }
+
+    public JSONObject addSmartSheetFields(
+            String accessToken,
+            String docId,
+            String sheetId,
+            JSONArray fields) {
+        JSONObject body = new JSONObject();
+        body.put("docid", docId);
+        body.put("sheet_id", sheetId);
+        body.put("fields", fields);
+        return execute(
+                "POST",
+                "/cgi-bin/wedoc/smartsheet/add_fields?access_token=" + encode(accessToken),
+                body);
+    }
+
     public JSONObject getSmartSheetRecords(String accessToken, String docId, String sheetId, int offset, int limit) {
         JSONObject body = new JSONObject();
         body.put("docid", docId);

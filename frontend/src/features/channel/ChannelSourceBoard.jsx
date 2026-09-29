@@ -80,7 +80,7 @@ export function ChannelSourceBoard({ canManage, notify }) {
   const load = async () => {
     setLoading(true)
     try {
-      setSources(await api.channelSource.list({}) || [])
+      setSources(await api.channelSource.list({ managed: false }) || [])
     } catch (err) {
       notify(err.message || '加载渠道来源失败', 'info')
     } finally {
