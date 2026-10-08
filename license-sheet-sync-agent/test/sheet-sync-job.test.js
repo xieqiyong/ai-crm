@@ -57,5 +57,11 @@ test('业务错误不进行浏览器重试', async () => {
 test('仅识别可恢复的浏览器下载错误', () => {
   assert.equal(isRecoverableBrowserError(new Error('Target page, context or browser has been closed')), true)
   assert.equal(isRecoverableBrowserError(new Error('download.saveAs: Download canceled')), true)
-  assert.equal(isRecoverableBrowserError(new Error('没有成功打开右上角三道杠菜单')), false)
+  assert.equal(isRecoverableBrowserError(new Error('触发企微Excel导出超时')), true)
+  assert.equal(isRecoverableBrowserError(new Error('Timeout while waiting for event "download"')), true)
+  assert.equal(isRecoverableBrowserError(new Error('企微浏览器登录目录正在被其他Chromium进程使用')), true)
+  assert.equal(isRecoverableBrowserError(new Error('等待企微浏览器退出超时，请稍后重试')), true)
+  assert.equal(isRecoverableBrowserError(new Error('没有成功打开右上角三道杠菜单')), true)
+  assert.equal(isRecoverableBrowserError(new Error('企微导出的Excel文件在浏览器关闭前没有下载完整')), true)
+  assert.equal(isRecoverableBrowserError(new Error('企微登录已失效，请重新登录')), false)
 })

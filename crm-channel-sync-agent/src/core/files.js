@@ -3,7 +3,13 @@ const fs = require('fs')
 const path = require('path')
 
 function ensureDataDirectories(config) {
-  const targets = [config.dataDir, config.profileDir, config.downloadDir, path.dirname(config.logPath)]
+  const targets = [
+    config.dataDir,
+    config.profileDir,
+    config.artifactDir,
+    config.downloadDir,
+    path.dirname(config.logPath),
+  ]
   for (const target of targets) {
     fs.mkdirSync(target, { recursive: true })
   }

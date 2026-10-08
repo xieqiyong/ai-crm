@@ -6,6 +6,7 @@ services:
     image: crm-channel-sync-agent:latest
     container_name: crm-channel-sync-agent
     restart: unless-stopped
+    init: true
     shm_size: 1gb
     environment:
       DISPLAY: ${DISPLAY:-:99}
@@ -17,7 +18,7 @@ services:
       CRM_API_TIMEOUT_MS: ${CRM_API_TIMEOUT_MS:-120000}
       TZ: Asia/Shanghai
     ports:
-      - "127.0.0.1:6081:6080"
+      - "${NOVNC_BIND_ADDRESS:-127.0.0.1}:${NOVNC_PORT:-6081}:6080"
     extra_hosts:
       - "host.docker.internal:host-gateway"
     volumes:

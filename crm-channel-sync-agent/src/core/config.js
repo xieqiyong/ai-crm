@@ -20,6 +20,7 @@ function loadConfig() {
     rootDir: ROOT,
     dataDir,
     profileDir: path.join(dataDir, 'browser-profile'),
+    artifactDir: path.join(dataDir, 'browser-artifacts'),
     downloadDir: path.join(dataDir, 'downloads'),
     statePath: path.join(dataDir, 'state.json'),
     logPath: path.join(dataDir, 'logs', 'sync.log'),

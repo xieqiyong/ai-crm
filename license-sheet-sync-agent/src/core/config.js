@@ -17,6 +17,7 @@ function loadConfig() {
     rootDir: ROOT,
     dataDir,
     profileDir: path.join(dataDir, 'browser-profile'),
+    browserDownloadDir: path.join(dataDir, 'browser-downloads'),
     downloadDir: path.join(dataDir, 'downloads'),
     databasePath: path.join(dataDir, 'license-sync.db'),
     logPath: path.join(dataDir, 'logs', 'sync.log'),

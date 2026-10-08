@@ -124,7 +124,7 @@ async function retry(config, logger) {
 
 async function start(config, logger) {
   openInitializedDatabase(config).close()
-  const expression = config.schedule || '0 9,14 * * *'
+  const expression = config.schedule || '*/5 * * * *'
   if (!cron.validate(expression)) {
     throw new Error(`定时表达式不正确：${expression}`)
   }

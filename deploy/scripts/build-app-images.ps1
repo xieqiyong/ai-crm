@@ -564,11 +564,18 @@ if ($Version -notmatch "^[A-Za-z0-9_][A-Za-z0-9_.-]{0,127}$") {
 if ([string]::IsNullOrWhiteSpace($RemotePath) -or -not $RemotePath.StartsWith("/")) {
     throw "远程上传目录必须是Linux绝对路径"
 }
+if ([string]::IsNullOrWhiteSpace($SshKey) -and -not [string]::IsNullOrWhiteSpace($env:USERPROFILE)) {
+    $DefaultDeploySshKey = Join-Path $env:USERPROFILE ".ssh\crm_deploy_ed25519"
+    if (Test-Path -LiteralPath $DefaultDeploySshKey -PathType Leaf) {
+        $SshKey = $DefaultDeploySshKey
+    }
+}
 if (-not [string]::IsNullOrWhiteSpace($SshKey)) {
     if (-not (Test-Path -LiteralPath $SshKey -PathType Leaf)) {
         throw "SSH私钥文件不存在：$SshKey"
     }
     $SshKey = (Resolve-Path -LiteralPath $SshKey).Path
+    Write-Host "远程认证：SSH密钥 $SshKey" -ForegroundColor Green
 }
 
 $ScriptDir = Split-Path -Parent $MyInvocation.MyCommand.Path

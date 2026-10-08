@@ -1,9 +1,6 @@
-.env
-config.json
-data
-browser-profile
-downloads
-state.json
-runs.log
-error-*.png
-node_modules
+*
+!package.json
+!package-lock.json
+!src/
+!src/**
+!docker-entrypoint.sh

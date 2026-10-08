@@ -7,6 +7,7 @@ async function openBrowserContext(config, headless = config.headless) {
   removeStaleProfileLocks(config.profileDir)
   return chromium.launchPersistentContext(config.profileDir, {
     headless: Boolean(headless),
+    artifactsDir: config.artifactDir,
     viewport: { width: 1440, height: 900 },
     acceptDownloads: true,
     locale: 'zh-CN',

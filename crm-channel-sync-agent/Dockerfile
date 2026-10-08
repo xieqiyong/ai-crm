@@ -18,7 +18,8 @@ RUN sed -i \
 COPY package.json package-lock.json* ./
 RUN npm ci --omit=dev
 
-COPY . .
+COPY src ./src
+COPY docker-entrypoint.sh ./docker-entrypoint.sh
 RUN chmod +x /app/docker-entrypoint.sh \
     && mkdir -p /app/data
 

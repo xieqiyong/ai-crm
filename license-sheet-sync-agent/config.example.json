@@ -2,7 +2,7 @@
   "dataDir": "./data",
   "headless": false,
   "runOnStart": false,
-  "schedule": "0 9,14 * * *",
+  "schedule": "*/5 * * * *",
   "timezone": "Asia/Shanghai",
   "source": {
     "id": "wecom-license-application",
@@ -11,9 +11,12 @@
   },
   "export": {
     "pageReadyDelayMs": 5000,
+    "triggerTimeoutMs": 30000,
+    "profileReleaseTimeoutMs": 30000,
     "downloadTimeoutMs": 90000,
+    "downloadStallTimeoutMs": 5000,
     "maxAttempts": 3,
-    "retryDelayMs": 1500,
+    "retryDelayMs": 5000,
     "maxRunMinutes": 30
   },
   "excel": {

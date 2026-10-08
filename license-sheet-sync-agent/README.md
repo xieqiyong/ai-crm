@@ -225,7 +225,7 @@ npm run retry
 # 查看配置、数据库和最近一次同步
 npm run doctor
 
-# 启动定时服务，默认每天 09:00、14:00
+# 启动定时服务，默认每5分钟检查一次
 npm run start
 ```
 

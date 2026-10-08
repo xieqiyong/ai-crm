@@ -118,6 +118,12 @@ function isRecoverableBrowserError(error) {
   return /Target page, context or browser has been closed/i.test(message)
     || /download\.saveAs/i.test(message)
     || /Download.*(?:canceled|failed)/i.test(message)
+    || /触发企微Excel导出超时/.test(message)
+    || /waiting for event ["']download["']/i.test(message)
+    || /企微浏览器登录目录正在被其他Chromium进程使用/.test(message)
+    || /等待企微浏览器退出超时/.test(message)
+    || /没有成功打开右上角三道杠菜单/.test(message)
+    || /企微导出的Excel文件在浏览器关闭前没有下载完整/.test(message)
 }
 
 function waitForTimeout(milliseconds) {

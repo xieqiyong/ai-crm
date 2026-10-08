@@ -58,8 +58,8 @@ public class AuthSecurityConfiguration {
                         .permitAll()
                         .anyRequest()
                         .authenticated())
-                .addFilterBefore(channelSyncInternalTokenFilter, JwtAuthenticationFilter.class)
-                .addFilterBefore(jwtAuthenticationFilter, UsernamePasswordAuthenticationFilter.class);
+                .addFilterBefore(jwtAuthenticationFilter, UsernamePasswordAuthenticationFilter.class)
+                .addFilterBefore(channelSyncInternalTokenFilter, JwtAuthenticationFilter.class);
         return http.build();
     }
 

@@ -9,6 +9,7 @@ async function exportSmartSheet(context, config, source, logger) {
   await keeperPage.goto('about:blank')
   const page = await context.newPage()
   let downloadPromise
+  let artifactSnapshot
   let exportActive = true
   let exportPhase = '准备页面'
   registerBrowserDiagnostics(context, page, logger, source, () => ({ exportActive, exportPhase }))
@@ -21,6 +22,7 @@ async function exportSmartSheet(context, config, source, logger) {
     await verifyWecomLogin(page)
 
     exportPhase = '等待下载事件'
+    artifactSnapshot = snapshotArtifactFiles(config.artifactDir)
     downloadPromise = page.waitForEvent('download', {
       timeout: Number(config.export?.downloadTimeoutMs || 90000),
     })
@@ -36,7 +38,22 @@ async function exportSmartSheet(context, config, source, logger) {
     }
     const targetName = `${safeFileName(source.id)}-${timestampToken()}.xlsx`
     const filePath = path.join(config.downloadDir, targetName)
-    await download.saveAs(filePath)
+    try {
+      await download.saveAs(filePath)
+    } catch (error) {
+      const artifactPath = await recoverDownloadFromArtifacts(
+        config.artifactDir,
+        artifactSnapshot,
+        filePath,
+        Number(config.export?.artifactRecoveryTimeoutMs || 15000),
+      )
+      if (!artifactPath) throw error
+      logger.warn('企微页面提前关闭，已经从浏览器持久下载目录恢复Excel文件', {
+        source: source.name,
+        artifactPath,
+        filePath,
+      })
+    }
     validateExcelFile(filePath)
     exportPhase = '下载完成'
     logger.info('企微智能表格导出完成', { source: source.name, filePath })
@@ -92,6 +109,85 @@ function registerBrowserDiagnostics(context, page, logger, source, state) {
       logger.warn('企微导出页面发生崩溃', { source: source.name, phase: current.exportPhase })
     }
   })
+  context.once('close', () => {
+    const current = state()
+    if (current.exportActive) {
+      logger.warn('企微导出浏览器上下文在文件保存前被关闭', {
+        source: source.name,
+        phase: current.exportPhase,
+      })
+    }
+  })
+}
+
+function snapshotArtifactFiles(directory) {
+  return new Set(listFiles(directory))
+}
+
+async function recoverDownloadFromArtifacts(
+  directory,
+  existingFiles,
+  targetPath,
+  timeoutMs = 15000,
+  pollIntervalMs = 250,
+) {
+  const deadline = Date.now() + Math.max(0, timeoutMs)
+  const knownFiles = existingFiles || new Set()
+  while (Date.now() <= deadline) {
+    const candidates = listFiles(directory)
+      .filter((filePath) => !knownFiles.has(filePath))
+      .map((filePath) => ({ filePath, stat: safeStat(filePath) }))
+      .filter((item) => item.stat && item.stat.size >= 100)
+      .sort((first, second) => second.stat.mtimeMs - first.stat.mtimeMs)
+    for (const candidate of candidates) {
+      if (!isZipFile(candidate.filePath)) continue
+      await waitForTimeout(pollIntervalMs)
+      const stableStat = safeStat(candidate.filePath)
+      if (!stableStat || stableStat.size !== candidate.stat.size) continue
+      fs.copyFileSync(candidate.filePath, targetPath)
+      return candidate.filePath
+    }
+    await waitForTimeout(pollIntervalMs)
+  }
+  return null
+}
+
+function listFiles(directory) {
+  if (!directory || !fs.existsSync(directory)) return []
+  const files = []
+  const pending = [directory]
+  while (pending.length) {
+    const current = pending.pop()
+    for (const entry of fs.readdirSync(current, { withFileTypes: true })) {
+      const target = path.join(current, entry.name)
+      if (entry.isDirectory()) pending.push(target)
+      else if (entry.isFile()) files.push(target)
+    }
+  }
+  return files
+}
+
+function safeStat(filePath) {
+  try {
+    return fs.statSync(filePath)
+  } catch {
+    return null
+  }
+}
+
+function isZipFile(filePath) {
+  const handle = fs.openSync(filePath, 'r')
+  try {
+    const magic = Buffer.alloc(2)
+    fs.readSync(handle, magic, 0, 2, 0)
+    return magic.toString('utf8') === 'PK'
+  } finally {
+    fs.closeSync(handle)
+  }
+}
+
+function waitForTimeout(milliseconds) {
+  return new Promise((resolve) => setTimeout(resolve, milliseconds))
 }
 
 async function triggerExport(page) {
@@ -216,4 +312,8 @@ function safeLogUrl(value) {
   }
 }
 
-module.exports = { exportSmartSheet }
+module.exports = {
+  exportSmartSheet,
+  recoverDownloadFromArtifacts,
+  snapshotArtifactFiles,
+}
