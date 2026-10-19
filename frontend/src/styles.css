@@ -7121,7 +7121,7 @@ h1, h2, h3, p { margin-top: 0; }
 
 .managed-sheet-field-row {
   display: grid;
-  grid-template-columns: 28px minmax(180px, 1fr) minmax(150px, 190px) 70px 96px;
+  grid-template-columns: 28px minmax(160px, 1fr) minmax(140px, 180px) minmax(170px, 220px) 72px;
   align-items: center;
   gap: 9px;
   padding: 7px 6px;
@@ -7210,6 +7210,136 @@ h1, h2, h3, p { margin-top: 0; }
   padding: 10px 14px;
   border-top: 1px solid var(--line);
   line-height: 1.5;
+}
+
+.managed-sheet-fields-modal {
+  display: grid;
+  gap: 14px;
+}
+
+.managed-sheet-fields-note {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  padding: 12px 14px;
+  border: 1px solid color-mix(in srgb, var(--brand) 22%, var(--line));
+  border-radius: 12px;
+  background: var(--brand-soft);
+  color: var(--brand-dark);
+}
+
+.managed-sheet-fields-note > div {
+  display: grid;
+  gap: 3px;
+}
+
+.managed-sheet-fields-note b {
+  font-size: 13px;
+}
+
+.managed-sheet-fields-note span {
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.6;
+}
+
+.managed-sheet-delete-modal {
+  display: grid;
+  gap: 16px;
+}
+
+.managed-sheet-delete-target {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 11px 13px;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: var(--surface-2);
+}
+
+.managed-sheet-delete-target > div {
+  display: grid;
+  gap: 2px;
+}
+
+.managed-sheet-delete-target span {
+  color: var(--muted);
+  font-size: 11px;
+}
+
+.managed-sheet-delete-target b {
+  font-size: 13px;
+}
+
+.managed-sheet-delete-options {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.managed-sheet-delete-options section {
+  display: flex;
+  align-items: stretch;
+  flex-direction: column;
+  padding: 16px;
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  background: var(--surface);
+}
+
+.managed-sheet-delete-options section > div:first-child {
+  width: 38px;
+  height: 38px;
+  display: grid;
+  place-items: center;
+  border-radius: 11px;
+  background: var(--surface-3);
+  color: var(--brand-dark);
+}
+
+.managed-sheet-delete-options section.danger {
+  border-color: color-mix(in srgb, var(--danger) 26%, var(--line));
+  background: color-mix(in srgb, var(--danger) 3%, var(--surface));
+}
+
+.managed-sheet-delete-options section.danger > div:first-child {
+  background: color-mix(in srgb, var(--danger) 10%, var(--surface));
+  color: var(--danger);
+}
+
+.managed-sheet-delete-options h3 {
+  margin: 12px 0 5px;
+  font-size: 14px;
+}
+
+.managed-sheet-delete-options p {
+  min-height: 74px;
+  margin: 0 0 14px;
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.65;
+}
+
+.managed-sheet-delete-options label {
+  display: grid;
+  gap: 5px;
+  margin: 0 0 12px;
+}
+
+.managed-sheet-delete-options label span {
+  color: var(--muted);
+  font-size: 11px;
+}
+
+.managed-sheet-delete-options input {
+  min-width: 0;
+  height: 38px;
+}
+
+.managed-sheet-delete-options .button {
+  width: 100%;
+  margin-top: auto;
 }
 
 .managed-sheet-template {
@@ -7558,6 +7688,10 @@ h1, h2, h3, p { margin-top: 0; }
 
   .managed-sheet-capabilities,
   .managed-sheet-platforms {
+    grid-template-columns: 1fr;
+  }
+
+  .managed-sheet-delete-options {
     grid-template-columns: 1fr;
   }
 }
@@ -10001,10 +10135,6 @@ h1, h2, h3, p { margin-top: 0; }
   margin-bottom: 9px;
 }
 
-.date-picker-head b {
-  font-size: 14px;
-}
-
 .date-picker-head button,
 .date-picker-foot button {
   min-height: 32px;
@@ -10019,6 +10149,21 @@ h1, h2, h3, p { margin-top: 0; }
   display: grid;
   place-items: center;
   padding: 0;
+}
+
+.date-picker-head .date-picker-title {
+  width: auto;
+  min-width: 148px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 5px;
+  padding: 0 12px;
+  background: transparent;
+}
+
+.date-picker-title b {
+  font-size: 14px;
 }
 
 .date-picker-head button:hover,
@@ -10073,6 +10218,37 @@ h1, h2, h3, p { margin-top: 0; }
 }
 
 .date-picker-days button.selected {
+  border-color: var(--brand);
+  background: var(--brand);
+  color: #fff;
+}
+
+.date-picker-options {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 8px;
+  min-height: 247px;
+  align-content: center;
+}
+
+.date-picker-options button {
+  min-height: 44px;
+  padding: 0 8px;
+  border: 1px solid transparent;
+  border-radius: 10px;
+  background: var(--surface-2);
+  color: var(--text);
+  font-size: 13px;
+  font-weight: 700;
+}
+
+.date-picker-options button:hover {
+  border-color: color-mix(in srgb, var(--brand) 32%, var(--line));
+  background: var(--brand-soft);
+  color: var(--brand-dark);
+}
+
+.date-picker-options button.selected {
   border-color: var(--brand);
   background: var(--brand);
   color: #fff;

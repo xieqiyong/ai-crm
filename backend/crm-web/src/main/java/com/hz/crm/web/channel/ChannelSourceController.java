@@ -11,6 +11,9 @@ import com.hz.crm.application.channel.dto.ChannelSourceSyncRequest;
 import com.hz.crm.application.channel.dto.ChannelSourceSyncResult;
 import com.hz.crm.application.channel.dto.ChannelSyncLogResponse;
 import com.hz.crm.application.channel.dto.ManagedChannelSheetCreateRequest;
+import com.hz.crm.application.channel.dto.ManagedChannelSheetDeleteRequest;
+import com.hz.crm.application.channel.dto.ManagedChannelSheetFieldResponse;
+import com.hz.crm.application.channel.dto.ManagedChannelSheetFieldsSaveRequest;
 import com.hz.crm.application.channel.dto.ManagedChannelSheetSyncRequest;
 import com.hz.crm.auth.security.JwtPrincipal;
 import com.hz.crm.common.api.ApiResult;
@@ -134,5 +137,45 @@ public class ChannelSourceController {
             JwtPrincipal principal) {
         return ApiResult.ok(managedChannelSheetApplicationService.sync(
                 principal.getTenantId(), principal.getUserId(), request.getId()));
+    }
+
+    @PostMapping("/managed-sheet/fields")
+    @PreAuthorize("hasAuthority('*') or hasAuthority('crm:channel:view')")
+    public ApiResult<List<ManagedChannelSheetFieldResponse>> managedSheetFields(
+            @RequestBody IdRequest request,
+            JwtPrincipal principal) {
+        return ApiResult.ok(managedChannelSheetApplicationService.fields(
+                principal.getTenantId(), request.getId()));
+    }
+
+    @PostMapping("/managed-sheet/fields/save")
+    @PreAuthorize("hasAuthority('*') or hasAuthority('crm:channel:manage')")
+    @AuditOperation(
+            module = "CHANNEL_SOURCE",
+            action = "MANAGED_SHEET_FIELDS_SAVE",
+            description = "维护渠道自建表格字段",
+            targetType = "CHANNEL_SOURCE",
+            targetIdField = "id",
+            recordParameters = false)
+    public ApiResult<List<ManagedChannelSheetFieldResponse>> saveManagedSheetFields(
+            @Valid @RequestBody ManagedChannelSheetFieldsSaveRequest request,
+            JwtPrincipal principal) {
+        return ApiResult.ok(managedChannelSheetApplicationService.saveFields(
+                principal.getTenantId(), request));
+    }
+
+    @PostMapping("/managed-sheet/delete")
+    @PreAuthorize("hasAuthority('*') or hasAuthority('crm:channel:manage')")
+    @AuditOperation(
+            module = "CHANNEL_SOURCE",
+            action = "MANAGED_SHEET_DELETE",
+            description = "删除渠道自建表格",
+            targetType = "CHANNEL_SOURCE",
+            targetIdField = "id")
+    public ApiResult<Void> deleteManagedSheet(
+            @Valid @RequestBody ManagedChannelSheetDeleteRequest request,
+            JwtPrincipal principal) {
+        managedChannelSheetApplicationService.delete(principal.getTenantId(), request);
+        return ApiResult.ok(null);
     }
 }

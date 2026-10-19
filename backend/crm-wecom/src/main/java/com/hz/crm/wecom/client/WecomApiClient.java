@@ -238,6 +238,45 @@ public class WecomApiClient {
                 body);
     }
 
+    public JSONObject updateSmartSheetFields(
+            String accessToken,
+            String docId,
+            String sheetId,
+            JSONArray fields) {
+        JSONObject body = new JSONObject();
+        body.put("docid", docId);
+        body.put("sheet_id", sheetId);
+        body.put("fields", fields);
+        return execute(
+                "POST",
+                "/cgi-bin/wedoc/smartsheet/update_fields?access_token=" + encode(accessToken),
+                body);
+    }
+
+    public JSONObject deleteSmartSheetFields(
+            String accessToken,
+            String docId,
+            String sheetId,
+            List<String> fieldIds) {
+        JSONObject body = new JSONObject();
+        body.put("docid", docId);
+        body.put("sheet_id", sheetId);
+        body.put("field_ids", fieldIds);
+        return execute(
+                "POST",
+                "/cgi-bin/wedoc/smartsheet/delete_fields?access_token=" + encode(accessToken),
+                body);
+    }
+
+    public JSONObject deleteDocument(String accessToken, String docId) {
+        JSONObject body = new JSONObject();
+        body.put("docid", docId);
+        return execute(
+                "POST",
+                "/cgi-bin/wedoc/del_doc?access_token=" + encode(accessToken),
+                body);
+    }
+
     public JSONObject getSmartSheetRecords(String accessToken, String docId, String sheetId, int offset, int limit) {
         JSONObject body = new JSONObject();
         body.put("docid", docId);

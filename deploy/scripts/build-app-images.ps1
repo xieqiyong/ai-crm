@@ -430,7 +430,18 @@ function Invoke-RemoteCommand {
         Assert-CommandExists -Command "ssh" -Description "OpenSSH ssh"
         Invoke-CheckedCommand `
             -Command "ssh" `
-            -Arguments @("-i", $SshKey, "-o", "IdentitiesOnly=yes", $RemoteTarget, $CommandText) `
+            -Arguments @(
+                "-i",
+                $SshKey,
+                "-o",
+                "BatchMode=yes",
+                "-o",
+                "IdentitiesOnly=yes",
+                "-o",
+                "StrictHostKeyChecking=accept-new",
+                $RemoteTarget,
+                $CommandText
+            ) `
             -Description $Description
         return
     }
@@ -466,7 +477,16 @@ function Invoke-RemoteUpload {
         Assert-CommandExists -Command "scp" -Description "OpenSSH scp"
         Invoke-CheckedCommand `
             -Command "scp" `
-            -Arguments (@("-i", $SshKey, "-o", "IdentitiesOnly=yes") + $Files + @($RemoteDestination)) `
+            -Arguments (@(
+                "-i",
+                $SshKey,
+                "-o",
+                "BatchMode=yes",
+                "-o",
+                "IdentitiesOnly=yes",
+                "-o",
+                "StrictHostKeyChecking=accept-new"
+            ) + $Files + @($RemoteDestination)) `
             -Description "上传应用镜像和部署脚本"
         return
     }

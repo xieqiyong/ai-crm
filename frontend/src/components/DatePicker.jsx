@@ -1,7 +1,9 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
-import { CalendarDays, ChevronLeft, ChevronRight, X } from 'lucide-react'
+import { CalendarDays, ChevronDown, ChevronLeft, ChevronRight, X } from 'lucide-react'
 
 const weekNames = ['一', '二', '三', '四', '五', '六', '日']
+const monthNames = Array.from({ length: 12 }).map((_, index) => `${index + 1}月`)
+const yearPageSize = 12
 
 function pad(value) {
   return String(value).padStart(2, '0')
@@ -63,8 +65,14 @@ export function DatePicker({
   const selectedDate = parseYmd(value)
   const [open, setOpen] = useState(false)
   const [viewDate, setViewDate] = useState(selectedDate || new Date())
+  const [panel, setPanel] = useState('day')
   const today = useMemo(() => new Date(), [])
   const days = useMemo(() => buildDays(viewDate), [viewDate])
+  const yearPageStart = Math.floor(viewDate.getFullYear() / yearPageSize) * yearPageSize
+  const years = useMemo(
+    () => Array.from({ length: yearPageSize }).map((_, index) => yearPageStart + index),
+    [yearPageStart],
+  )
 
   useEffect(() => {
     const nextDate = parseYmd(value)
@@ -99,8 +107,41 @@ export function DatePicker({
     setViewDate((current) => new Date(current.getFullYear(), current.getMonth() + step, 1))
   }
 
+  const changePanelPage = (step) => {
+    if (panel === 'year') {
+      setViewDate((current) => new Date(current.getFullYear() + (step * yearPageSize), current.getMonth(), 1))
+      return
+    }
+    if (panel === 'month') {
+      setViewDate((current) => new Date(current.getFullYear() + step, current.getMonth(), 1))
+      return
+    }
+    changeMonth(step)
+  }
+
+  const chooseYear = (year) => {
+    setViewDate((current) => new Date(year, current.getMonth(), 1))
+    setPanel('month')
+  }
+
+  const chooseMonth = (month) => {
+    setViewDate((current) => new Date(current.getFullYear(), month, 1))
+    setPanel('day')
+  }
+
+  const openPanel = () => {
+    if (panel === 'day') {
+      setPanel('year')
+      return
+    }
+    if (panel === 'month') {
+      setPanel('year')
+    }
+  }
+
   const choose = (date) => {
     onChange?.(formatYmd(date))
+    setPanel('day')
     setOpen(false)
   }
 
@@ -113,8 +154,25 @@ export function DatePicker({
   const clear = (event) => {
     event.stopPropagation()
     onChange?.('')
+    setPanel('day')
     setOpen(false)
   }
+
+  const toggleOpen = () => {
+    setOpen((current) => {
+      if (!current) {
+        setViewDate(selectedDate || new Date())
+        setPanel('day')
+      }
+      return !current
+    })
+  }
+
+  const panelTitle = panel === 'year'
+    ? `${yearPageStart} - ${yearPageStart + yearPageSize - 1}`
+    : panel === 'month'
+      ? `${viewDate.getFullYear()}年`
+      : `${viewDate.getFullYear()}年${viewDate.getMonth() + 1}月`
 
   return (
     <div
@@ -127,7 +185,7 @@ export function DatePicker({
         type="button"
         className="date-picker-trigger"
         disabled={disabled}
-        onClick={() => setOpen((current) => !current)}
+        onClick={toggleOpen}
       >
         <CalendarDays size={17} />
         <span className={value ? '' : 'placeholder'}>{formatDisplay(value) || placeholder}</span>
@@ -140,38 +198,78 @@ export function DatePicker({
       {open && (
         <div className="date-picker-popover">
           <div className="date-picker-head">
-            <button type="button" onClick={() => changeMonth(-1)}><ChevronLeft size={18} /></button>
-            <b>{viewDate.getFullYear()}年{viewDate.getMonth() + 1}月</b>
-            <button type="button" onClick={() => changeMonth(1)}><ChevronRight size={18} /></button>
+            <button type="button" aria-label="上一页" onClick={() => changePanelPage(-1)}><ChevronLeft size={18} /></button>
+            <button
+              type="button"
+              className="date-picker-title"
+              aria-label={panel === 'day' ? '选择年份' : panel === 'month' ? '重新选择年份' : undefined}
+              onClick={openPanel}
+            >
+              <b>{panelTitle}</b>
+              {panel !== 'year' && <ChevronDown size={14} />}
+            </button>
+            <button type="button" aria-label="下一页" onClick={() => changePanelPage(1)}><ChevronRight size={18} /></button>
           </div>
-          <div className="date-picker-week">
-            {weekNames.map((name) => <span key={name}>{name}</span>)}
-          </div>
-          <div className="date-picker-days">
-            {days.map((date) => {
-              const ymd = formatYmd(date)
-              const outside = date.getMonth() !== viewDate.getMonth()
-              const selected = isSameDay(date, selectedDate)
-              const current = isSameDay(date, today)
-              return (
+          {panel === 'year' && (
+            <div className="date-picker-options date-picker-years">
+              {years.map((year) => (
                 <button
                   type="button"
-                  className={[
-                    outside ? 'outside' : '',
-                    selected ? 'selected' : '',
-                    current ? 'today' : '',
-                  ].filter(Boolean).join(' ')}
-                  onClick={() => choose(date)}
-                  key={ymd}
+                  className={year === viewDate.getFullYear() ? 'selected' : ''}
+                  onClick={() => chooseYear(year)}
+                  key={year}
                 >
-                  {date.getDate()}
+                  {year}年
                 </button>
-              )
-            })}
-          </div>
+              ))}
+            </div>
+          )}
+          {panel === 'month' && (
+            <div className="date-picker-options date-picker-months">
+              {monthNames.map((name, index) => (
+                <button
+                  type="button"
+                  className={index === viewDate.getMonth() ? 'selected' : ''}
+                  onClick={() => chooseMonth(index)}
+                  key={name}
+                >
+                  {name}
+                </button>
+              ))}
+            </div>
+          )}
+          {panel === 'day' && (
+            <>
+              <div className="date-picker-week">
+                {weekNames.map((name) => <span key={name}>{name}</span>)}
+              </div>
+              <div className="date-picker-days">
+                {days.map((date) => {
+                  const ymd = formatYmd(date)
+                  const outside = date.getMonth() !== viewDate.getMonth()
+                  const selected = isSameDay(date, selectedDate)
+                  const current = isSameDay(date, today)
+                  return (
+                    <button
+                      type="button"
+                      className={[
+                        outside ? 'outside' : '',
+                        selected ? 'selected' : '',
+                        current ? 'today' : '',
+                      ].filter(Boolean).join(' ')}
+                      onClick={() => choose(date)}
+                      key={ymd}
+                    >
+                      {date.getDate()}
+                    </button>
+                  )
+                })}
+              </div>
+            </>
+          )}
           <div className="date-picker-foot">
             <button type="button" onClick={chooseToday}>今天</button>
-            <button type="button" onClick={() => setOpen(false)}>完成</button>
+            <button type="button" onClick={() => { setPanel('day'); setOpen(false) }}>完成</button>
           </div>
         </div>
       )}

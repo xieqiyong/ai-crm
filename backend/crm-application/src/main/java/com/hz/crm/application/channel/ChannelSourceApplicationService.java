@@ -228,6 +228,22 @@ public class ChannelSourceApplicationService {
     }
 
     @Transactional
+    public void updateManagedFieldMapping(
+            Long tenantId,
+            Long id,
+            String fieldMappingJson) {
+        ChannelSourceEntity entity = findOne(tenantId, id);
+        if (!StringUtils.hasText(entity.getExternalProvider())
+                || !entity.getExternalProvider().endsWith(MANAGED_PROVIDER_SUFFIX)) {
+            throw new BusinessException(
+                    "CHANNEL_MANAGED_SHEET_012", "当前渠道来源不是平台自建表格");
+        }
+        entity.setFieldMappingJson(trimToNull(fieldMappingJson));
+        entity.setUpdatedAt(DateTimes.now());
+        channelSourceMapper.updateById(entity);
+    }
+
+    @Transactional
     public ChannelSyncLogEntity startLog(Long tenantId, Long sourceId, ChannelSyncTrigger triggerType) {
         ChannelSourceEntity source = findOne(tenantId, sourceId);
         LocalDateTime now = DateTimes.now();

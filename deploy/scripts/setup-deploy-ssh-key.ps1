@@ -3,7 +3,11 @@ param(
 
     [string]$RemoteUser = "root",
 
-    [string]$KeyPath = ""
+    [string]$KeyPath = "",
+
+    [string]$RemotePassword = $env:CRM_DEPLOY_PASSWORD,
+
+    [string]$RemoteHostKey = $env:CRM_DEPLOY_HOST_KEY
 )
 
 $ErrorActionPreference = "Stop"
@@ -76,7 +80,17 @@ $InstallCommand = "umask 077; mkdir -p ~/.ssh; touch ~/.ssh/authorized_keys; gre
 
 Write-Host ""
 Write-Host "==> 安装部署公钥，下面只需要输入这一次服务器密码" -ForegroundColor Cyan
-& ssh $RemoteTarget $InstallCommand
+if (-not [string]::IsNullOrWhiteSpace($RemotePassword) `
+        -and (Get-Command "plink" -ErrorAction SilentlyContinue)) {
+    $PlinkArguments = @("-ssh", "-batch")
+    if (-not [string]::IsNullOrWhiteSpace($RemoteHostKey)) {
+        $PlinkArguments += @("-hostkey", $RemoteHostKey)
+    }
+    $PlinkArguments += @("-pw", $RemotePassword, $RemoteTarget, $InstallCommand)
+    & plink @PlinkArguments
+} else {
+    & ssh $RemoteTarget $InstallCommand
+}
 if ($LASTEXITCODE -ne 0) {
     throw "安装部署公钥失败，退出码：$LASTEXITCODE"
 }

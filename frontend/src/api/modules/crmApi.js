@@ -108,4 +108,16 @@ export const channelSourceApi = {
     method: 'POST',
     body: JSON.stringify({ id }),
   }),
+  managedSheetFields: (id) => request('/api/channel/source/managed-sheet/fields', {
+    method: 'POST',
+    body: JSON.stringify({ id }),
+  }),
+  managedSheetFieldsSave: (id, fields) => request('/api/channel/source/managed-sheet/fields/save', {
+    method: 'POST',
+    body: JSON.stringify({ id, fields: fields || [] }),
+  }),
+  managedSheetDelete: (id, deletePlatformDocument = false) => request('/api/channel/source/managed-sheet/delete', {
+    method: 'POST',
+    body: JSON.stringify({ id, deletePlatformDocument }),
+  }),
 }

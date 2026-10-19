@@ -8,6 +8,8 @@ import lombok.Setter;
 @Setter
 public class ManagedChannelSheetFieldRequest {
 
+    private String fieldId;
+
     private String businessKey;
 
     @NotBlank(message = "字段名称不能为空")

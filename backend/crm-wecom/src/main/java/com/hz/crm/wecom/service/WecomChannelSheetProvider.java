@@ -17,11 +17,13 @@ import java.time.ZoneId;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Component;
 import org.springframework.util.StringUtils;
 
 @Component
+@Slf4j
 public class WecomChannelSheetProvider implements ChannelSheetProvider {
 
     private static final int PAGE_SIZE = 1000;
@@ -65,9 +67,14 @@ public class WecomChannelSheetProvider implements ChannelSheetProvider {
         if (!StringUtils.hasText(sheetId)) {
             throw new BusinessException("WECOM_SHEET_002", "企业微信智能表格未返回默认子表编号");
         }
-        JSONArray fields = buildFields(command.getFields());
+        JSONArray fields = buildFields(command.getFields(), false);
         if (!fields.isEmpty()) {
-            wecomApiClient.addSmartSheetFields(token, docId, sheetId, fields);
+            try {
+                wecomApiClient.addSmartSheetFields(token, docId, sheetId, fields);
+            } catch (BusinessException ex) {
+                cleanupFailedDocument(token, docId);
+                throw fieldOperationException("创建", command.getFields(), ex);
+            }
         }
         ChannelSheetDocument document = new ChannelSheetDocument();
         document.setPlatform(platform());
@@ -109,6 +116,102 @@ public class WecomChannelSheetProvider implements ChannelSheetProvider {
         return records;
     }
 
+    @Override
+    public List<ChannelSheetFieldDefinition> fetchFields(
+            Long tenantId,
+            ChannelSourceResponse source) {
+        WecomCorpConfigEntity config = resolveConfig(tenantId, source.getWecomConfigId());
+        String token = wecomTokenService.getToken(config);
+        List<ChannelSheetFieldDefinition> fields = new ArrayList<ChannelSheetFieldDefinition>();
+        int offset = 0;
+        while (true) {
+            JSONObject response = wecomApiClient.getSmartSheetFields(
+                    token, source.getDocId(), source.getSheetId(), offset, PAGE_SIZE);
+            JSONArray items = response.getJSONArray("fields");
+            if (items == null || items.isEmpty()) {
+                break;
+            }
+            for (int index = 0; index < items.size(); index++) {
+                JSONObject item = items.getJSONObject(index);
+                if (item == null) {
+                    continue;
+                }
+                ChannelSheetFieldDefinition field = new ChannelSheetFieldDefinition();
+                field.setFieldId(item.getString("field_id"));
+                field.setTitle(item.getString("field_title"));
+                field.setFieldType(item.getString("field_type"));
+                field.setRequired(fields.isEmpty());
+                fields.add(field);
+            }
+            offset += items.size();
+            Integer next = response.getInteger("next");
+            Integer total = response.getInteger("total");
+            Boolean hasMore = response.getBoolean("has_more");
+            if (Boolean.FALSE.equals(hasMore)
+                    || items.size() < PAGE_SIZE
+                    || total != null && offset >= total.intValue()) {
+                break;
+            }
+            if (next != null && next.intValue() > offset) {
+                offset = next.intValue();
+            }
+        }
+        return fields;
+    }
+
+    @Override
+    public void addFields(
+            Long tenantId,
+            ChannelSourceResponse source,
+            List<ChannelSheetFieldDefinition> fields) {
+        if (fields == null || fields.isEmpty()) {
+            return;
+        }
+        WecomCorpConfigEntity config = resolveConfig(tenantId, source.getWecomConfigId());
+        String token = wecomTokenService.getToken(config);
+        try {
+            wecomApiClient.addSmartSheetFields(
+                    token, source.getDocId(), source.getSheetId(), buildFields(fields, false));
+        } catch (BusinessException ex) {
+            throw fieldOperationException("新增", fields, ex);
+        }
+    }
+
+    @Override
+    public void updateFields(
+            Long tenantId,
+            ChannelSourceResponse source,
+            List<ChannelSheetFieldDefinition> fields) {
+        if (fields == null || fields.isEmpty()) {
+            return;
+        }
+        WecomCorpConfigEntity config = resolveConfig(tenantId, source.getWecomConfigId());
+        String token = wecomTokenService.getToken(config);
+        wecomApiClient.updateSmartSheetFields(
+                token, source.getDocId(), source.getSheetId(), buildFields(fields, true));
+    }
+
+    @Override
+    public void deleteFields(
+            Long tenantId,
+            ChannelSourceResponse source,
+            List<String> fieldIds) {
+        if (fieldIds == null || fieldIds.isEmpty()) {
+            return;
+        }
+        WecomCorpConfigEntity config = resolveConfig(tenantId, source.getWecomConfigId());
+        String token = wecomTokenService.getToken(config);
+        wecomApiClient.deleteSmartSheetFields(
+                token, source.getDocId(), source.getSheetId(), fieldIds);
+    }
+
+    @Override
+    public void deleteDocument(Long tenantId, ChannelSourceResponse source) {
+        WecomCorpConfigEntity config = resolveConfig(tenantId, source.getWecomConfigId());
+        String token = wecomTokenService.getToken(config);
+        wecomApiClient.deleteDocument(token, source.getDocId());
+    }
+
     private WecomCorpConfigEntity resolveConfig(Long tenantId, Long configId) {
         WecomCorpConfigEntity config = configId == null
                 ? wecomManageService.findFirstConfig(tenantId)
@@ -119,7 +222,9 @@ public class WecomChannelSheetProvider implements ChannelSheetProvider {
         return config;
     }
 
-    private JSONArray buildFields(List<ChannelSheetFieldDefinition> definitions) {
+    private JSONArray buildFields(
+            List<ChannelSheetFieldDefinition> definitions,
+            boolean includeFieldId) {
         JSONArray fields = new JSONArray();
         if (definitions == null) {
             return fields;
@@ -129,13 +234,98 @@ public class WecomChannelSheetProvider implements ChannelSheetProvider {
                 continue;
             }
             JSONObject field = new JSONObject();
+            if (includeFieldId && StringUtils.hasText(definition.getFieldId())) {
+                field.put("field_id", definition.getFieldId().trim());
+            }
             field.put("field_title", definition.getTitle().trim());
-            field.put("field_type", StringUtils.hasText(definition.getFieldType())
+            String fieldType = StringUtils.hasText(definition.getFieldType())
                     ? definition.getFieldType().trim()
-                    : "FIELD_TYPE_TEXT");
+                    : "FIELD_TYPE_TEXT";
+            field.put("field_type", fieldType);
+            if (!includeFieldId) {
+                appendDefaultFieldProperty(field, fieldType);
+            }
             fields.add(field);
         }
         return fields;
+    }
+
+    private void appendDefaultFieldProperty(JSONObject field, String fieldType) {
+        if ("FIELD_TYPE_NUMBER".equals(fieldType)) {
+            JSONObject property = new JSONObject();
+            property.put("decimal_places", 0);
+            property.put("use_separate", false);
+            field.put("property_number", property);
+            return;
+        }
+        if ("FIELD_TYPE_DATE_TIME".equals(fieldType)) {
+            JSONObject property = new JSONObject();
+            property.put("format", "yyyy\"年\"m\"月\"d\"日\"");
+            property.put("auto_fill", false);
+            field.put("property_date_time", property);
+            return;
+        }
+        if ("FIELD_TYPE_SINGLE_SELECT".equals(fieldType)) {
+            JSONObject property = new JSONObject();
+            property.put("is_quick_add", true);
+            property.put("options", new JSONArray());
+            field.put("property_single_select", property);
+            return;
+        }
+        if ("FIELD_TYPE_SELECT".equals(fieldType)) {
+            JSONObject property = new JSONObject();
+            property.put("is_quick_add", true);
+            property.put("options", new JSONArray());
+            field.put("property_select", property);
+            return;
+        }
+        if ("FIELD_TYPE_CHECKBOX".equals(fieldType)) {
+            JSONObject property = new JSONObject();
+            property.put("checked", false);
+            field.put("property_checkbox", property);
+            return;
+        }
+        if ("FIELD_TYPE_URL".equals(fieldType)) {
+            JSONObject property = new JSONObject();
+            property.put("type", "LINK_TYPE_PURE_TEXT");
+            field.put("property_url", property);
+        }
+    }
+
+    private BusinessException fieldOperationException(
+            String operation,
+            List<ChannelSheetFieldDefinition> definitions,
+            BusinessException cause) {
+        StringBuilder summary = new StringBuilder();
+        if (definitions != null) {
+            for (ChannelSheetFieldDefinition definition : definitions) {
+                if (definition == null || !StringUtils.hasText(definition.getTitle())) {
+                    continue;
+                }
+                if (summary.length() > 0) {
+                    summary.append("、");
+                }
+                summary.append(definition.getTitle().trim())
+                        .append('(')
+                        .append(StringUtils.hasText(definition.getFieldType())
+                                ? definition.getFieldType().trim()
+                                : "FIELD_TYPE_TEXT")
+                        .append(')');
+            }
+        }
+        BusinessException exception = new BusinessException(
+                cause.getCode(),
+                "企业微信智能表格字段" + operation + "失败，字段：" + summary + "；" + cause.getMessage());
+        exception.initCause(cause);
+        return exception;
+    }
+
+    private void cleanupFailedDocument(String token, String docId) {
+        try {
+            wecomApiClient.deleteDocument(token, docId);
+        } catch (RuntimeException cleanupException) {
+            log.warn("企业微信智能表格创建失败后清理文档失败，文档编号：{}", docId, cleanupException);
+        }
     }
 
     private String resolveSheetId(JSONObject response) {

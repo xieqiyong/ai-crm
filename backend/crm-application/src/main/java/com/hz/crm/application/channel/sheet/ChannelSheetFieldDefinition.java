@@ -7,9 +7,13 @@ import lombok.Setter;
 @Setter
 public class ChannelSheetFieldDefinition {
 
+    private String fieldId;
+
     private String businessKey;
 
     private String title;
 
     private String fieldType;
+
+    private boolean required;
 }

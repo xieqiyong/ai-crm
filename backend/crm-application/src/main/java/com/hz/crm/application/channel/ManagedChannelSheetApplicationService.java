@@ -7,7 +7,10 @@ import com.hz.crm.application.channel.dto.ChannelSourceSyncResult;
 import com.hz.crm.application.channel.dto.ExternalChannelSyncRequest;
 import com.hz.crm.application.channel.dto.ExternalChannelSyncResult;
 import com.hz.crm.application.channel.dto.ManagedChannelSheetCreateRequest;
+import com.hz.crm.application.channel.dto.ManagedChannelSheetDeleteRequest;
 import com.hz.crm.application.channel.dto.ManagedChannelSheetFieldRequest;
+import com.hz.crm.application.channel.dto.ManagedChannelSheetFieldResponse;
+import com.hz.crm.application.channel.dto.ManagedChannelSheetFieldsSaveRequest;
 import com.hz.crm.application.channel.sheet.ChannelSheetCreateCommand;
 import com.hz.crm.application.channel.sheet.ChannelSheetDocument;
 import com.hz.crm.application.channel.sheet.ChannelSheetFieldDefinition;
@@ -28,6 +31,7 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
+import java.util.Objects;
 import java.util.Set;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -41,6 +45,8 @@ public class ManagedChannelSheetApplicationService {
     private static final String DEFAULT_FIELD_MAPPING = "{\"companyName\":\"公司名称\",\"contactName\":\"联系人\",\"phone\":\"联系电话\",\"email\":\"联系邮箱\",\"remark\":\"需求描述\"}";
 
     private static final int MAX_FIELD_COUNT = 50;
+
+    private static final String MANAGED_PROVIDER_SUFFIX = "_SMART_SHEET_API";
 
     private static final List<String> BUSINESS_KEYS = Arrays.asList(
             "companyName", "contactName", "phone", "email", "remark");
@@ -91,6 +97,89 @@ public class ManagedChannelSheetApplicationService {
                 request.getProductId(),
                 buildFieldMapping(fields),
                 document);
+    }
+
+    public List<ManagedChannelSheetFieldResponse> fields(
+            Long tenantId,
+            Long sourceId) {
+        ChannelSourceResponse source = channelSourceApplicationService.detail(tenantId, sourceId);
+        requireManagedSource(source);
+        ChannelSheetProvider provider = requireProvider(resolvePlatform(source.getExternalProvider()));
+        List<ChannelSheetFieldDefinition> fields = provider.fetchFields(tenantId, source);
+        applyBusinessKeys(fields, parseMapping(source.getFieldMappingJson()));
+        return toFieldResponses(fields);
+    }
+
+    public List<ManagedChannelSheetFieldResponse> saveFields(
+            Long tenantId,
+            ManagedChannelSheetFieldsSaveRequest request) {
+        ChannelSourceResponse source = channelSourceApplicationService.detail(
+                tenantId, request.getId());
+        requireManagedSource(source);
+        ChannelSheetProvider provider = requireProvider(resolvePlatform(source.getExternalProvider()));
+        List<ChannelSheetFieldDefinition> currentFields = provider.fetchFields(tenantId, source);
+        List<ChannelSheetFieldDefinition> desiredFields = normalizeFields(request.getFields(), false);
+        Map<String, ChannelSheetFieldDefinition> currentById = new LinkedHashMap<String, ChannelSheetFieldDefinition>();
+        for (ChannelSheetFieldDefinition field : currentFields) {
+            if (field != null && StringUtils.hasText(field.getFieldId())) {
+                currentById.put(field.getFieldId(), field);
+            }
+        }
+        List<ChannelSheetFieldDefinition> addedFields = new ArrayList<ChannelSheetFieldDefinition>();
+        List<ChannelSheetFieldDefinition> updatedFields = new ArrayList<ChannelSheetFieldDefinition>();
+        Set<String> retainedFieldIds = new HashSet<String>();
+        for (ChannelSheetFieldDefinition desired : desiredFields) {
+            if (!StringUtils.hasText(desired.getFieldId())) {
+                addedFields.add(desired);
+                continue;
+            }
+            ChannelSheetFieldDefinition current = currentById.get(desired.getFieldId());
+            if (current == null) {
+                throw new BusinessException(
+                        "CHANNEL_MANAGED_SHEET_013", "企微表格字段已发生变化，请刷新后重试");
+            }
+            retainedFieldIds.add(desired.getFieldId());
+            if (!Objects.equals(current.getFieldType(), desired.getFieldType())) {
+                throw new BusinessException(
+                        "CHANNEL_MANAGED_SHEET_014",
+                        "已有字段不支持修改类型，请新增字段后再迁移数据：" + current.getTitle());
+            }
+            if (!Objects.equals(current.getTitle(), desired.getTitle())) {
+                updatedFields.add(desired);
+            }
+        }
+        List<String> deletedFieldIds = new ArrayList<String>();
+        for (ChannelSheetFieldDefinition current : currentFields) {
+            if (current == null
+                    || !StringUtils.hasText(current.getFieldId())
+                    || retainedFieldIds.contains(current.getFieldId())) {
+                continue;
+            }
+            if (current.isRequired()) {
+                throw new BusinessException(
+                        "CHANNEL_MANAGED_SHEET_015", "企微默认标题字段不能删除");
+            }
+            deletedFieldIds.add(current.getFieldId());
+        }
+        provider.addFields(tenantId, source, addedFields);
+        provider.updateFields(tenantId, source, updatedFields);
+        provider.deleteFields(tenantId, source, deletedFieldIds);
+        channelSourceApplicationService.updateManagedFieldMapping(
+                tenantId, source.getId(), buildFieldMapping(desiredFields));
+        return fields(tenantId, source.getId());
+    }
+
+    public void delete(
+            Long tenantId,
+            ManagedChannelSheetDeleteRequest request) {
+        ChannelSourceResponse source = channelSourceApplicationService.detail(
+                tenantId, request.getId());
+        requireManagedSource(source);
+        if (request.isDeletePlatformDocument()) {
+            ChannelSheetProvider provider = requireProvider(resolvePlatform(source.getExternalProvider()));
+            provider.deleteDocument(tenantId, source);
+        }
+        channelSourceApplicationService.delete(tenantId, source.getId());
     }
 
     public ChannelSourceSyncResult sync(Long tenantId, Long operatorId, Long sourceId) {
@@ -212,8 +301,17 @@ public class ManagedChannelSheetApplicationService {
 
     private List<ChannelSheetFieldDefinition> normalizeFields(
             List<ManagedChannelSheetFieldRequest> requests) {
+        return normalizeFields(requests, true);
+    }
+
+    private List<ChannelSheetFieldDefinition> normalizeFields(
+            List<ManagedChannelSheetFieldRequest> requests,
+            boolean useDefaults) {
         if (requests == null || requests.isEmpty()) {
-            return defaultFields();
+            if (useDefaults) {
+                return defaultFields();
+            }
+            throw new BusinessException("CHANNEL_MANAGED_SHEET_010", "至少需要配置一个字段");
         }
         if (requests.size() > MAX_FIELD_COUNT) {
             throw new BusinessException(
@@ -257,7 +355,9 @@ public class ManagedChannelSheetApplicationService {
                         "CHANNEL_MANAGED_SHEET_009",
                         "同一业务字段不能重复配置：" + title);
             }
-            fields.add(field(businessKey, title, fieldType));
+            ChannelSheetFieldDefinition definition = field(businessKey, title, fieldType);
+            definition.setFieldId(trimToNull(request.getFieldId()));
+            fields.add(definition);
         }
         if (fields.isEmpty()) {
             throw new BusinessException("CHANNEL_MANAGED_SHEET_010", "至少需要配置一个字段");
@@ -275,6 +375,46 @@ public class ManagedChannelSheetApplicationService {
                     "公司名称、联系人、联系电话、联系邮箱至少保留一个");
         }
         return fields;
+    }
+
+    private void applyBusinessKeys(
+            List<ChannelSheetFieldDefinition> fields,
+            Map<String, String> mapping) {
+        if (fields == null || fields.isEmpty() || mapping == null || mapping.isEmpty()) {
+            return;
+        }
+        for (ChannelSheetFieldDefinition field : fields) {
+            if (field == null || !StringUtils.hasText(field.getTitle())) {
+                continue;
+            }
+            for (Map.Entry<String, String> entry : mapping.entrySet()) {
+                if (field.getTitle().equals(entry.getValue())) {
+                    field.setBusinessKey(entry.getKey());
+                    break;
+                }
+            }
+        }
+    }
+
+    private List<ManagedChannelSheetFieldResponse> toFieldResponses(
+            List<ChannelSheetFieldDefinition> fields) {
+        List<ManagedChannelSheetFieldResponse> responses = new ArrayList<ManagedChannelSheetFieldResponse>();
+        if (fields == null) {
+            return responses;
+        }
+        for (ChannelSheetFieldDefinition field : fields) {
+            if (field == null) {
+                continue;
+            }
+            ManagedChannelSheetFieldResponse response = new ManagedChannelSheetFieldResponse();
+            response.setFieldId(field.getFieldId());
+            response.setBusinessKey(field.getBusinessKey());
+            response.setTitle(field.getTitle());
+            response.setFieldType(field.getFieldType());
+            response.setRequired(field.isRequired());
+            responses.add(response);
+        }
+        return responses;
     }
 
     private String buildFieldMapping(List<ChannelSheetFieldDefinition> fields) {
@@ -317,6 +457,15 @@ public class ManagedChannelSheetApplicationService {
         String value = normalizePlatform(externalProvider);
         int index = value.indexOf('_');
         return index > 0 ? value.substring(0, index) : value;
+    }
+
+    private void requireManagedSource(ChannelSourceResponse source) {
+        if (source == null
+                || !StringUtils.hasText(source.getExternalProvider())
+                || !source.getExternalProvider().endsWith(MANAGED_PROVIDER_SUFFIX)) {
+            throw new BusinessException(
+                    "CHANNEL_MANAGED_SHEET_012", "当前渠道来源不是平台自建表格");
+        }
     }
 
     private String normalizePlatform(String value) {

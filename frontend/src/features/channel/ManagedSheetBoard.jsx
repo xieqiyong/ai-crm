@@ -11,11 +11,13 @@ import {
   Plus,
   RefreshCw,
   Send,
+  Settings2,
   Sheet,
   Trash2,
+  TriangleAlert,
 } from 'lucide-react'
 import { api } from '../../api'
-import { Badge, Button, Card, ConfirmDialog, Field, Modal, Select, useConfirmDialog } from '../../components'
+import { Badge, Button, Card, Field, Modal, Select } from '../../components'
 import { useProductOptions } from '../../hooks/useProductOptions'
 
 const platforms = [
@@ -61,12 +63,23 @@ const fieldTypes = [
 ]
 
 const coreFields = [
-  { id: 'companyName', businessKey: 'companyName', title: '公司名称', fieldType: 'FIELD_TYPE_TEXT', core: true },
-  { id: 'contactName', businessKey: 'contactName', title: '联系人', fieldType: 'FIELD_TYPE_TEXT', core: true },
-  { id: 'phone', businessKey: 'phone', title: '联系电话', fieldType: 'FIELD_TYPE_PHONE_NUMBER', core: true },
-  { id: 'email', businessKey: 'email', title: '联系邮箱', fieldType: 'FIELD_TYPE_EMAIL', core: true },
-  { id: 'remark', businessKey: 'remark', title: '需求描述', fieldType: 'FIELD_TYPE_TEXT', core: true },
+  { id: 'companyName', businessKey: 'companyName', title: '公司名称', fieldType: 'FIELD_TYPE_TEXT' },
+  { id: 'contactName', businessKey: 'contactName', title: '联系人', fieldType: 'FIELD_TYPE_TEXT' },
+  { id: 'phone', businessKey: 'phone', title: '联系电话', fieldType: 'FIELD_TYPE_PHONE_NUMBER' },
+  { id: 'email', businessKey: 'email', title: '联系邮箱', fieldType: 'FIELD_TYPE_EMAIL' },
+  { id: 'remark', businessKey: 'remark', title: '需求描述', fieldType: 'FIELD_TYPE_TEXT' },
 ]
+
+const businessFieldOptions = [
+  { value: '', label: '仅保留原始资料', description: '不回填公海池标准字段' },
+  { value: 'companyName', label: '公司名称' },
+  { value: 'contactName', label: '联系人' },
+  { value: 'phone', label: '联系电话' },
+  { value: 'email', label: '联系邮箱' },
+  { value: 'remark', label: '需求描述' },
+]
+
+const identityBusinessKeys = ['companyName', 'contactName', 'phone', 'email']
 
 function createEmptyForm() {
   return {
@@ -91,8 +104,33 @@ function resolvePlatform(source) {
   return provider.split('_')[0] || 'WECOM'
 }
 
+function validateFieldDesign(fields, notify) {
+  if (!fields?.length) {
+    notify('请至少配置一个表格字段', 'info')
+    return false
+  }
+  if (fields.some((field) => !field.title?.trim())) {
+    notify('请填写完整的字段名称', 'info')
+    return false
+  }
+  const titles = fields.map((field) => field.title.trim().toLowerCase())
+  if (new Set(titles).size !== titles.length) {
+    notify('字段名称不能重复', 'info')
+    return false
+  }
+  const businessKeys = fields.map((field) => field.businessKey).filter(Boolean)
+  if (new Set(businessKeys).size !== businessKeys.length) {
+    notify('同一个 CRM 业务用途只能绑定一个表格字段', 'info')
+    return false
+  }
+  if (!businessKeys.some((key) => identityBusinessKeys.includes(key))) {
+    notify('公司名称、联系人、联系电话、联系邮箱至少绑定一个', 'info')
+    return false
+  }
+  return true
+}
+
 export function ManagedSheetBoard({ canManage, notify }) {
-  const { confirm, dialogProps } = useConfirmDialog()
   const products = useProductOptions(notify, true, canManage)
   const [sources, setSources] = useState([])
   const [loading, setLoading] = useState(true)
@@ -101,6 +139,12 @@ export function ManagedSheetBoard({ canManage, notify }) {
   const [syncingId, setSyncingId] = useState(null)
   const [logSource, setLogSource] = useState(null)
   const [logs, setLogs] = useState([])
+  const [fieldSource, setFieldSource] = useState(null)
+  const [managedFields, setManagedFields] = useState([])
+  const [fieldLoading, setFieldLoading] = useState(false)
+  const [fieldSaving, setFieldSaving] = useState(false)
+  const [deleteSource, setDeleteSource] = useState(null)
+  const [deletingMode, setDeletingMode] = useState('')
 
   const load = async () => {
     setLoading(true)
@@ -127,20 +171,7 @@ export function ManagedSheetBoard({ canManage, notify }) {
       return
     }
     const fields = form.fields || []
-    if (!fields.length) {
-      notify('请至少配置一个表格字段', 'info')
-      return
-    }
-    const emptyField = fields.find((field) => !field.title?.trim())
-    if (emptyField) {
-      notify('请填写完整的字段名称', 'info')
-      return
-    }
-    const titles = fields.map((field) => field.title.trim().toLowerCase())
-    if (new Set(titles).size !== titles.length) {
-      notify('字段名称不能重复', 'info')
-      return
-    }
+    if (!validateFieldDesign(fields, notify)) return
     const platform = platforms.find((item) => item.value === form.platform)
     if (!platform?.available) {
       notify(`${platform?.label || '当前平台'}暂未接入`, 'info')
@@ -185,20 +216,66 @@ export function ManagedSheetBoard({ canManage, notify }) {
     }
   }
 
-  const remove = async (source) => {
-    const confirmed = await confirm({
-      title: '删除自建表格配置',
-      description: '只删除 CRM 中的渠道配置，不会删除平台上的智能表格和已经进入公海池的数据。',
-      target: source.name,
-      confirmText: '确认删除',
-    })
-    if (!confirmed) return
+  const openFields = async (source) => {
+    setFieldSource(source)
+    setManagedFields([])
+    setFieldLoading(true)
     try {
-      await api.channelSource.delete(source.id)
-      notify('自建表格配置已删除', 'success')
+      const fields = await api.channelSource.managedSheetFields(source.id)
+      setManagedFields((fields || []).map((field, index) => ({
+        ...field,
+        id: field.fieldId || `field-${index}`,
+      })))
+    } catch (err) {
+      notify(err.message || '读取企微表格字段失败', 'info')
+      setFieldSource(null)
+    } finally {
+      setFieldLoading(false)
+    }
+  }
+
+  const saveFields = async (fields) => {
+    if (!fieldSource || !validateFieldDesign(fields, notify)) return
+    setFieldSaving(true)
+    try {
+      const saved = await api.channelSource.managedSheetFieldsSave(
+        fieldSource.id,
+        fields.map((field) => ({
+          fieldId: field.fieldId || null,
+          businessKey: field.businessKey || null,
+          title: field.title.trim(),
+          fieldType: field.fieldType,
+        })),
+      )
+      setManagedFields((saved || []).map((field, index) => ({
+        ...field,
+        id: field.fieldId || `field-${index}`,
+      })))
+      notify('表格字段已同步到企业微信', 'success')
+      setFieldSource(null)
+      await load()
+    } catch (err) {
+      notify(err.message || '保存企微表格字段失败', 'info')
+    } finally {
+      setFieldSaving(false)
+    }
+  }
+
+  const remove = async (deletePlatformDocument) => {
+    if (!deleteSource) return
+    setDeletingMode(deletePlatformDocument ? 'platform' : 'config')
+    try {
+      await api.channelSource.managedSheetDelete(deleteSource.id, deletePlatformDocument)
+      notify(
+        deletePlatformDocument ? '企微智能表格和 CRM 配置均已删除' : 'CRM 配置已移除，企微智能表格仍然保留',
+        'success',
+      )
+      setDeleteSource(null)
       await load()
     } catch (err) {
       notify(err.message || '删除自建表格失败', 'info')
+    } finally {
+      setDeletingMode('')
     }
   }
 
@@ -271,7 +348,8 @@ export function ManagedSheetBoard({ canManage, notify }) {
               onSync={() => sync(source)}
               onCopy={() => copyLink(source)}
               onLogs={() => openLogs(source)}
-              onDelete={() => remove(source)}
+              onFields={() => openFields(source)}
+              onDelete={() => setDeleteSource(source)}
             />
           ))}
         </div>
@@ -290,12 +368,28 @@ export function ManagedSheetBoard({ canManage, notify }) {
         logs={logs}
         onClose={() => setLogSource(null)}
       />
-      <ConfirmDialog {...dialogProps} />
+      <ManagedSheetFieldsModal
+        open={Boolean(fieldSource)}
+        source={fieldSource}
+        fields={managedFields}
+        loading={fieldLoading}
+        saving={fieldSaving}
+        onClose={() => !fieldSaving && setFieldSource(null)}
+        onSave={saveFields}
+      />
+      <ManagedSheetDeleteModal
+        open={Boolean(deleteSource)}
+        source={deleteSource}
+        deletingMode={deletingMode}
+        onClose={() => !deletingMode && setDeleteSource(null)}
+        onRemoveConfig={() => remove(false)}
+        onDeletePlatform={() => remove(true)}
+      />
     </Card>
   )
 }
 
-function ManagedSheetCard({ source, canManage, syncing, onSync, onCopy, onLogs, onDelete }) {
+function ManagedSheetCard({ source, canManage, syncing, onSync, onCopy, onLogs, onFields, onDelete }) {
   const platform = resolvePlatform(source)
   const pendingCount = Math.max(0, numberValue(source.totalRecordCount) - numberValue(source.convertedLeadCount))
   return (
@@ -341,6 +435,7 @@ function ManagedSheetCard({ source, canManage, syncing, onSync, onCopy, onLogs, 
                 <RefreshCw size={14} />{syncing ? '正在拉取' : '立即拉取'}
               </button>
             )}
+            {canManage && <button className="text-action" onClick={onFields}><Settings2 size={14} />字段管理</button>}
             <button className="text-action" onClick={onLogs}><Clock3 size={14} />记录</button>
             {canManage && <button className="text-action danger" onClick={onDelete}><Trash2 size={14} />删除</button>}
           </div>
@@ -382,7 +477,6 @@ function ManagedSheetCreateModal({ open, creating, products, onClose, onCreate }
             businessKey: null,
             title: '',
             fieldType: 'FIELD_TYPE_TEXT',
-            core: false,
           },
         ],
       }
@@ -391,7 +485,6 @@ function ManagedSheetCreateModal({ open, creating, products, onClose, onCreate }
 
   const removeField = (index) => {
     setForm((current) => {
-      if (current.fields[index]?.core) return current
       return {
         ...current,
         fields: current.fields.filter((_, fieldIndex) => fieldIndex !== index),
@@ -491,9 +584,12 @@ function ManagedSheetCreateModal({ open, creating, products, onClose, onCreate }
                     options={fieldTypes}
                     onChange={(fieldType) => updateField(index, { fieldType })}
                   />
-                  <span className={field.core ? 'managed-sheet-field-role core' : 'managed-sheet-field-role'}>
-                    {field.core ? '业务字段' : '自定义'}
-                  </span>
+                  <Select
+                    value={field.businessKey || ''}
+                    options={businessFieldOptions}
+                    placeholder="选择 CRM 用途"
+                    onChange={(businessKey) => updateField(index, { businessKey: businessKey || null })}
+                  />
                   <div className="managed-sheet-field-actions">
                     <button
                       type="button"
@@ -514,8 +610,7 @@ function ManagedSheetCreateModal({ open, creating, products, onClose, onCreate }
                     <button
                       type="button"
                       className="danger"
-                      title={field.core ? '业务字段不可删除' : '删除字段'}
-                      disabled={field.core}
+                      title="删除字段"
                       onClick={() => removeField(index)}
                     >
                       <Trash2 size={16} />
@@ -539,6 +634,202 @@ function ManagedSheetCreateModal({ open, creating, products, onClose, onCreate }
           >
             {creating ? '正在创建' : '创建表格'}
           </Button>
+        </div>
+      </div>
+    </Modal>
+  )
+}
+
+function ManagedSheetFieldsModal({ open, source, fields, loading, saving, onClose, onSave }) {
+  const [draft, setDraft] = useState([])
+
+  useEffect(() => {
+    if (open) setDraft((fields || []).map((field) => ({ ...field })))
+  }, [fields, open])
+
+  const updateField = (index, patch) => {
+    setDraft((current) => current.map((field, fieldIndex) => (
+      fieldIndex === index ? { ...field, ...patch } : field
+    )))
+  }
+
+  const addField = () => {
+    setDraft((current) => {
+      if (current.length >= 50) return current
+      return [
+        ...current,
+        {
+          id: `new-${Date.now()}-${current.length}`,
+          fieldId: null,
+          businessKey: null,
+          title: '',
+          fieldType: 'FIELD_TYPE_TEXT',
+          required: false,
+        },
+      ]
+    })
+  }
+
+  const removeField = (index) => {
+    setDraft((current) => {
+      if (current[index]?.required) return current
+      return current.filter((_, fieldIndex) => fieldIndex !== index)
+    })
+  }
+
+  if (!open) return null
+
+  return (
+    <Modal
+      open={open}
+      title={`${source?.name || '自建表格'} · 字段管理`}
+      size="xl"
+      onClose={onClose}
+      footer={(
+        <>
+          <Button variant="secondary" disabled={saving} onClick={onClose}>取消</Button>
+          <Button disabled={loading || saving} onClick={() => onSave(draft)}>
+            {saving ? '正在同步' : '保存并同步企微'}
+          </Button>
+        </>
+      )}
+    >
+      <div className="managed-sheet-fields-modal">
+        <div className="managed-sheet-fields-note">
+          <Settings2 size={18} />
+          <div>
+            <b>这里维护的是企微真实字段</b>
+            <span>新增、重命名和删除会直接同步到企业微信；已有字段类型不可修改，避免历史数据失效。</span>
+          </div>
+        </div>
+        {loading ? (
+          <div className="channel-source-empty">正在读取企业微信字段...</div>
+        ) : (
+          <div className="managed-sheet-field-designer">
+            <div className="managed-sheet-field-head">
+              <div>
+                <b>字段设计</b>
+                <small>CRM 用途决定该列如何回填公海池；不选择用途的字段仍会保留在完整资料中。</small>
+              </div>
+              <button
+                type="button"
+                className="managed-sheet-add-field"
+                disabled={draft.length >= 50 || saving}
+                onClick={addField}
+              >
+                <Plus size={15} />新增字段
+              </button>
+            </div>
+            <div className="managed-sheet-field-list">
+              {draft.map((field, index) => (
+                <div className="managed-sheet-field-row" key={field.id || field.fieldId || index}>
+                  <span className="managed-sheet-field-index">{index + 1}</span>
+                  <input
+                    value={field.title || ''}
+                    maxLength={64}
+                    disabled={saving}
+                    placeholder="请输入字段名称"
+                    onChange={(event) => updateField(index, { title: event.target.value })}
+                  />
+                  <Select
+                    value={field.fieldType}
+                    options={fieldTypes}
+                    disabled={Boolean(field.fieldId) || saving}
+                    onChange={(fieldType) => updateField(index, { fieldType })}
+                  />
+                  <Select
+                    value={field.businessKey || ''}
+                    options={businessFieldOptions}
+                    disabled={saving}
+                    placeholder="选择 CRM 用途"
+                    onChange={(businessKey) => updateField(index, { businessKey: businessKey || null })}
+                  />
+                  <div className="managed-sheet-field-actions">
+                    <button
+                      type="button"
+                      className="danger"
+                      title={field.required ? '企微默认标题字段不可删除' : '删除字段'}
+                      disabled={field.required || saving}
+                      onClick={() => removeField(index)}
+                    >
+                      <Trash2 size={16} />
+                    </button>
+                  </div>
+                </div>
+              ))}
+            </div>
+            <div className="managed-sheet-field-foot">
+              <span>共 {draft.length} 个字段，最多 50 个</span>
+              <span>企微默认标题字段可以重命名，但不能删除。</span>
+            </div>
+          </div>
+        )}
+      </div>
+    </Modal>
+  )
+}
+
+function ManagedSheetDeleteModal({
+  open,
+  source,
+  deletingMode,
+  onClose,
+  onRemoveConfig,
+  onDeletePlatform,
+}) {
+  const [confirmName, setConfirmName] = useState('')
+
+  useEffect(() => {
+    if (open) setConfirmName('')
+  }, [open, source?.id])
+
+  if (!open) return null
+
+  const nameMatched = confirmName.trim() === String(source?.name || '').trim()
+  return (
+    <Modal open={open} title="删除自建表格" size="lg" onClose={onClose}>
+      <div className="managed-sheet-delete-modal">
+        <div className="managed-sheet-delete-target">
+          <Sheet size={20} />
+          <div><span>当前表格</span><b>{source?.name}</b></div>
+        </div>
+        <div className="managed-sheet-delete-options">
+          <section>
+            <div><Database size={20} /></div>
+            <h3>仅移除 CRM 配置</h3>
+            <p>停止在 CRM 中展示和拉取，企微智能表格以及已经进入公海池的数据继续保留。</p>
+            <Button
+              variant="secondary"
+              disabled={Boolean(deletingMode)}
+              onClick={onRemoveConfig}
+            >
+              {deletingMode === 'config' ? '正在移除' : '仅移除配置'}
+            </Button>
+          </section>
+          <section className="danger">
+            <div><TriangleAlert size={20} /></div>
+            <h3>彻底删除企微表格</h3>
+            <p>调用企微接口删除真实文档，然后移除 CRM 配置。该操作无法撤销，但已进入公海池的数据不会删除。</p>
+            <label>
+              <span>输入表格名称确认</span>
+              <input
+                value={confirmName}
+                disabled={Boolean(deletingMode)}
+                placeholder={source?.name || ''}
+                onChange={(event) => setConfirmName(event.target.value)}
+              />
+            </label>
+            <Button
+              variant="danger"
+              disabled={!nameMatched || Boolean(deletingMode)}
+              onClick={onDeletePlatform}
+            >
+              {deletingMode === 'platform' ? '正在彻底删除' : '彻底删除企微表格'}
+            </Button>
+          </section>
+        </div>
+        <div className="modal-actions">
+          <Button variant="secondary" disabled={Boolean(deletingMode)} onClick={onClose}>取消</Button>
         </div>
       </div>
     </Modal>
